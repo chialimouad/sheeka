@@ -3,10 +3,16 @@ const router = express.Router();
 const productController = require('../controllers/productController');
 const { upload } = productController; // Import upload middleware
 
-// Use upload.single('image') for handling image uploads
+// Add Product
 router.post('/products', upload.single('image'), productController.addProduct);
 
-// Get all products
+// Get All Products
 router.get('/products', productController.getProducts);
+
+// Update Product
+router.put('/products/:id', upload.single('image'), productController.updateProduct);
+
+// Delete Product
+router.delete('/products/:id', productController.deleteProduct);
 
 module.exports = router;
