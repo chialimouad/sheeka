@@ -71,7 +71,7 @@ exports.login = async (req, res) => {
 
     // If user not found
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials 1' });
     }
 
     // Check if the password matches
@@ -82,7 +82,7 @@ exports.login = async (req, res) => {
 
     // If password does not match
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials 2' });
     }
 
     // Generate JWT Token
