@@ -16,18 +16,24 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
+    // Validate required fields
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    const existingUser = await User.findOne({ email });
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
+    // Hash password before saving
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({ name, email, password: hashedPassword, role });
 
+    // Create new user
+    const newUser = await User.create({ name, email: email.toLowerCase(), password: hashedPassword, role });
+
+    // Generate JWT Token
     const token = generateToken(newUser._id, newUser.role);
 
     res.status(201).json({
@@ -52,27 +58,37 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log("Received Login Request:", email, password); // Debugging Log
+    // Log the received request data for debugging
+    console.log("Received Login Request:", email, password);
 
+    // Check for missing fields
     if (!email || !password) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    const user = await User.findOne({ email });
-    console.log("User Found in Database:", user); // Debugging Log
+    // Find user with case-insensitive email
+    const user = await User.findOne({ email: email.toLowerCase() });
 
+    // If user not found
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Check if the password matches
     const isMatch = await bcrypt.compare(password, user.password);
-    console.log("Password Match:", isMatch); // Debugging Log
 
+    // Log the password comparison result
+    console.log("Password Match:", isMatch);
+
+    // If password does not match
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Generate JWT Token
     const token = generateToken(user._id, user.role);
+
+    // Send successful login response
     res.status(200).json({
       message: "Login successful",
       user: {
@@ -89,4 +105,3 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
-
