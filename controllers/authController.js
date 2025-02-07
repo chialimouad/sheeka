@@ -11,6 +11,7 @@ const generateToken = (id, role) => {
 };
 
 // ✅ Register Controller
+
 exports.register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
@@ -26,14 +27,21 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Hash password before saving using crypto
+    // Generate salt
+    const salt = crypto.randomBytes(16).toString('hex'); // 16-byte salt
     const hashedPassword = crypto
       .createHash('sha256')
-      .update(password)
+      .update(password + salt)  // Concatenate salt with password
       .digest('hex');
 
-    // Create new user
-    const newUser = await User.create({ name, email: email.toLowerCase(), password: hashedPassword, role });
+    // Create new user with the salt included in the data
+    const newUser = await User.create({ 
+      name, 
+      email: email.toLowerCase(), 
+      password: hashedPassword, 
+      role,
+      salt  // Store the salt in the user record
+    });
 
     // Generate JWT Token
     const token = generateToken(newUser._id, newUser.role);
@@ -55,13 +63,12 @@ exports.register = async (req, res) => {
   }
 };
 
+
 // ✅ Login Controller
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Log the received request data for debugging
-    console.log("Received Login Request:", email, password);
 
     // Check for missing fields
     if (!email || !password) {
@@ -73,19 +80,17 @@ exports.login = async (req, res) => {
 
     // If user not found
     if (!user) {
-      console.error("User not found in database");
-      return res.status(401).json({ message: 'Invalid credentials 1' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Hash the input password and compare it with the stored password
+    // Rehash the input password with the stored salt and compare
     const hashedInputPassword = crypto
       .createHash('sha256')
-      .update(password)
+      .update(password + user.salt)  // Use the stored salt here
       .digest('hex');
 
     if (hashedInputPassword !== user.password) {
-      console.error("Password mismatch for user:", email);
-      return res.status(401).json({ message: 'Invalid credentials2' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Generate JWT Token
@@ -108,3 +113,4 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
