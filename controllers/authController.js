@@ -85,7 +85,10 @@ exports.login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login Error:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Registration Error:', error);
+  
+    // Send back the actual error message
+    res.status(500).json({ message: error.message || 'Unexpected server error' });
   }
+  
 };
