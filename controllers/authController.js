@@ -74,7 +74,7 @@ exports.login = async (req, res) => {
     // If user not found
     if (!user) {
       console.error("User not found in database");
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials 1' });
     }
 
     // Hash the input password and compare it with the stored password
@@ -85,7 +85,7 @@ exports.login = async (req, res) => {
 
     if (hashedInputPassword !== user.password) {
       console.error("Password mismatch for user:", email);
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials2' });
     }
 
     // Generate JWT Token
