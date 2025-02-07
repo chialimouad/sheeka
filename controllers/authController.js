@@ -3,8 +3,12 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
+const cors = require('cors');  // Add this import for CORS
 
 dotenv.config();
+
+// ✅ Enable CORS for all routes
+app.use(cors());  // This line enables CORS for all origins
 
 // ✅ Generate JWT Token
 const generateToken = (id, role) => {
@@ -71,7 +75,8 @@ exports.login = async (req, res) => {
 
     // If user not found
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials 1' });
+      console.error("User not found in database");
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Check if the password matches
@@ -82,7 +87,8 @@ exports.login = async (req, res) => {
 
     // If password does not match
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials 2' });
+      console.error("Password mismatch for user:", email);
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Generate JWT Token
