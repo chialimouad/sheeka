@@ -63,6 +63,23 @@ exports.updateProduct = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+// ✅ Get Product by ID (GET /products/:id)
+exports.getProductById = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    res.json({
+      ...product._doc,
+      images: product.images.map(img => `https://sheeka.onrender.com${img}`), // ✅ Full Image URL for Flutter
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
 // ✅ Delete Product (DELETE /products/:id)
 exports.deleteProduct = async (req, res) => {

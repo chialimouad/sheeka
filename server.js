@@ -1,34 +1,63 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-require('dotenv').config();
+const dotenv = require('dotenv');
 const path = require('path');
+const fs = require('fs');
+const morgan = require('morgan'); // ✅ Logging Middleware
+const helmet = require('helmet'); // ✅ Security Middleware
+const authRoutes = require('./routes/authRoutes');
+
 const productRoutes = require('./routes/productRoutes');
 
+// ✅ Load environment variables
+dotenv.config();
+
 const app = express();
+
+// ✅ Middleware
 app.use(cors());
 app.use(express.json());
+app.use(helmet()); // Security headers
+app.use(morgan('dev')); // Logging
 
-// Serve uploaded images
-const fs = require('fs');
-
-
-// Ensure uploads directory exists
+// ✅ Ensure uploads directory exists
 const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+fs.promises.mkdir(uploadDir, { recursive: true }).catch(console.error);
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGO_URI||5000, {
+// ✅ Serve uploaded images
+app.use('/uploads', express.static(uploadDir));
 
-}).then(() => console.log('✅ MongoDB Connected'))
-  .catch(err => console.error('❌ MongoDB Connection Error:', err));
+// ✅ Connect to MongoDB
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+     
+    });
+    console.log('✅ MongoDB Connected');
+  } catch (error) {
+    console.error('❌ MongoDB Connection Error:', error);
+    process.exit(1);
+  }
+};
+connectDB();
 
-// Routes
-app.use('/products', productRoutes);
+// ✅ Logging Middleware (Detailed API Logs)
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
 
-// Start Server
+// ✅ Routes
+app.use('/auth', authRoutes); // Authentication Routes
+app.use('/products', productRoutes); // Product Management Routes
+
+// ✅ Global Error Handling Middleware
+app.use((err, req, res, next) => {
+  console.error('🔥 Server Error:', err.message);
+  res.status(500).json({ message: 'Internal Server Error' });
+});
+
+// ✅ Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server running on port ${PORT}`));
