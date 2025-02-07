@@ -1,74 +1,35 @@
+const Product = require('../models/Product');
 const multer = require('multer');
 const path = require('path');
-const Product = require('../models/Product');
 
-// Set up storage engine for multer
+// Image Upload Setup
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Ensure this folder exists
-  },
+  destination: 'uploads/',
   filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
-  },
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
 });
-
-// Initialize upload middleware
 const upload = multer({ storage });
 
-// Export upload middleware
-exports.upload = upload;
-
-// Add Product
 exports.addProduct = async (req, res) => {
   try {
-    const { name, description, price, quantity } = req.body;
-    const image = req.file.path;
-
-    const product = new Product({ name, description, price, quantity, image });
-    await product.save();
-
-    res.status(201).json({ message: 'Product added successfully', product });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const { name, description, quantity, price } = req.body;
+    const images = req.files.map(file => `/uploads/${file.filename}`);
+    const newProduct = new Product({ name, description, quantity, price, images });
+    await newProduct.save();
+    res.status(201).json(newProduct);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
 
-// Get All Products
 exports.getProducts = async (req, res) => {
   try {
     const products = await Product.find();
-    res.status(200).json(products);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
 
-// Update Product
-exports.updateProduct = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, description, price, quantity } = req.body;
-    const image = req.file ? req.file.path : req.body.image;
-
-    const product = await Product.findByIdAndUpdate(
-      id,
-      { name, description, price, quantity, image },
-      { new: true }
-    );
-
-    res.status(200).json({ message: 'Product updated successfully', product });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// Delete Product
-exports.deleteProduct = async (req, res) => {
-  try {
-    const { id } = req.params;
-    await Product.findByIdAndDelete(id);
-    res.status(200).json({ message: 'Product deleted successfully' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
+module.exports.upload = upload;
