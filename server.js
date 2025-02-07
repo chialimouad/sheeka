@@ -11,6 +11,6 @@ app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGO_URI, {
+mongoose.connect(process.env.MONGO_URI||5000, {
  
-}).then(() => console.log('MongoDB Connected')).catch(err => console.log(err));
+}).then(() => console.log('MongoDB Connected')).catch(err => console.log(err));  
