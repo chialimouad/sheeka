@@ -1,6 +1,6 @@
 const User = require('../models/User');
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const dotenv = require('dotenv');
 
 dotenv.config();
@@ -26,8 +26,11 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Hash password before saving
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Hash password before saving using crypto
+    const hashedPassword = crypto
+      .createHash('sha256')
+      .update(password)
+      .digest('hex');
 
     // Create new user
     const newUser = await User.create({ name, email: email.toLowerCase(), password: hashedPassword, role });
@@ -74,14 +77,13 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Check if the password matches
-    const isMatch = await bcrypt.compare(password, user.password);
+    // Hash the input password and compare it with the stored password
+    const hashedInputPassword = crypto
+      .createHash('sha256')
+      .update(password)
+      .digest('hex');
 
-    // Log the password comparison result
-    console.log("Password Match:", isMatch);
-
-    // If password does not match
-    if (!isMatch) {
+    if (hashedInputPassword !== user.password) {
       console.error("Password mismatch for user:", email);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
