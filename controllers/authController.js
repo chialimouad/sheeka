@@ -52,22 +52,27 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    console.log("Received Login Request:", email, password); // Debugging Log
+
     if (!email || !password) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
     const user = await User.findOne({ email });
+    console.log("User Found in Database:", user); // Debugging Log
+
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
+    console.log("Password Match:", isMatch); // Debugging Log
+
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     const token = generateToken(user._id, user.role);
-
     res.status(200).json({
       message: "Login successful",
       user: {
@@ -84,3 +89,4 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
