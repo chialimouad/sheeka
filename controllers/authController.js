@@ -1,6 +1,5 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const dotenv = require('dotenv');
 
 dotenv.config();
@@ -11,7 +10,6 @@ const generateToken = (id, role) => {
 };
 
 // ✅ Register Controller
-
 exports.register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
@@ -27,21 +25,8 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Generate salt
-    const salt = crypto.randomBytes(16).toString('hex'); // 16-byte salt
-    const hashedPassword = crypto
-      .createHash('sha256')
-      .update(password + salt)  // Concatenate salt with password
-      .digest('hex');
-
-    // Create new user with the salt included in the data
-    const newUser = await User.create({ 
-      name, 
-      email: email.toLowerCase(), 
-      password: hashedPassword, 
-      role,
-      salt  // Store the salt in the user record
-    });
+    // Directly store the password without hashing
+    const newUser = await User.create({ name, email: email.toLowerCase(), password, role });
 
     // Generate JWT Token
     const token = generateToken(newUser._id, newUser.role);
@@ -62,10 +47,6 @@ exports.register = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
-
-
-// ✅ Login Controller
-
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -83,13 +64,8 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Rehash the input password with the stored salt and compare
-    const hashedInputPassword = crypto
-      .createHash('sha256')
-      .update(password + user.salt)  // Use the stored salt here
-      .digest('hex');
-
-    if (hashedInputPassword !== user.password) {
+    // Compare the input password with the stored password
+    if (password !== user.password) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
@@ -113,4 +89,3 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
-
