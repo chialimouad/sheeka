@@ -1,14 +1,9 @@
-// controllers/authController.js
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
-const cors = require('cors');  // Add this import for CORS
 
 dotenv.config();
-
-// ✅ Enable CORS for all routes
-app.use(cors());  // This line enables CORS for all origins
 
 // ✅ Generate JWT Token
 const generateToken = (id, role) => {
