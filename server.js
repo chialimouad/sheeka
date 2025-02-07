@@ -8,6 +8,7 @@ const morgan = require('morgan'); // ✅ Logging Middleware
 const helmet = require('helmet'); // ✅ Security Middleware
 const authRoutes = require('./routes/authRoutes');
 const orderRoutes = require('./routes/orders');
+const authroutesuser = require('./routes/authroutesuser');
 
 const productRoutes = require('./routes/productRoutes');
 
@@ -53,6 +54,7 @@ app.use((req, res, next) => {
 app.use('/auth', authRoutes); // Authentication Routes
 app.use('/products', productRoutes); // Product Management Routes
 app.use('/orders', orderRoutes);
+app.use('/authuser', authroutesuser);
 
 // ✅ Global Error Handling Middleware
 app.use((err, req, res, next) => {
