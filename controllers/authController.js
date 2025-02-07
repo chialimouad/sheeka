@@ -6,7 +6,7 @@ dotenv.config();
 
 // ✅ Generate JWT Token
 const generateToken = (id, role) => {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  return jwt.sign({ id, role }, "mouadsecret", { expiresIn: '1h' });
 };
 
 // ✅ Register Controller
