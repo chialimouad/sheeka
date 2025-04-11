@@ -16,21 +16,50 @@ const upload = multer({ storage });
 // ✅ Add Product (POST /products)
 exports.addProduct = async (req, res) => {
   try {
-    const { name, description, quantity, price } = req.body;
+    const { name, description, quantity, price, variants } = req.body;
+
+    // Validate required fields
     if (!name || !description || !quantity || !price) {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
+    // Validate that variants are in the correct format
+    let parsedVariants = [];
+    if (variants) {
+      try {
+        parsedVariants = JSON.parse(variants);
+        // Optionally validate the structure of the variants
+        if (!Array.isArray(parsedVariants)) {
+          return res.status(400).json({ error: 'Variants should be an array' });
+        }
+      } catch (error) {
+        return res.status(400).json({ error: 'Invalid variants format' });
+      }
+    }
+
+    // Handle the images
     const images = req.files.map(file => `/uploads/${file.filename}`); // ✅ Store correct file path
 
-    const newProduct = new Product({ name, description, quantity, price, images });
+    // Create a new product object
+    const newProduct = new Product({
+      name,
+      description,
+      quantity,
+      price,
+      images,
+      variants: parsedVariants, // Store the variants data
+    });
+
+    // Save the product to the database
     await newProduct.save();
 
+    // Return the newly created product
     res.status(201).json(newProduct);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+
 
 // ✅ Get All Products (GET /products)
 exports.getProducts = async (req, res) => {
