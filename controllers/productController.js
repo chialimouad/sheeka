@@ -16,7 +16,18 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 
+exports.getPromoImages = (req, res) => {
+  const promoDir = path.join(__dirname, '..', 'uploads', 'promo');
 
+  fs.readdir(promoDir, (err, files) => {
+    if (err) {
+      console.error('❌ Error reading promo images:', err);
+      return res.status(500).json({ message: 'Failed to load promo images' });
+    }
+
+    res.status(200).json({ images: files });
+  });
+};
 
 exports.uploadPromoImages = async (req, res) => {
   try {

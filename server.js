@@ -30,6 +30,7 @@ fs.promises.mkdir(uploadDir, { recursive: true }).catch(console.error);
 
 // ✅ Serve static image files
 app.use('/uploads', express.static(uploadDir));
+app.use('/uploads/promo', express.static(uploadDir));
 
 // ✅ Connect to MongoDB
 const connectDB = async () => {
