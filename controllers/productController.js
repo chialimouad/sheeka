@@ -22,7 +22,6 @@ exports.uploadPromoImages = async (req, res) => {
     }
 
     const images = req.files.map(file => `/uploads/${file.filename}`);
-
     const promo = new PromoImage({ images });
     await promo.save();
 
