@@ -6,39 +6,67 @@ const Product = require('../models/Product');
 // ✅ Create a new order
 router.post('/', async (req, res) => {
   try {
-    const { clientName, phoneNumber, wilaya, commune, products } = req.body;
+    const { fullName, phoneNumber, wilaya, commune, products } = req.body;
 
-    if (!clientName || !phoneNumber || !wilaya || !commune || !products.length) {
+    // Ensure all required fields are present
+    if (!fullName || !phoneNumber || !wilaya || !commune || !products.length) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    // Check if all products exist
+    // Validate phone number format
+    const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      return res.status(400).json({ message: 'Invalid Algerian phone number' });
+    }
+
+    // Check if all products exist and validate product details
     for (const item of products) {
-      const product = await Product.findById(item.productId);
-      if (!product) {
-        return res.status(400).json({ message: `Product with ID ${item.productId} not found` });
+      const { productId, quantity, color, size } = item;
+
+      // Check if product ID, quantity, color, and size are provided
+      if (!productId || !quantity || !color || !size) {
+        return res.status(400).json({ message: 'Product ID, quantity, color, and size are required for each product' });
       }
-      if (product.quantity < item.quantity) {
+
+      const product = await Product.findById(productId);
+      if (!product) {
+        return res.status(400).json({ message: `Product with ID ${productId} not found` });
+      }
+
+      if (product.quantity < quantity) {
         return res.status(400).json({ message: `Not enough stock for product: ${product.name}` });
       }
-      product.quantity -= item.quantity; // Reduce stock
+
+      // Reduce the product quantity in stock
+      product.quantity -= quantity;
       await product.save();
     }
 
-    const newOrder = new Order({ clientName, phoneNumber, wilaya, commune, products });
+    // Create and save the new order
+    const newOrder = new Order({
+      fullName, 
+      phoneNumber, 
+      wilaya, 
+      commune, 
+      products
+    });
     await newOrder.save();
 
+    // Return success message
     res.status(201).json({ message: 'Order created successfully', order: newOrder });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 });
+
 
 // ✅ Get all orders
 router.get('/', async (req, res) => {
   try {
     const orders = await Order.find().populate('products.productId');
 
+    // Format the orders to include color and size
     const formattedOrders = orders.map(order => ({
       ...order._doc,
       products: order.products.map(item => ({
@@ -46,7 +74,9 @@ router.get('/', async (req, res) => {
         name: item.productId.name,
         price: item.productId.price,
         images: item.productId.images.map(img => `https://sheeka.onrender.com${img}`),
-        quantity: item.quantity
+        quantity: item.quantity,
+        color: item.color,  // Include color
+        size: item.size     // Include size
       }))
     }));
 
@@ -62,6 +92,7 @@ router.get('/:orderId', async (req, res) => {
     const order = await Order.findById(req.params.orderId).populate('products.productId');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
+    // Format the order to include color and size
     const formattedOrder = {
       ...order._doc,
       products: order.products.map(item => ({
@@ -69,7 +100,9 @@ router.get('/:orderId', async (req, res) => {
         name: item.productId.name,
         price: item.productId.price,
         images: item.productId.images.map(img => `https://sheeka.onrender.com${img}`),
-        quantity: item.quantity
+        quantity: item.quantity,
+        color: item.color,  // Include color
+        size: item.size     // Include size
       }))
     };
 
