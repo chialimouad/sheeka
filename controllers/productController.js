@@ -1,4 +1,6 @@
 const Product = require('../models/Product');
+const PromoImage = require('../models/imagespromo');
+
 const multer = require('multer');
 const path = require('path');
 
@@ -12,6 +14,23 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage });
+
+exports.uploadPromoImages = async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No images uploaded' });
+    }
+
+    const images = req.files.map(file => `/uploads/${file.filename}`);
+
+    const promo = new PromoImage({ images });
+    await promo.save();
+
+    res.status(201).json(promo);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
 // ✅ Add Product (POST /products)
 exports.addProduct = async (req, res) => {
