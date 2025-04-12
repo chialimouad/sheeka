@@ -19,10 +19,17 @@ const upload = multer({ storage });
 exports.getPromoImages = async (req, res) => {
   try {
     const promoDir = path.join(__dirname, '../uploads/promo');
+
+    // Ensure the directory exists
+    if (!fs.existsSync(promoDir)) {
+      return res.status(200).json({ images: [] }); // no error if folder is empty
+    }
+
     const files = await fs.promises.readdir(promoDir);
+
     res.status(200).json({ images: files });
   } catch (error) {
-    console.error('❌ Error fetching promo images:', error);
+    console.error('❌ Error fetching promo images:', error.message);
     res.status(500).json({ message: 'Failed to load promo images' });
   }
 };
