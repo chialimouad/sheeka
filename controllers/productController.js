@@ -16,23 +16,22 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 
-exports.getPromoImages = async (req, res) => {
+exports.getProductImagesOnly = async (req, res) => {
   try {
-    const promoDir = path.join(__dirname, '../uploads/promo');
+    const products = await PromoImage.find({}, 'images'); // Get only the `images` field
 
-    // Ensure the directory exists
-    if (!fs.existsSync(promoDir)) {
-      return res.status(200).json({ images: [] }); // no error if folder is empty
-    }
+    // Flatten the image arrays and build full URLs
+    const allImages = products.flatMap(product =>
+      product.images.map(img => `https://sheeka.onrender.com${img}`)
+    );
 
-    const files = await fs.promises.readdir(promoDir);
-
-    res.status(200).json({ images: files });
+    res.json(allImages);
   } catch (error) {
-    console.error('❌ Error fetching promo images:', error.message);
-    res.status(500).json({ message: 'Failed to load promo images' });
+    console.error('❌ Error fetching product images:', error);
+    res.status(500).json({ message: 'Error fetching product images' });
   }
 };
+
 
 exports.uploadPromoImages = async (req, res) => {
   try {

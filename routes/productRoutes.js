@@ -25,6 +25,6 @@ router.delete('/:id', productController.deleteProduct);
 // Upload promotional images (separate from product listing)
 router.post('/promo', productController.upload.array('images', 5), productController.uploadPromoImages);
 // Add this route to serve promo images
-router.get('/promo', productController.getPromoImages);
+router.get('/promo', productController.getProductImagesOnly);
 
 module.exports = router;
