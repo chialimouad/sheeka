@@ -67,7 +67,6 @@ router.get('/', async (req, res) => {
   try {
     const orders = await Order.find().populate('products.productId');
 
-    // Format the orders to include color and size
     const formattedOrders = orders.map(order => ({
       ...order._doc,
       products: order.products.map(item => ({
@@ -76,8 +75,8 @@ router.get('/', async (req, res) => {
         price: item.productId.price,
         images: item.productId.images.map(img => `https://sheeka.onrender.com${img}`),
         quantity: item.quantity,
-        color: item.color,  // Include color
-        size: item.size     // Include size
+        color: item.color,
+        size: item.size
       }))
     }));
 
@@ -87,13 +86,12 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ✅ Get order by ID
+// ✅ Get one order
 router.get('/:orderId', async (req, res) => {
   try {
     const order = await Order.findById(req.params.orderId).populate('products.productId');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    // Format the order to include color and size
     const formattedOrder = {
       ...order._doc,
       products: order.products.map(item => ({
@@ -102,14 +100,40 @@ router.get('/:orderId', async (req, res) => {
         price: item.productId.price,
         images: item.productId.images.map(img => `https://sheeka.onrender.com${img}`),
         quantity: item.quantity,
-        color: item.color,  // Include color
-        size: item.size     // Include size
+        color: item.color,
+        size: item.size
       }))
     };
 
     res.status(200).json(formattedOrder);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching order', error: error.message });
+  }
+});
+
+// ✅ Update order status (confirmed, cancelled, tentative)
+router.patch('/:orderId/status', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    if (!['confirmed', 'tentative', 'cancelled'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status value' });
+    }
+
+    const updatedOrder = await Order.findByIdAndUpdate(
+      orderId,
+      { status },
+      { new: true }
+    ).populate('products.productId');
+
+    if (!updatedOrder) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    res.status(200).json({ message: 'Order status updated', order: updatedOrder });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating status', error: error.message });
   }
 });
 
