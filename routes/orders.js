@@ -67,24 +67,38 @@ router.get('/', async (req, res) => {
   try {
     const orders = await Order.find().populate('products.productId');
 
-    const formattedOrders = orders.map(order => ({
-      ...order._doc,
-      products: order.products.map(item => ({
-        _id: item.productId._id,
-        name: item.productId.name,
-        price: item.productId.price,
-        images: item.productId.images.map(img => `https://sheeka.onrender.com${img}`),
-        quantity: item.quantity,
-        color: item.color,
-        size: item.size
-      }))
-    }));
+    if (!orders || orders.length === 0) {
+      return res.status(404).json({ message: 'No orders found' });
+    }
+
+    const formattedOrders = orders.map(order => {
+      return {
+        ...order._doc,
+        products: order.products.map(item => {
+          if (item.productId) {
+            return {
+              _id: item.productId._id,
+              name: item.productId.name,
+              price: item.productId.price,
+              images: item.productId.images ? item.productId.images.map(img => `https://sheeka.onrender.com${img}`) : [],
+              quantity: item.quantity,
+              color: item.color,
+              size: item.size
+            };
+          } else {
+            return {}; // Return an empty object if productId is missing
+          }
+        })
+      };
+    });
 
     res.status(200).json(formattedOrders);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Error fetching orders', error: error.message });
   }
 });
+
 
 // ✅ Get one order
 router.get('/:orderId', async (req, res) => {
