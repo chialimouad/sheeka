@@ -15,21 +15,38 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+
+
+
 exports.uploadPromoImages = async (req, res) => {
   try {
+
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No images uploaded' });
     }
+    // Handle the images
+    const images = req.files.map(file => `/uploads/${file.filename}`); // ✅ Store correct file path
 
-    const images = req.files.map(file => `/uploads/${file.filename}`);
-    const promo = new PromoImage({ images });
-    await promo.save();
+    const newProduct = new PromoImage({
+      images,
+    });
 
-    res.status(201).json(promo);
+    // Save the product to the database
+    await newProduct.save();
+
+    // Return the newly created product
+    res.status(201).json(newProduct);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+
+
+
+
+
+
+
 
 // ✅ Add Product (POST /products)
 exports.addProduct = async (req, res) => {
