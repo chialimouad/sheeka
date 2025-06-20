@@ -1,3 +1,4 @@
+// backend/routes/productRoutes.js
 const express = require('express');
 const router = express.Router();
 const path = require('path');
@@ -99,6 +100,7 @@ const productController = {
      * @param {Object} res - The response object.
      */
     deletePromoImage: async (req, res) => {
+        console.log("--- deletePromoImage route hit ---"); // Added for debugging
         try {
             const imageUrl = req.body.url; // Expecting the full image URL from the client
             if (!imageUrl) {
