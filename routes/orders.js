@@ -6,17 +6,17 @@ const Product = require('../models/Product');
 // ✅ Create a new order
 router.post('/', async (req, res) => {
   try {
-    const { fullName, phoneNumber, wilaya, commune, products } = req.body;
+    const { fullName, phoneNumber, wilaya, commune, products, status, notes } = req.body; // Added status and notes
 
     // Ensure all required fields are present
     if (!fullName || !phoneNumber || !wilaya || !commune || !products.length) {
-      return res.status(400).json({ message: 'All fields are required' });
+      return res.status(400).json({ message: 'All required fields (fullName, phoneNumber, wilaya, commune, products) are missing.' });
     }
 
     // Validate phone number format
     const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
     if (!phoneRegex.test(phoneNumber)) {
-      return res.status(400).json({ message: 'Invalid Algerian phone number' });
+      return res.status(400).json({ message: 'Invalid Algerian phone number format.' });
     }
 
     // Check if all products exist and validate product details
@@ -25,16 +25,16 @@ router.post('/', async (req, res) => {
 
       // Check if product ID, quantity, color, and size are provided
       if (!productId || !quantity || !color || !size) {
-        return res.status(400).json({ message: 'Product ID, quantity, color, and size are required for each product' });
+        return res.status(400).json({ message: 'Product ID, quantity, color, and size are required for each product in the products array.' });
       }
 
       const product = await Product.findById(productId);
       if (!product) {
-        return res.status(400).json({ message: `Product with ID ${productId} not found` });
+        return res.status(400).json({ message: `Product with ID ${productId} not found.` });
       }
 
       if (product.quantity < quantity) {
-        return res.status(400).json({ message: `Not enough stock for product: ${product.name}` });
+        return res.status(400).json({ message: `Not enough stock for product: ${product.name}. Available: ${product.quantity}, Requested: ${quantity}.` });
       }
 
       // Reduce the product quantity in stock
@@ -44,22 +44,23 @@ router.post('/', async (req, res) => {
 
     // Create and save the new order
     const newOrder = new Order({
-      fullName, 
-      phoneNumber, 
-      wilaya, 
-      commune, 
-      products
+      fullName,
+      phoneNumber,
+      wilaya,
+      commune,
+      products,
+      status: status || 'pending', // Use provided status or default to 'pending'
+      notes: notes || '' // Use provided notes or default to empty string
     });
     await newOrder.save();
 
     // Return success message
     res.status(201).json({ message: 'Order created successfully', order: newOrder });
   } catch (error) {
-    console.error(error);
+    console.error('Error creating order:', error);
     res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 });
-
 
 
 // ✅ Get all orders
@@ -75,6 +76,7 @@ router.get('/', async (req, res) => {
       return {
         ...order._doc,
         products: order.products.map(item => {
+          // Check if productId exists before accessing its properties
           if (item.productId) {
             return {
               _id: item.productId._id,
@@ -86,7 +88,9 @@ router.get('/', async (req, res) => {
               size: item.size
             };
           } else {
-            return {}; // Return an empty object if productId is missing
+            // Log an error or handle cases where productId might be null/undefined after populate
+            console.warn(`Product ID missing for an item in order ${order._id}`);
+            return {}; // Return an empty object or a placeholder
           }
         })
       };
@@ -94,17 +98,17 @@ router.get('/', async (req, res) => {
 
     res.status(200).json(formattedOrders);
   } catch (error) {
-    console.error(error);
+    console.error('Error fetching orders:', error);
     res.status(500).json({ message: 'Error fetching orders', error: error.message });
   }
 });
 
 
-// ✅ Get one order
+// ✅ Get one order by ID
 router.get('/:orderId', async (req, res) => {
   try {
     const order = await Order.findById(req.params.orderId).populate('products.productId');
-    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (!order) return res.status(404).json({ message: `Order with ID ${req.params.orderId} not found.` });
 
     const formattedOrder = {
       ...order._doc,
@@ -121,33 +125,50 @@ router.get('/:orderId', async (req, res) => {
 
     res.status(200).json(formattedOrder);
   } catch (error) {
+    console.error('Error fetching single order:', error);
     res.status(500).json({ message: 'Error fetching order', error: error.message });
   }
 });
 
-// ✅ Update order status (confirmed, cancelled, tentative)
+// ✅ Update order status and notes (confirmed, cancelled, tentative)
 router.patch('/:orderId/status', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { status } = req.body;
+    const { status, notes } = req.body; // Destructure notes from req.body
 
-    if (!['confirmed', 'tentative', 'cancelled'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status value' });
+    const updateFields = {};
+
+    if (status) {
+      if (!['pending', 'confirmed', 'tentative', 'cancelled'].includes(status)) { // Include 'pending' for explicit updates
+        return res.status(400).json({ message: 'Invalid status value. Allowed: pending, confirmed, tentative, cancelled.' });
+      }
+      updateFields.status = status;
+    }
+
+    // Only update notes if it's explicitly provided in the request body
+    // This allows clearing notes by sending an empty string for `notes`
+    if (notes !== undefined) {
+      updateFields.notes = notes;
+    }
+
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).json({ message: 'No valid fields provided for update (status or notes).' });
     }
 
     const updatedOrder = await Order.findByIdAndUpdate(
       orderId,
-      { status },
-      { new: true }
+      { $set: updateFields }, // Use $set to update specific fields
+      { new: true, runValidators: true } // Return the new document and run schema validators
     ).populate('products.productId');
 
     if (!updatedOrder) {
-      return res.status(404).json({ message: 'Order not found' });
+      return res.status(404).json({ message: 'Order not found.' });
     }
 
-    res.status(200).json({ message: 'Order status updated', order: updatedOrder });
+    res.status(200).json({ message: 'Order status and/or notes updated', order: updatedOrder });
   } catch (error) {
-    res.status(500).json({ message: 'Error updating status', error: error.message });
+    console.error('Error updating order status or notes:', error);
+    res.status(500).json({ message: 'Error updating status or notes', error: error.message });
   }
 });
 
