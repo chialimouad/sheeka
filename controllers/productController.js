@@ -1,5 +1,5 @@
 const Product = require('../models/Product');
-const PromoImage = require('../models/imagespromo'); // Assuming this is for separate promo images, not product images within product model
+const PromoImage = require('../models/imagespromo');
 
 const multer = require('multer');
 const path = require('path');
@@ -36,7 +36,7 @@ const upload = multer({
 });
 
 
-// --- PromoImage Handlers (existing) ---
+// --- PromoImage Handlers ---
 exports.getProductImagesOnly = async (req, res) => {
   try {
     const products = await PromoImage.find({}, 'images'); // Get only the `images` field
@@ -65,18 +65,48 @@ exports.uploadPromoImages = async (req, res) => {
       images,
     });
 
-    // Save the product to the database
+    // Save the promo image record to the database
     await newPromoImage.save();
 
-    // Return the newly created product
+    // Return the newly created promo image record
     res.status(201).json(newPromoImage);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
+// New: Delete Promo Image by ID
+exports.deletePromoImage = async (req, res) => {
+  try {
+    const promoImageId = req.params.id; // Assuming the ID is passed in the URL
+    const promoImage = await PromoImage.findById(promoImageId);
 
-// --- Product CRUD Handlers (Modified) ---
+    if (!promoImage) {
+      return res.status(404).json({ message: 'Promo image not found in database.' });
+    }
+
+    // Delete associated files from disk
+    promoImage.images.forEach(imagePath => {
+      const filePath = path.join(__dirname, '..', imagePath);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`Deleted file: ${filePath}`);
+      } else {
+        console.warn(`File not found, could not delete: ${filePath}`);
+      }
+    });
+
+    await PromoImage.findByIdAndDelete(promoImageId); // Delete database record
+
+    res.status(200).json({ message: 'Promo image deleted successfully.' });
+  } catch (error) {
+    console.error('❌ Error deleting promo image:', error);
+    res.status(500).json({ message: 'Error deleting promo image', error: error.message });
+  }
+};
+
+
+// --- Product CRUD Handlers ---
 
 // ✅ Add Product (POST /products) - Now handles multiple file types for images/videos
 exports.addProduct = async (req, res) => {
@@ -200,6 +230,7 @@ exports.updateProduct = async (req, res) => {
           const filePath = path.join(__dirname, '..', oldImagePath); // Adjust path as per your server structure
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
+            console.log(`Deleted old image file: ${filePath}`);
           }
         });
         product.images = req.files['images'].map(file => `/uploads/${file.filename}`);
@@ -210,6 +241,7 @@ exports.updateProduct = async (req, res) => {
           const filePath = path.join(__dirname, '..', oldVideoPath); // Adjust path as per your server structure
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
+            console.log(`Deleted old video file: ${filePath}`);
           }
         });
         product.videos = req.files['videos'].map(file => `/uploads/${file.filename}`);
@@ -267,6 +299,7 @@ exports.deleteProduct = async (req, res) => {
       const filePath = path.join(__dirname, '..', imagePath); // Adjust path as per your server structure
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
+        console.log(`Deleted product image file: ${filePath}`);
       }
     });
 
@@ -275,6 +308,7 @@ exports.deleteProduct = async (req, res) => {
       const filePath = path.join(__dirname, '..', videoPath); // Adjust path as per your server structure
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
+        console.log(`Deleted product video file: ${filePath}`);
       }
     });
 
@@ -291,3 +325,7 @@ exports.productUploadMiddleware = upload.fields([
   { name: 'images', maxCount: 10 }, // Up to 10 images
   { name: 'videos', maxCount: 5 }   // Up to 5 videos
 ]);
+
+// Also export the 'upload' instance itself for use with .array() or .single() in routes,
+// particularly for the /promo endpoint.
+exports.upload = upload; // <--- This line is critical for productController.upload.array to work
