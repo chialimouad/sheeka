@@ -1,49 +1,40 @@
 const express = require('express');
 const router = express.Router();
-const productController = require('../controllers/productController');
+const productController = require('../controllers/productController'); // Assuming productController.js exists
 
 // =========================
 // 🛍 Product Routes
 // =========================
 
-// Add a new product with images
-router.post('/', productController.upload.array('images', 5), productController.addProduct);
+// Add a new product with images and/or videos
+// Uses productUploadMiddleware to handle multipart/form-data with 'images' and 'videos' fields
+router.post('/', productController.productUploadMiddleware, productController.addProduct);
 
 // Get all products
 router.get('/', productController.getProducts);
 
-// Update an existing product
-router.put('/:id', productController.updateProduct);
+// Update an existing product with all modifiable parameters including new images/videos
+// Uses productUploadMiddleware to handle multipart/form-data with 'images' and 'videos' fields
+router.put('/:id', productController.productUploadMiddleware, productController.updateProduct);
 
 // Delete a product
 router.delete('/:id', productController.deleteProduct);
 
+// Get a single product by ID
+router.get('/:id', productController.getProductById); // Added missing route for get by ID
+
 // =========================
-// 📸 Promo Image Upload Route
+// 📸 Promo Image Routes
 // =========================
 
 // Upload promotional images (separate from product listing)
+// Uses the general upload middleware which accepts images/videos for promo
 router.post('/promo', productController.upload.array('images', 5), productController.uploadPromoImages);
-// Add this route to serve promo images
+
+// Get all promotional images
 router.get('/promo', productController.getProductImagesOnly);
-// Node.js + Express (example)
-router.delete('/products/promo', async (req, res) => {
-    try {
-      const imageUrl = req.body.url; // full image URL
-  
-      // Extract just the filename
-      const fileName = imageUrl.split('/uploads/')[1];
-  
-      // Remove from server (adjust path as needed)
-      const fs = require('fs');
-      fs.unlink(`uploads/${fileName}`, (err) => {
-        if (err) return res.status(500).json({ message: 'Failed to delete image' });
-        return res.json({ message: 'Image deleted' });
-      });
-  
-    } catch (error) {
-      res.status(500).json({ message: 'Server error' });
-    }
-  });
-  
+
+// Delete a promotional image by ID (new route and controller logic)
+router.delete('/promo/:id', productController.deletePromoImage); // Assuming 'id' refers to PromoImage _id
+
 module.exports = router;
