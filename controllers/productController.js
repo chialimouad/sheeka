@@ -31,8 +31,12 @@ const storage = multer.diskStorage({
 // Initialize Multer upload instance
 const upload = multer({
     storage: storage,
-    // File filter to accept only image and video files
+    // File filter to accept only video files for products.
+    // Images are still allowed for promo images, as the 'upload' instance is reused there.
     fileFilter: (req, file, cb) => {
+        // This filter applies to all routes using this 'upload' instance.
+        // If 'images' are picked for promo, they will be allowed.
+        // If 'videos' are picked for products, they will be allowed.
         if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
             cb(null, true); // Accept file
         } else {
@@ -157,12 +161,14 @@ exports.addProduct = async (req, res) => {
             }
         }
 
-        const images = [];
+        const images = []; // Images array will remain empty if only videos are sent
         const videos = [];
 
-        // ✅ FIX: Correctly handle req.files which is an object when using upload.fields
+        // Correctly handle req.files which is an object when using upload.fields
         if (req.files) {
-            if (req.files['images']) {
+            // Note: If you only want to send videos for products, the 'images' field
+            // from the frontend will likely be empty.
+            if (req.files['images']) { 
                 req.files['images'].forEach(file => {
                     images.push(`/uploads/${file.filename}`);
                 });
@@ -179,8 +185,8 @@ exports.addProduct = async (req, res) => {
             description,
             quantity: parseInt(quantity),
             price: parseFloat(price),
-            images,
-            videos, // ✅ Store video paths
+            images, // Images might be empty here
+            videos, // Videos will be stored here
             variants: parsedVariants,
         });
 
@@ -206,7 +212,7 @@ exports.getProducts = async (req, res) => {
         const updatedProducts = products.map(product => ({
             ...product._doc,
             images: product.images ? product.images.map(img => `https://sheeka.onrender.com${img}`) : [],
-            videos: product.videos ? product.videos.map(vid => `https://sheeka.onrender.com${vid}`) : [], // ✅ Map video URLs
+            videos: product.videos ? product.videos.map(vid => `https://sheeka.onrender.com${vid}`) : [], // Map video URLs to full URLs
         }));
 
         res.json(updatedProducts);
@@ -249,7 +255,7 @@ exports.updateProduct = async (req, res) => {
             }
         }
 
-        // ✅ Restore and fix file uploads (images and videos) for update
+        // Restore and correctly handle file uploads (images and videos) for update
         if (req.files) {
             if (req.files['images'] && req.files['images'].length > 0) {
                 // Delete old image files from disk
@@ -284,7 +290,7 @@ exports.updateProduct = async (req, res) => {
         const updatedProductResponse = {
             ...product._doc,
             images: product.images ? product.images.map(img => `https://sheeka.onrender.com${img}`) : [],
-            videos: product.videos ? product.videos.map(vid => `https://sheeka.onrender.com${vid}`) : [], // ✅ Map video URLs
+            videos: product.videos ? product.videos.map(vid => `https://sheeka.onrender.com${vid}`) : [], // Map video URLs to full URLs
         };
 
         res.status(200).json({ message: 'Product updated successfully', product: updatedProductResponse });
@@ -311,7 +317,7 @@ exports.getProductById = async (req, res) => {
         res.json({
             ...product._doc,
             images: product.images ? product.images.map(img => `https://sheeka.onrender.com${img}`) : [],
-            videos: product.videos ? product.videos.map(vid => `https://sheeka.onrender.com${vid}`) : [], // ✅ Map video URLs
+            videos: product.videos ? product.videos.map(vid => `https://sheeka.onrender.com${vid}`) : [], // Map video URLs to full URLs
         });
     } catch (error) {
         console.error('❌ Error fetching single product:', error);
@@ -342,7 +348,7 @@ exports.deleteProduct = async (req, res) => {
             }
         });
 
-        // ✅ Delete associated video files from disk
+        // Delete associated video files from disk
         product.videos.forEach(videoPath => {
             const filePath = path.join(__dirname, '..', videoPath);
             if (fs.existsSync(filePath)) {
@@ -363,7 +369,7 @@ exports.deleteProduct = async (req, res) => {
 // Export Multer upload middleware specifically for product routes
 // Use `.fields()` to handle multiple file inputs with specific names ('images', 'videos')
 exports.productUploadMiddleware = upload.fields([
-    { name: 'images', maxCount: 10 }, // Up to 10 images
+    { name: 'images', maxCount: 10 }, // Up to 10 images (still allowed but not required for product creation)
     { name: 'videos', maxCount: 5 }   // Up to 5 videos
 ]);
 
