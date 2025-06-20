@@ -1,4 +1,3 @@
-// routes/productRoutes.js
 const express = require('express');
 const router = express.Router();
 const productController = require('../controllers/productController');
@@ -7,67 +6,44 @@ const productController = require('../controllers/productController');
 // 🛍 Product Routes
 // =========================
 
-/**
- * @route POST /api/products
- * @desc Add a new product with images and/or videos
- * @access Private (admin)
- * @middleware productUploadMiddleware handles multipart/form-data for 'images' and 'videos' fields
- */
-router.post('/', productController.productUploadMiddleware, productController.addProduct);
+// Add a new product with images
+router.post('/', productController.upload.array('images', 5), productController.addProduct);
 
-/**
- * @route GET /api/products
- * @desc Get all products
- * @access Public
- */
+// Get all products
 router.get('/', productController.getProducts);
 
-/**
- * @route PUT /api/products/:id
- * @desc Update an existing product with all modifiable parameters including new images/videos
- * @access Private (admin)
- * @middleware productUploadMiddleware handles multipart/form-data for 'images' and 'videos' fields
- */
-router.put('/:id', productController.productUploadMiddleware, productController.updateProduct);
+// Update an existing product
+router.put('/:id', productController.updateProduct);
 
-/**
- * @route DELETE /api/products/:id
- * @desc Delete a product and its associated files
- * @access Private (admin)
- */
+// Delete a product
 router.delete('/:id', productController.deleteProduct);
 
-/**
- * @route GET /api/products/:id
- * @desc Get a single product by ID
- * @access Public
- */
-router.get('/:id', productController.getProductById);
-
 // =========================
-// 📸 Promo Image Routes
+// 📸 Promo Image Upload Route
 // =========================
 
-/**
- * @route POST /api/products/promo
- * @desc Upload promotional images (separate from product listing)
- * @access Private (admin)
- * @middleware productController.upload.array('images', 5) handles multiple image uploads
- */
+// Upload promotional images (separate from product listing)
 router.post('/promo', productController.upload.array('images', 5), productController.uploadPromoImages);
-
-/**
- * @route GET /api/products/promo
- * @desc Get all promotional images (URLs only)
- * @access Public
- */
+// Add this route to serve promo images
 router.get('/promo', productController.getProductImagesOnly);
-
-/**
- * @route DELETE /api/products/promo/:id
- * @desc Delete a promotional image by ID and its associated files
- * @access Private (admin)
- */
-router.delete('/promo/:id', productController.deletePromoImage);
-
+// Node.js + Express (example)
+router.delete('/products/promo', async (req, res) => {
+    try {
+      const imageUrl = req.body.url; // full image URL
+  
+      // Extract just the filename
+      const fileName = imageUrl.split('/uploads/')[1];
+  
+      // Remove from server (adjust path as needed)
+      const fs = require('fs');
+      fs.unlink(`uploads/${fileName}`, (err) => {
+        if (err) return res.status(500).json({ message: 'Failed to delete image' });
+        return res.json({ message: 'Image deleted' });
+      });
+  
+    } catch (error) {
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
+  
 module.exports = router;
