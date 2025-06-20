@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const productController = require('../controllers/productController'); // Assuming productController.js exists
+const productController = require('../controllers/productController');
 
 // =========================
 // 🛍 Product Routes
@@ -21,7 +21,7 @@ router.put('/:id', productController.productUploadMiddleware, productController.
 router.delete('/:id', productController.deleteProduct);
 
 // Get a single product by ID
-router.get('/:id', productController.getProductById); // Added missing route for get by ID
+router.get('/:id', productController.getProductById);
 
 // =========================
 // 📸 Promo Image Routes
@@ -35,6 +35,6 @@ router.post('/promo', productController.upload.array('images', 5), productContro
 router.get('/promo', productController.getProductImagesOnly);
 
 // Delete a promotional image by ID (new route and controller logic)
-router.delete('/promo/:id', productController.deletePromoImage); // Assuming 'id' refers to PromoImage _id
+router.delete('/promo/:id', productController.deletePromoImage);
 
 module.exports = router;

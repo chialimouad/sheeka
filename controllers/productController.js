@@ -1,5 +1,5 @@
 const Product = require('../models/Product');
-const PromoImage = require('../models/imagespromo');
+const PromoImage = require('../models/imagespromo'); // Assuming this is for separate promo images, not product images within product model
 
 const multer = require('multer');
 const path = require('path');
