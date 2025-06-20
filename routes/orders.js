@@ -221,7 +221,7 @@ router.delete('/:orderId', async (req, res) => {
 
     const order = await Order.findById(orderId);
     if (!order) {
-      return res.status(404).json({ message: 'Order not found.' });
+      return res.status(404).json({ message: 'Order no found.' });
     }
 
     // Restore product quantities before deleting the order
