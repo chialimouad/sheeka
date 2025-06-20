@@ -103,6 +103,69 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ✅ Get order counts by status with optional date filtering
+router.get('/counts', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query; // Query parameters for date filtering
+    let query = {};
+
+    // Apply date filtering if startDate or endDate are provided
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        // To include the entire end day, set the time to the very end of the day
+        const endOfDay = new Date(endDate);
+        endOfDay.setUTCHours(23, 59, 59, 999); // Set to 23:59:59.999 UTC
+        query.createdAt.$lte = endOfDay;
+      }
+    }
+
+    // Fetch orders based on the constructed query
+    const orders = await Order.find(query);
+
+    // Initialize counters
+    let pendingCount = 0;
+    let confirmedCount = 0;
+    let cancelledCount = 0;
+    let tentativeCount = 0;
+    let allCount = 0;
+
+    // Iterate through fetched orders to count by status
+    orders.forEach(order => {
+      allCount++; // Increment total count
+      switch (order.status) {
+        case 'pending':
+          pendingCount++;
+          break;
+        case 'confirmed':
+          confirmedCount++;
+          break;
+        case 'cancelled':
+          cancelledCount++;
+          break;
+        case 'tentative':
+          tentativeCount++;
+          break;
+      }
+    });
+
+    // Send the counts in the response
+    res.status(200).json({
+      all: allCount,
+      pending: pendingCount,
+      confirmed: confirmedCount,
+      cancelled: cancelledCount,
+      tentative: tentativeCount,
+    });
+  } catch (error) {
+    console.error('Error fetching order counts:', error);
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
+});
+
 
 // ✅ Get one order by ID
 router.get('/:orderId', async (req, res) => {
