@@ -1,45 +1,30 @@
 const Product = require('../models/Product');
 const PromoImage = require('../models/imagespromo');
+
 const multer = require('multer');
 const path = require('path');
 
-// ✅ Multer Storage + Video/Image Filter
+// ✅ Configure Multer for Local Storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Save files to uploads folder
+    cb(null, 'uploads/'); // Save to uploads/ directory
   },
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   }
 });
+const upload = multer({ storage });
 
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = [
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-    'video/mp4',
-    'video/quicktime',
-    'video/x-matroska',
-    'video/x-msvideo'
-  ];
-  if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only images and videos are allowed.'), false);
-  }
-};
 
-const upload = multer({ storage, fileFilter });
-module.exports.upload = upload;
-
-// ✅ GET: Only Promo Images
 exports.getProductImagesOnly = async (req, res) => {
   try {
-    const products = await PromoImage.find({}, 'images');
+    const products = await PromoImage.find({}, 'images'); // Get only the `images` field
+
+    // Flatten the image arrays and build full URLs
     const allImages = products.flatMap(product =>
       product.images.map(img => `https://sheeka.onrender.com${img}`)
     );
+
     res.json(allImages);
   } catch (error) {
     console.error('❌ Error fetching product images:', error);
@@ -47,39 +32,53 @@ exports.getProductImagesOnly = async (req, res) => {
   }
 };
 
-// ✅ POST: Upload Promo Images (images only)
+
 exports.uploadPromoImages = async (req, res) => {
   try {
+
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No images uploaded' });
     }
+    // Handle the images
+    const images = req.files.map(file => `/uploads/${file.filename}`); // ✅ Store correct file path
 
-    const images = req.files.map(file => `/uploads/${file.filename}`);
-
-    const newPromo = new PromoImage({
-      images
+    const newProduct = new PromoImage({
+      images,
     });
 
-    await newPromo.save();
-    res.status(201).json(newPromo);
+    // Save the product to the database
+    await newProduct.save();
+
+    // Return the newly created product
+    res.status(201).json(newProduct);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// ✅ POST: Add Product with Images & Videos
+
+
+
+
+
+
+
+// ✅ Add Product (POST /products)
 exports.addProduct = async (req, res) => {
   try {
     const { name, description, quantity, price, variants } = req.body;
 
+    // Validate required fields
     if (!name || !description || !quantity || !price) {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
+    // Validate that variants are in the correct format
     let parsedVariants = [];
     if (variants) {
       try {
         parsedVariants = JSON.parse(variants);
+        // Optionally validate the structure of the variants
         if (!Array.isArray(parsedVariants)) {
           return res.status(400).json({ error: 'Variants should be an array' });
         }
@@ -88,89 +87,91 @@ exports.addProduct = async (req, res) => {
       }
     }
 
-    const images = [];
-    const videos = [];
+    // Handle the images
+    const images = req.files.map(file => `/uploads/${file.filename}`); // ✅ Store correct file path
 
-    req.files.forEach(file => {
-      const filePath = `/uploads/${file.filename}`;
-      if (file.mimetype.startsWith('video')) {
-        videos.push(filePath);
-      } else {
-        images.push(filePath);
-      }
-    });
-
+    // Create a new product object
     const newProduct = new Product({
       name,
       description,
       quantity,
       price,
       images,
-      videos,
-      variants: parsedVariants
+      variants: parsedVariants, // Store the variants data
     });
 
+    // Save the product to the database
     await newProduct.save();
+
+    // Return the newly created product
     res.status(201).json(newProduct);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// ✅ GET: All Products
+
+// ✅ Get All Products (GET /products)
 exports.getProducts = async (req, res) => {
   try {
-    const products = await Product.find().sort({ createdAt: -1 });
+    const products = await Product.find().sort({ createdAt: -1 }); // ✅ Sort by newest first
     const updatedProducts = products.map(product => ({
       ...product._doc,
-      images: product.images.map(img => `https://sheeka.onrender.com${img}`),
-      videos: product.videos?.map(vid => `https://sheeka.onrender.com${vid}`) || []
+      images: product.images.map(img => `https://sheeka.onrender.com${img}`), // ✅ Full Image URL for Flutter
     }));
+
     res.json(updatedProducts);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching products' });
   }
 };
 
-// ✅ GET: Product by ID
-exports.getProductById = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-
-    res.json({
-      ...product._doc,
-      images: product.images.map(img => `https://sheeka.onrender.com${img}`),
-      videos: product.videos?.map(vid => `https://sheeka.onrender.com${vid}`) || []
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// ✅ PUT: Update Product
+// ✅ Update Product (PUT /products/:id)
 exports.updateProduct = async (req, res) => {
   try {
     const { name, description, quantity, price } = req.body;
     const updatedFields = { name, description, quantity, price };
 
     const product = await Product.findByIdAndUpdate(req.params.id, updatedFields, { new: true });
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
 
     res.json({ message: 'Product updated successfully', product });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+// ✅ Get Product by ID (GET /products/:id)
+exports.getProductById = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
 
-// ✅ DELETE: Delete Product
+    res.json({
+      ...product._doc,
+      images: product.images.map(img => `https://sheeka.onrender.com${img}`), // ✅ Full Image URL for Flutter
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ✅ Delete Product (DELETE /products/:id)
 exports.deleteProduct = async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
 
     res.json({ message: 'Product deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+
+module.exports.upload = upload;
