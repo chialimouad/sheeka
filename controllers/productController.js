@@ -6,13 +6,12 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs'); // Node.js file system module for deleting old files
 
-// --- Multer Configuration ---
+// --- Multer Configuration for Local Disk Storage ---
 const storage = multer.diskStorage({
     // Destination for storing uploaded files
     destination: (req, file, cb) => {
-        // Define the upload directory
         const uploadDir = 'uploads/';
-        // Create 'uploads' directory if it doesn't exist
+        // Ensure the upload directory exists
         if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
         }
@@ -25,10 +24,11 @@ const storage = multer.diskStorage({
     }
 });
 
-// Initialize Multer upload instance
+// Initialize Multer upload instance for local disk storage
+// This instance will be used for both product media and promo images.
 const upload = multer({
     storage: storage,
-    // File filter to accept only image and video files
+    // File filter to accept only image and video files for general uploads
     fileFilter: (req, file, cb) => {
         if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
             cb(null, true); // Accept file
@@ -55,11 +55,10 @@ exports.getProductImagesOnly = async (req, res) => {
         // Find all promo image documents and select only the 'images' field
         const promoImages = await PromoImage.find({}, 'images');
 
-        // Flatten the array of image arrays into a single array of image URLs
-        // and construct full URLs for client consumption (e.g., Flutter app)
+        // Flatten the image arrays and build full URLs
         const allImages = promoImages.flatMap(promo =>
             promo.images.map(img => {
-                // IMPORTANT: Use environment variable for the base URL in a production environment
+                // IMPORTANT: In a production environment, use an environment variable for the base URL
                 // e.g., `${process.env.BASE_URL}${img}`
                 return `https://sheeka.onrender.com${img}`;
             })
@@ -89,7 +88,7 @@ exports.uploadPromoImages = async (req, res) => {
         const images = req.files.map(file => `/uploads/${file.filename}`);
 
         // Create a new PromoImage document
-        const newPromoImage = new PromoImage({
+        const newPromoImage = new PromoImage({ // Changed variable name from newProduct to newPromoImage for clarity
             images,
         });
 
@@ -105,7 +104,7 @@ exports.uploadPromoImages = async (req, res) => {
 };
 
 /**
- * @desc Delete a promotional image by ID and its associated files
+ * @desc Delete a promotional image by ID and its associated files from local disk
  * @route DELETE /api/products/promo/:id
  * @access Private (admin)
  */
@@ -121,7 +120,7 @@ exports.deletePromoImage = async (req, res) => {
 
         // Delete associated files from disk
         promoImage.images.forEach(imagePath => {
-            // Construct the absolute file path
+            // Construct the absolute file path, assuming 'uploads/' is relative to the project root
             const filePath = path.join(__dirname, '..', imagePath);
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath); // Synchronously delete the file
@@ -177,7 +176,8 @@ exports.addProduct = async (req, res) => {
         const images = [];
         const videos = [];
 
-        // req.files will be an object with keys for each field name defined in `upload.fields`
+        // ✅ FIX: req.files is an object when using upload.fields, not an array.
+        // Access files by their field names ('images', 'videos').
         if (req.files) {
             if (req.files['images']) {
                 req.files['images'].forEach(file => {
@@ -229,12 +229,12 @@ exports.getProducts = async (req, res) => {
             ...product._doc, // Spread the original document fields
             // Construct full URLs for images, handling cases where images array might be empty
             images: product.images ? product.images.map(img => {
-                // IMPORTANT: Use environment variable for the base URL in a production environment
+                // IMPORTANT: In a production environment, use an environment variable for the base URL
                 return `https://sheeka.onrender.com${img}`;
             }) : [],
             // Construct full URLs for videos, handling cases where videos array might be empty
             videos: product.videos ? product.videos.map(vid => {
-                // IMPORTANT: Use environment variable for the base URL in a production environment
+                // IMPORTANT: In a production environment, use an environment variable for the base URL
                 return `https://sheeka.onrender.com${vid}`;
             }) : [],
         }));
@@ -284,15 +284,17 @@ exports.updateProduct = async (req, res) => {
         }
 
         // Handle file uploads (images and videos)
-        // If new files are uploaded, they will replace existing ones on the server.
+        // If new files are uploaded, they will replace existing ones.
         if (req.files) {
             if (req.files['images'] && req.files['images'].length > 0) {
                 // Delete old image files from disk if they exist
                 product.images.forEach(oldImagePath => {
-                    const filePath = path.join(__dirname, '..', oldImagePath);
+                    const filePath = path.join(__dirname, '..', oldImagePath); // Adjust path as per your server structure
                     if (fs.existsSync(filePath)) {
                         fs.unlinkSync(filePath);
                         console.log(`Deleted old image file: ${filePath}`);
+                    } else {
+                        console.warn(`File not found for deletion: ${filePath}`);
                     }
                 });
                 // Assign new image paths
@@ -301,10 +303,12 @@ exports.updateProduct = async (req, res) => {
             if (req.files['videos'] && req.files['videos'].length > 0) {
                 // Delete old video files from disk if they exist
                 product.videos.forEach(oldVideoPath => {
-                    const filePath = path.join(__dirname, '..', oldVideoPath);
+                    const filePath = path.join(__dirname, '..', oldVideoPath); // Adjust path as per your server structure
                     if (fs.existsSync(filePath)) {
                         fs.unlinkSync(filePath);
                         console.log(`Deleted old video file: ${filePath}`);
+                    } else {
+                        console.warn(`File not found for deletion: ${filePath}`);
                     }
                 });
                 // Assign new video paths
@@ -312,20 +316,14 @@ exports.updateProduct = async (req, res) => {
             }
         }
 
-        // Save the updated product to the database
+        // Save the updated product
         await product.save();
 
-        // Return the updated product with absolute URLs for images and videos
+        // Return the updated product with absolute URLs
         const updatedProductResponse = {
             ...product._doc,
-            images: product.images ? product.images.map(img => {
-                // IMPORTANT: Use environment variable for the base URL in a production environment
-                return `https://sheeka.onrender.com${img}`;
-            }) : [],
-            videos: product.videos ? product.videos.map(vid => {
-                // IMPORTANT: Use environment variable for the base URL in a production environment
-                return `https://sheeka.onrender.com${vid}`;
-            }) : [],
+            images: product.images ? product.images.map(img => `https://sheeka.onrender.com${img}`) : [],
+            videos: product.videos ? product.videos.map(vid => `https://sheeka.onrender.com${vid}`) : [],
         };
 
         res.status(200).json({ message: 'Product updated successfully', product: updatedProductResponse });
@@ -345,22 +343,14 @@ exports.getProductById = async (req, res) => {
     try {
         const product = await Product.findById(req.params.id);
         
-        // Check if the product exists
         if (!product) {
             return res.status(404).json({ error: 'Product not found' });
         }
 
-        // Return the product with absolute URLs for images and videos
         res.json({
             ...product._doc,
-            images: product.images ? product.images.map(img => {
-                // IMPORTANT: Use environment variable for the base URL in a production environment
-                return `https://sheeka.onrender.com${img}`;
-            }) : [],
-            videos: product.videos ? product.videos.map(vid => {
-                // IMPORTANT: Use environment variable for the base URL in a production environment
-                return `https://sheeka.onrender.com${vid}`;
-            }) : [],
+            images: product.images ? product.images.map(img => `https://sheeka.onrender.com${img}`) : [], // Full Image URL for Flutter
+            videos: product.videos ? product.videos.map(vid => `https://sheeka.onrender.com${vid}`) : [], // Full Video URL
         });
     } catch (error) {
         console.error('❌ Error fetching single product:', error);
@@ -369,37 +359,36 @@ exports.getProductById = async (req, res) => {
 };
 
 /**
- * @desc Delete a product by ID and its associated images and videos
+ * @desc Delete a product by ID and its associated files
  * @route DELETE /api/products/:id
  * @access Private (admin)
  */
 exports.deleteProduct = async (req, res) => {
     try {
         const product = await Product.findByIdAndDelete(req.params.id);
-        // Check if the product was found and deleted
         if (!product) {
             return res.status(404).json({ error: 'Product not found' });
         }
 
         // Delete associated image files from disk
         product.images.forEach(imagePath => {
-            const filePath = path.join(__dirname, '..', imagePath); // Construct absolute path
+            const filePath = path.join(__dirname, '..', imagePath); // Adjust path as per your server structure
             if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath); // Synchronously delete the file
+                fs.unlinkSync(filePath);
                 console.log(`Deleted product image file: ${filePath}`);
             } else {
-                console.warn(`Product image file not found, could not delete: ${filePath}`);
+                console.warn(`Product image file not found for deletion: ${filePath}`);
             }
         });
 
         // Delete associated video files from disk
         product.videos.forEach(videoPath => {
-            const filePath = path.join(__dirname, '..', videoPath); // Construct absolute path
+            const filePath = path.join(__dirname, '..', videoPath); // Adjust path as per your server structure
             if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath); // Synchronously delete the file
+                fs.unlinkSync(filePath);
                 console.log(`Deleted product video file: ${filePath}`);
             } else {
-                console.warn(`Product video file not found, could not delete: ${filePath}`);
+                console.warn(`Product video file not found for deletion: ${filePath}`);
             }
         });
 
@@ -418,5 +407,5 @@ exports.productUploadMiddleware = upload.fields([
 ]);
 
 // Also export the 'upload' instance itself for use with .array() or .single() in routes,
-// particularly for the /promo endpoint where it's used as upload.array.
-exports.upload = upload; 
+// particularly for the /promo endpoint.
+exports.upload = upload;
