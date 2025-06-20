@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
 const productController = require('../controllers/productController');
 
 // =========================
@@ -19,16 +21,17 @@ router.put('/:id', productController.updateProduct);
 router.delete('/:id', productController.deleteProduct);
 
 // =========================
-// 📸 Promo Image Upload Route
+// 📸 Promo Image Routes
 // =========================
 
 // Upload promotional images (separate from product listing)
 router.post('/promo', productController.upload.array('images', 5), productController.uploadPromoImages);
-// Add this route to serve promo images
-router.get('/promo', productController.getProductImagesOnly);
-// Node.js + Express (example)
 
-router.delete('/products/promo', async (req, res) => {
+// Get all promo image URLs
+router.get('/promo', productController.getProductImagesOnly);
+
+// ✅ Corrected delete promo image route
+router.delete('/promo', async (req, res) => {
   try {
     const imageUrl = req.body.url;
     console.log('Received image URL:', imageUrl);
@@ -52,5 +55,4 @@ router.delete('/products/promo', async (req, res) => {
   }
 });
 
-  
 module.exports = router;
