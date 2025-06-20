@@ -9,8 +9,8 @@ router.post('/', async (req, res) => {
     const { fullName, phoneNumber, wilaya, commune, products, status, notes } = req.body; // Added status and notes
 
     // Ensure all required fields are present
-    if (!fullName || !phoneNumber || !wilaya || !commune || !products.length) {
-      return res.status(400).json({ message: 'All required fields (fullName, phoneNumber, wilaya, commune, products) are missing.' });
+    if (!fullName || !phoneNumber || !wilaya || !commune || !products || products.length === 0) {
+      return res.status(400).json({ message: 'All required fields (fullName, phoneNumber, wilaya, commune, and at least one product) are missing.' });
     }
 
     // Validate phone number format
@@ -168,7 +168,79 @@ router.patch('/:orderId/status', async (req, res) => {
     res.status(200).json({ message: 'Order status and/or notes updated', order: updatedOrder });
   } catch (error) {
     console.error('Error updating order status or notes:', error);
-    res.status(500).json({ message: 'Error updating status or notes', error: error.message });
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
+});
+
+// ✅ Update general order details (excluding products for now)
+router.patch('/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    // Destructure fields that can be updated via this general edit route
+    const { fullName, phoneNumber, wilaya, commune, notes } = req.body;
+
+    const updateFields = {};
+    if (fullName !== undefined) updateFields.fullName = fullName;
+    if (phoneNumber !== undefined) {
+      // Validate phone number format if provided
+      const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
+      if (!phoneRegex.test(phoneNumber)) {
+        return res.status(400).json({ message: 'Invalid Algerian phone number format.' });
+      }
+      updateFields.phoneNumber = phoneNumber;
+    }
+    if (wilaya !== undefined) updateFields.wilaya = wilaya;
+    if (commune !== undefined) updateFields.commune = commune;
+    if (notes !== undefined) updateFields.notes = notes; // Allow notes to be updated via this route too
+
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).json({ message: 'No valid fields provided for update. Available fields: fullName, phoneNumber, wilaya, commune, notes.' });
+    }
+
+    const updatedOrder = await Order.findByIdAndUpdate(
+      orderId,
+      { $set: updateFields }, // Use $set to update specific fields
+      { new: true, runValidators: true } // Return the new document and run schema validators
+    ).populate('products.productId');
+
+    if (!updatedOrder) {
+      return res.status(404).json({ message: 'Order not found.' });
+    }
+
+    res.status(200).json({ message: 'Order updated successfully', order: updatedOrder });
+  } catch (error) {
+    console.error('Error updating order:', error);
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
+});
+
+// ✅ Delete an order
+router.delete('/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found.' });
+    }
+
+    // Restore product quantities before deleting the order
+    for (const item of order.products) {
+      const product = await Product.findById(item.productId);
+      if (product) {
+        product.quantity += item.quantity;
+        await product.save();
+      } else {
+        console.warn(`Product with ID ${item.productId} not found during quantity restoration for order ${orderId}. This product might have been deleted previously.`);
+      }
+    }
+
+    await Order.findByIdAndDelete(orderId);
+
+    res.status(200).json({ message: 'Order deleted successfully.' });
+  } catch (error) {
+    console.error('Error deleting order:', error);
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 });
 
