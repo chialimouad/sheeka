@@ -52,48 +52,40 @@ exports.uploadPromoImages = async (req, res) => {
   }
 };
 
+// in your deletePromoImage controller
 exports.deletePromoImage = async (req, res) => {
   try {
-    const imageUrl = req.body.url;
+    const imageUrl = req.query.url;          // ← pull from the query
     if (!imageUrl) {
       return res.status(400).json({ message: 'Image URL is required' });
     }
 
     const relativePath = new URL(imageUrl).pathname;
-    const fileName = path.basename(relativePath);
-    const filePath = path.join(__dirname, '../uploads', fileName);
-
-    console.log('🧾 Deleting file from disk:', filePath);
+    const fileName     = path.basename(relativePath);
+    const filePath     = path.join(__dirname, '../uploads', fileName);
 
     fs.unlink(filePath, async (err) => {
       if (err) {
-        console.error('❌ Failed to delete file:', err);
+        console.error('Failed to delete file:', err);
         return res.status(500).json({ message: 'Failed to delete image from disk' });
       }
 
-      // ✅ Pull image from all matching promo image arrays
+      // remove from DB
       const dbResult = await PromoImage.updateMany(
         { images: relativePath },
         { $pull: { images: relativePath } }
       );
-
-      // ✅ Optional cleanup: delete any documents that are now empty
+      // cleanup empty docs
       const cleanupResult = await PromoImage.deleteMany({ images: { $size: 0 } });
 
-      console.log('✅ Deleted image from DB:', dbResult);
-      console.log('🧹 Removed empty documents:', cleanupResult);
-
-      return res.status(200).json({
-        message: 'Image deleted successfully',
-        dbResult,
-        cleanupResult
-      });
+      return res.json({ message: 'Image deleted', dbResult, cleanupResult });
     });
-  } catch (error) {
-    console.error('❌ Server error during deletion:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
 
 
 // =========================
