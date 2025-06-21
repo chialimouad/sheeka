@@ -15,7 +15,14 @@ exports.registerClient = async (req, res) => {
       return res.status(400).json({ error: 'Email already in use' });
     }
 
-    const newClient = new Client({ name, email, phoneNumber, password });
+    const newClient = new Client({
+      name,
+      email,
+      phoneNumber,
+      password, // ⚠️ stored as plain text
+      role: 'client', // default role
+    });
+
     await newClient.save();
 
     res.status(201).json({ message: 'Client registered successfully' });
@@ -34,9 +41,24 @@ exports.loginClient = async (req, res) => {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ clientId: client._id }, 'usersecret', { expiresIn: '7d' });
+    const token = jwt.sign(
+      { clientId: client._id, role: client.role },
+      'usersecret',
+      { expiresIn: '7d' }
+    );
 
-    res.json({ message: 'Login successful', token, client });
+    const clientInfo = {
+      _id: client._id,
+      name: client.name,
+      email: client.email,
+      role: client.role,
+    };
+
+    res.json({
+      message: 'Login successful',
+      token,
+      client: clientInfo,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
