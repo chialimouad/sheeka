@@ -63,19 +63,38 @@ exports.deletePromoImage = async (req, res) => {
     const fileName = path.basename(relativePath);
     const filePath = path.join(__dirname, '../uploads', fileName);
 
+    console.log('🧾 Deleting file from disk:', filePath);
+
     fs.unlink(filePath, async (err) => {
       if (err) {
-        console.error('❌ File deletion failed:', err);
+        console.error('❌ Failed to delete file:', err);
         return res.status(500).json({ message: 'Failed to delete image from disk' });
       }
 
-      const dbResult = await PromoImage.updateMany({}, { $pull: { images: relativePath } });
-      res.json({ message: 'Image deleted', dbResult });
+      // ✅ Pull image from all matching promo image arrays
+      const dbResult = await PromoImage.updateMany(
+        { images: relativePath },
+        { $pull: { images: relativePath } }
+      );
+
+      // ✅ Optional cleanup: delete any documents that are now empty
+      const cleanupResult = await PromoImage.deleteMany({ images: { $size: 0 } });
+
+      console.log('✅ Deleted image from DB:', dbResult);
+      console.log('🧹 Removed empty documents:', cleanupResult);
+
+      return res.status(200).json({
+        message: 'Image deleted successfully',
+        dbResult,
+        cleanupResult
+      });
     });
   } catch (error) {
+    console.error('❌ Server error during deletion:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 // =========================
 // 🏢 Product Handlers
