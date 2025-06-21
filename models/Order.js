@@ -42,6 +42,11 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'confirmed', 'cancelled', 'tentative'], // Allowed values for status
     default: 'pending' // Default status when an order is created
   },
+  confirmedBy: { // New field to store the ID of the client who confirmed the order
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Client', // References the 'Client' model (your agent)
+    required: false // This field is optional, as an order starts as 'pending'
+  },
   createdAt: {
     type: Date,
     default: Date.now
