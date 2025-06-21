@@ -55,7 +55,7 @@ exports.uploadPromoImages = async (req, res) => {
 // in your deletePromoImage controller
 exports.deletePromoImage = async (req, res) => {
   try {
-    const imageUrl = req.query.url; // ✅ Get from query
+    const imageUrl = req.query.url;
     if (!imageUrl) {
       return res.status(400).json({ message: 'Image URL is required' });
     }
@@ -64,16 +64,20 @@ exports.deletePromoImage = async (req, res) => {
     const fileName = path.basename(relativePath);
     const filePath = path.join(__dirname, '../uploads', fileName);
 
+    console.log('🧩 Attempting to delete:', filePath);
+
+    if (!fs.existsSync(filePath)) {
+      console.error('🚫 File not found:', filePath);
+      return res.status(404).json({ message: 'File does not exist on disk' });
+    }
+
     fs.unlink(filePath, async (err) => {
       if (err) {
         console.error('❌ File deletion failed:', err);
         return res.status(500).json({ message: 'Failed to delete image from disk' });
       }
 
-      // ✅ Remove from MongoDB
       const dbResult = await PromoImage.updateMany({}, { $pull: { images: relativePath } });
-
-      // ✅ Cleanup empty promo docs
       await PromoImage.deleteMany({ images: { $size: 0 } });
 
       res.json({ message: '✅ Image deleted', dbResult });
@@ -83,6 +87,7 @@ exports.deletePromoImage = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 
