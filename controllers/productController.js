@@ -60,12 +60,22 @@ exports.deletePromoImage = async (req, res) => {
       return res.status(400).json({ message: 'Image URL is required' });
     }
 
-    const relativePath = new URL(imageUrl).pathname;
-    const filePath = path.join(__dirname, '..', relativePath); // <-- FIXED
+    // Extract the relative path from full URL or path
+    let relativePath;
+    try {
+      const parsed = new URL(imageUrl);
+      relativePath = parsed.pathname; // e.g., /uploads/image.png
+    } catch {
+      relativePath = imageUrl; // already relative
+    }
+
+    const fileName = path.basename(relativePath);
+    const filePath = path.join(__dirname, '../uploads', fileName);
 
     console.log('🧩 Attempting to delete:', filePath);
 
     if (!fs.existsSync(filePath)) {
+      console.error('🚫 File not found:', filePath);
       return res.status(404).json({ message: 'File does not exist on disk' });
     }
 
@@ -75,7 +85,12 @@ exports.deletePromoImage = async (req, res) => {
         return res.status(500).json({ message: 'Failed to delete image from disk' });
       }
 
-      const dbResult = await PromoImage.updateMany({}, { $pull: { images: relativePath } });
+      const dbResult = await PromoImage.updateMany(
+        {},
+        { $pull: { images: relativePath } }
+      );
+
+      // Remove empty documents
       await PromoImage.deleteMany({ images: { $size: 0 } });
 
       res.json({ message: '✅ Image deleted', dbResult });
@@ -85,6 +100,7 @@ exports.deletePromoImage = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 
