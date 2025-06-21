@@ -17,5 +17,12 @@ router.get('/', productController.getProducts);
 router.get('/:id', productController.getProductById);
 router.put('/:id', productController.updateProduct);
 router.delete('/:id', productController.deleteProduct);
+   
 
+
+
+router.post('/collections', productController.addCollection);
+router.get('/collections', productController.getCollections);
+router.put('/collections/:id', productController.updateCollection);
+router.delete('/collections/:id', productController.deleteCollection);
 module.exports = router;
