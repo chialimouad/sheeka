@@ -52,7 +52,6 @@ exports.uploadPromoImages = async (req, res) => {
   }
 };
 
-// in your deletePromoImage controller
 exports.deletePromoImage = async (req, res) => {
   try {
     const imageUrl = req.query.url;
@@ -60,39 +59,34 @@ exports.deletePromoImage = async (req, res) => {
       return res.status(400).json({ message: 'Image URL is required' });
     }
 
-    // Extract the relative path from full URL or path
-    let relativePath;
-    try {
-      const parsed = new URL(imageUrl);
-      relativePath = parsed.pathname; // e.g., /uploads/image.png
-    } catch {
-      relativePath = imageUrl; // already relative
-    }
+    // Step 1: Get relative path
+    const relativePath = new URL(imageUrl).pathname; // e.g. /uploads/123-file.png
 
-    const fileName = path.basename(relativePath);
-    const filePath = path.join(__dirname, '../uploads', fileName);
+    // Step 2: Build correct absolute path
+    const filePath = path.join(__dirname, '..', relativePath); // safe relativePath
 
-    console.log('🧩 Attempting to delete:', filePath);
+    console.log('🧩 Trying to delete:', filePath);
 
+    // Step 3: Check existence
     if (!fs.existsSync(filePath)) {
       console.error('🚫 File not found:', filePath);
       return res.status(404).json({ message: 'File does not exist on disk' });
     }
 
+    // Step 4: Delete file from disk
     fs.unlink(filePath, async (err) => {
       if (err) {
-        console.error('❌ File deletion failed:', err);
+        console.error('❌ File deletion error:', err);
         return res.status(500).json({ message: 'Failed to delete image from disk' });
       }
 
-      const dbResult = await PromoImage.updateMany(
-        {},
-        { $pull: { images: relativePath } }
-      );
+      // Step 5: Remove from DB
+      const dbResult = await PromoImage.updateMany({}, { $pull: { images: relativePath } });
 
-      // Remove empty documents
+      // Step 6: Remove empty promo documents
       await PromoImage.deleteMany({ images: { $size: 0 } });
 
+      console.log('✅ File and DB entry deleted');
       res.json({ message: '✅ Image deleted', dbResult });
     });
   } catch (error) {
