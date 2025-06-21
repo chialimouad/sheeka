@@ -55,36 +55,35 @@ exports.uploadPromoImages = async (req, res) => {
 // in your deletePromoImage controller
 exports.deletePromoImage = async (req, res) => {
   try {
-    const imageUrl = req.query.url;          // ← pull from the query
+    const imageUrl = req.query.url; // ✅ Get from query
     if (!imageUrl) {
       return res.status(400).json({ message: 'Image URL is required' });
     }
 
     const relativePath = new URL(imageUrl).pathname;
-    const fileName     = path.basename(relativePath);
-    const filePath     = path.join(__dirname, '../uploads', fileName);
+    const fileName = path.basename(relativePath);
+    const filePath = path.join(__dirname, '../uploads', fileName);
 
     fs.unlink(filePath, async (err) => {
       if (err) {
-        console.error('Failed to delete file:', err);
+        console.error('❌ File deletion failed:', err);
         return res.status(500).json({ message: 'Failed to delete image from disk' });
       }
 
-      // remove from DB
-      const dbResult = await PromoImage.updateMany(
-        { images: relativePath },
-        { $pull: { images: relativePath } }
-      );
-      // cleanup empty docs
-      const cleanupResult = await PromoImage.deleteMany({ images: { $size: 0 } });
+      // ✅ Remove from MongoDB
+      const dbResult = await PromoImage.updateMany({}, { $pull: { images: relativePath } });
 
-      return res.json({ message: 'Image deleted', dbResult, cleanupResult });
+      // ✅ Cleanup empty promo docs
+      await PromoImage.deleteMany({ images: { $size: 0 } });
+
+      res.json({ message: '✅ Image deleted', dbResult });
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+  } catch (error) {
+    console.error('❌ Server error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 
