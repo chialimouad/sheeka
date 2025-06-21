@@ -61,13 +61,11 @@ exports.deletePromoImage = async (req, res) => {
     }
 
     const relativePath = new URL(imageUrl).pathname;
-    const fileName = path.basename(relativePath);
-    const filePath = path.join(__dirname, '../uploads', fileName);
+    const filePath = path.join(__dirname, '..', relativePath); // <-- FIXED
 
     console.log('🧩 Attempting to delete:', filePath);
 
     if (!fs.existsSync(filePath)) {
-      console.error('🚫 File not found:', filePath);
       return res.status(404).json({ message: 'File does not exist on disk' });
     }
 
@@ -87,6 +85,7 @@ exports.deletePromoImage = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 
 
