@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
 const Product = require('../models/Product');
-const Client = require('../models/Client'); // Assuming Client model is needed for populating confirmedBy
+const User = require('../models/User'); // Changed from Client to User
 
 // Middleware to protect routes and extract client ID (mocked for this example)
 // In a real application, you would use a proper JWT verification middleware
@@ -79,6 +79,7 @@ router.post('/', async (req, res) => {
       products,
       status: status || 'pending', // Use provided status or default to 'pending'
       notes: notes || '' // Use provided notes or default to empty string
+      // assignedTo and confirmedBy are not set on creation, they are updated later
     });
     await newOrder.save();
 
@@ -94,8 +95,11 @@ router.post('/', async (req, res) => {
 // ✅ Get all orders
 router.get('/', async (req, res) => {
   try {
-    // Populate both products.productId and confirmedBy fields
-    const orders = await Order.find().populate('products.productId').populate('confirmedBy', 'name email');
+    // Populate products.productId, confirmedBy, and assignedTo fields
+    const orders = await Order.find()
+      .populate('products.productId')
+      .populate('confirmedBy', 'name email') // Now references 'User'
+      .populate('assignedTo', 'name email'); // Now references 'User'
 
     if (!orders || orders.length === 0) {
       return res.status(404).json({ message: 'No orders found' });
@@ -126,6 +130,12 @@ router.get('/', async (req, res) => {
           _id: order.confirmedBy._id,
           name: order.confirmedBy.name,
           email: order.confirmedBy.email
+        } : null,
+        // Include assignedTo details if populated
+        assignedTo: order.assignedTo ? {
+          _id: order.assignedTo._id,
+          name: order.assignedTo.name,
+          email: order.assignedTo.email
         } : null
       };
     });
@@ -141,8 +151,12 @@ router.get('/', async (req, res) => {
 // ✅ Get one order by ID
 router.get('/:orderId', async (req, res) => {
   try {
-    // Populate both products.productId and confirmedBy fields
-    const order = await Order.findById(req.params.orderId).populate('products.productId').populate('confirmedBy', 'name email');
+    // Populate products.productId, confirmedBy, and assignedTo fields
+    const order = await Order.findById(req.params.orderId)
+      .populate('products.productId')
+      .populate('confirmedBy', 'name email') // Now references 'User'
+      .populate('assignedTo', 'name email'); // Now references 'User'
+
     if (!order) return res.status(404).json({ message: `Order with ID ${req.params.orderId} not found.` });
 
     const formattedOrder = {
@@ -161,6 +175,12 @@ router.get('/:orderId', async (req, res) => {
         _id: order.confirmedBy._id,
         name: order.confirmedBy.name,
         email: order.confirmedBy.email
+      } : null,
+      // Include assignedTo details if populated
+      assignedTo: order.assignedTo ? {
+        _id: order.assignedTo._id,
+        name: order.assignedTo.name,
+        email: order.assignedTo.email
       } : null
     };
 
@@ -191,7 +211,7 @@ router.patch('/:orderId/status', async (req, res) => {
         // If status is confirmed, set confirmedBy to the authenticated client's ID
         // This assumes req.client.clientId is set by an authentication middleware
         if (req.client && req.client.clientId) {
-          updateFields.confirmedBy = req.client.clientId;
+          updateFields.confirmedBy = req.client.clientId; // Client ID from auth (now references User ID)
         } else {
           // You might want to enforce authentication here if confirmedBy is critical
           console.warn('Attempted to confirm order without authenticated client ID. confirmedBy will not be set.');
@@ -215,7 +235,9 @@ router.patch('/:orderId/status', async (req, res) => {
       orderId,
       { $set: updateFields },
       { new: true, runValidators: true }
-    ).populate('products.productId').populate('confirmedBy', 'name email'); // Populate confirmedBy for response
+    ).populate('products.productId')
+     .populate('confirmedBy', 'name email') // Now references 'User'
+     .populate('assignedTo', 'name email'); // Now references 'User'
 
     if (!updatedOrder) {
       return res.status(404).json({ message: 'Order not found.' });
@@ -232,7 +254,8 @@ router.patch('/:orderId/status', async (req, res) => {
 router.patch('/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { fullName, phoneNumber, wilaya, commune, notes } = req.body;
+    // Destructure fields that can be updated via this general edit route, including assignedTo
+    const { fullName, phoneNumber, wilaya, commune, notes, assignedTo } = req.body;
 
     const updateFields = {};
     if (fullName !== undefined) updateFields.fullName = fullName;
@@ -245,17 +268,33 @@ router.patch('/:orderId', async (req, res) => {
     }
     if (wilaya !== undefined) updateFields.wilaya = wilaya;
     if (commune !== undefined) updateFields.commune = commune;
-    if (notes !== undefined) updateFields.notes = notes; // Allow notes to be updated via this route too
+    if (notes !== undefined) updateFields.notes = notes;
+    // Handle assignedTo field
+    if (assignedTo !== undefined) {
+      // If assignedTo is null/empty string, it means unassign
+      if (assignedTo === null || assignedTo === '') {
+        updateFields.assignedTo = null;
+      } else {
+        // Validate if the provided ID is a valid User ID
+        const user = await User.findById(assignedTo); // Changed from Client.findById to User.findById
+        if (!user) {
+          return res.status(400).json({ message: `Assigned user with ID ${assignedTo} not found.` });
+        }
+        updateFields.assignedTo = assignedTo;
+      }
+    }
 
     if (Object.keys(updateFields).length === 0) {
-      return res.status(400).json({ message: 'No valid fields provided for update. Available fields: fullName, phoneNumber, wilaya, commune, notes.' });
+      return res.status(400).json({ message: 'No valid fields provided for update. Available fields: fullName, phoneNumber, wilaya, commune, notes, assignedTo.' });
     }
 
     const updatedOrder = await Order.findByIdAndUpdate(
       orderId,
       { $set: updateFields },
       { new: true, runValidators: true }
-    ).populate('products.productId').populate('confirmedBy', 'name email'); // Populate confirmedBy for response
+    ).populate('products.productId')
+     .populate('confirmedBy', 'name email') // Now references 'User'
+     .populate('assignedTo', 'name email'); // Now references 'User'
 
     if (!updatedOrder) {
       return res.status(404).json({ message: 'Order not found.' });

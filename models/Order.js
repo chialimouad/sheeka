@@ -42,10 +42,19 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'confirmed', 'cancelled', 'tentative'], // Allowed values for status
     default: 'pending' // Default status when an order is created
   },
-  confirmedBy: { // New field to store the ID of the client who confirmed the order
+  confirmedBy: { // Field for the agent who confirmed the order
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Client', // References the 'Client' model (your agent)
-    required: false // This field is optional, as an order starts as 'pending'
+    ref: 'User', // Changed from 'Client' to 'User'
+    required: false
+  },
+  assignedTo: { // Field for the agent assigned to handle the order
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User', // Changed from 'Client' to 'User'
+    required: false // Optional, as an order might not be assigned initially
+  },
+  notes: { // Field for order notes
+    type: String,
+    default: ''
   },
   createdAt: {
     type: Date,
