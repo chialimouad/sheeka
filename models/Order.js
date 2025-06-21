@@ -18,41 +18,43 @@ const orderSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  products: [{
-    productId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Product',
-      required: true
-    },
-    quantity: {
-      type: Number,
-      required: true
-    },
-    color: {
-      type: String,
-      required: true
-    },
-    size: {
-      type: String,
-      required: true
+  products: [
+    {
+      productId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Product',
+        required: true
+      },
+      quantity: {
+        type: Number,
+        required: true
+      },
+      color: {
+        type: String,
+        required: true
+      },
+      size: {
+        type: String,
+        required: true
+      }
     }
-  }],
-  status: { // Added status field
+  ],
+  status: {
     type: String,
-    enum: ['pending', 'confirmed', 'cancelled', 'tentative'], // Allowed values for status
-    default: 'pending' // Default status when an order is created
+    enum: ['pending', 'confirmed', 'cancelled', 'tentative'],
+    default: 'pending'
   },
-  confirmedBy: { // Field for the agent who confirmed the order
+  confirmedBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Changed from 'Client' to 'User'
-    required: false
+    ref: 'User',
+    default: null
   },
-  assignedTo: { // Field for the agent assigned to handle the order
+  assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Changed from 'Client' to 'User'
-    required: false // Optional, as an order might not be assigned initially
+    ref: 'User',
+    default: null
   },
-  notes: { // Field for order notes
+  notes: {
     type: String,
     default: ''
   },
@@ -64,4 +66,4 @@ const orderSchema = new mongoose.Schema({
 
 const Order = mongoose.model('Order', orderSchema);
 
-module.exports = Order;
+module.exports = Order; // Export the updated Order model

@@ -1,182 +1,139 @@
+// Required Modules
 const express = require('express');
+const jwt = require('jsonwebtoken');
+const dotenv = require('dotenv');
+dotenv.config();
+
 const router = express.Router();
 const Order = require('../models/Order');
 const Product = require('../models/Product');
-const User = require('../models/User'); // Changed from Client to User
+const User = require('../models/User');
 
-// Middleware to protect routes and extract client ID (mocked for this example)
-// In a real application, you would use a proper JWT verification middleware
+// Middleware to extract client ID from JWT token
 const authenticateClient = (req, res, next) => {
-  // For demonstration, let's assume a client ID is sent in headers for confirmation
-  // In a real app, this would come from a verified JWT token:
-  // const token = req.headers.authorization.split(' ')[1];
-  // const decodedToken = jwt.verify(token, 'usersecret');
-  // req.client = { clientId: decodedToken.clientId };
-
-  // For testing purposes, you can manually set a client ID for an agent
-  // Example: req.client = { clientId: 'YOUR_AGENT_CLIENT_ID_HERE' };
-  // Or, if using the provided login, the client ID would be available after authentication
-  // For this example, we'll assume req.user is populated by some auth middleware
-  // Let's create a placeholder for client ID from authentication
-  if (req.headers['x-client-id']) { // A simple way to pass client ID for testing
-    req.client = { clientId: req.headers['x-client-id'] };
-    next();
-  } else {
-    // If no client ID is provided, it's an unauthenticated request
-    // For this demo, we'll allow unauthenticated access but 'confirmedBy' won't be set
-    next(); // Proceed, but confirmedBy will not be set for status updates
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mouadsecret');
+      req.client = { clientId: decoded.id };
+    } catch (err) {
+      return res.status(401).json({ message: 'Invalid or expired token' });
+    }
   }
+  next();
 };
 
-// Apply authentication middleware to routes where confirmation agent is relevant
-// router.use(authenticateClient); // Uncomment and implement proper auth for production
-
-// ✅ Create a new order
+// POST: Create a new order
 router.post('/', async (req, res) => {
   try {
     const { fullName, phoneNumber, wilaya, commune, products, status, notes } = req.body;
 
-    // Ensure all required fields are present
     if (!fullName || !phoneNumber || !wilaya || !commune || !products || products.length === 0) {
-      return res.status(400).json({ message: 'All required fields (fullName, phoneNumber, wilaya, commune, and at least one product) are missing.' });
+      return res.status(400).json({ message: 'Missing required fields.' });
     }
 
-    // Validate phone number format
-    const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
+      const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
     if (!phoneRegex.test(phoneNumber)) {
-      return res.status(400).json({ message: 'Invalid Algerian phone number format.' });
+      return res.status(400).json({ message: 'Invalid Algerian phone number.' });
     }
 
-    // Check if all products exist and validate product details
     for (const item of products) {
       const { productId, quantity, color, size } = item;
-
-      // Check if product ID, quantity, color, and size are provided
       if (!productId || !quantity || !color || !size) {
-        return res.status(400).json({ message: 'Product ID, quantity, color, and size are required for each product in the products array.' });
+        return res.status(400).json({ message: 'Each product must include ID, quantity, color, and size.' });
       }
-
       const product = await Product.findById(productId);
-      if (!product) {
-        return res.status(400).json({ message: `Product with ID ${productId} not found.` });
+      if (!product || product.quantity < quantity) {
+        return res.status(400).json({ message: `Insufficient stock for ${product?.name || 'a product'}` });
       }
-
-      if (product.quantity < quantity) {
-        return res.status(400).json({ message: `Not enough stock for product: ${product.name}. Available: ${product.quantity}, Requested: ${quantity}.` });
-      }
-
-      // Reduce the product quantity in stock
       product.quantity -= quantity;
       await product.save();
     }
 
-    // Create and save the new order
     const newOrder = new Order({
       fullName,
       phoneNumber,
       wilaya,
       commune,
       products,
-      status: status || 'pending', // Use provided status or default to 'pending'
-      notes: notes || '' // Use provided notes or default to empty string
-      // assignedTo and confirmedBy are not set on creation, they are updated later
+      status: status || 'pending',
+      notes: notes || ''
     });
     await newOrder.save();
-
-    // Return success message
-    res.status(201).json({ message: 'Order created successfully', order: newOrder });
+    res.status(201).json({ message: 'Order created', order: newOrder });
   } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    console.error('Create order error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
-
-// ✅ Get all orders
+// GET: All orders
 router.get('/', async (req, res) => {
   try {
-    // Populate products.productId, confirmedBy, and assignedTo fields
     const orders = await Order.find()
       .populate('products.productId')
-      .populate('confirmedBy', 'name email') // Now references 'User'
-      .populate('assignedTo', 'name email'); // Now references 'User'
+      .populate('confirmedBy', 'name email')
+      .populate('assignedTo', 'name email');
 
-    if (!orders || orders.length === 0) {
-      return res.status(404).json({ message: 'No orders found' });
-    }
+    if (!orders.length) return res.status(404).json({ message: 'No orders found.' });
 
-    const formattedOrders = orders.map(order => {
-      return {
-        ...order._doc,
-        products: order.products.map(item => {
-          // Check if productId exists before accessing its properties
-          if (item.productId) {
-            return {
-              _id: item.productId._id,
-              name: item.productId.name,
-              price: item.productId.price,
-              images: item.productId.images ? item.productId.images.map(img => `https://sheeka.onrender.com${img}`) : [],
-              quantity: item.quantity,
-              color: item.color,
-              size: item.size
-            };
-          } else {
-            console.warn(`Product ID missing for an item in order ${order._id}`);
-            return {}; // Return an empty object or a placeholder
-          }
-        }),
-        // Include confirmedBy details if populated
-        confirmedBy: order.confirmedBy ? {
-          _id: order.confirmedBy._id,
-          name: order.confirmedBy.name,
-          email: order.confirmedBy.email
-        } : null,
-        // Include assignedTo details if populated
-        assignedTo: order.assignedTo ? {
-          _id: order.assignedTo._id,
-          name: order.assignedTo.name,
-          email: order.assignedTo.email
-        } : null
-      };
-    });
-
-    res.status(200).json(formattedOrders);
-  } catch (error) {
-    console.error('Error fetching orders:', error);
-    res.status(500).json({ message: 'Error fetching orders', error: error.message });
-  }
-});
-
-
-// ✅ Get one order by ID
-router.get('/:orderId', async (req, res) => {
-  try {
-    // Populate products.productId, confirmedBy, and assignedTo fields
-    const order = await Order.findById(req.params.orderId)
-      .populate('products.productId')
-      .populate('confirmedBy', 'name email') // Now references 'User'
-      .populate('assignedTo', 'name email'); // Now references 'User'
-
-    if (!order) return res.status(404).json({ message: `Order with ID ${req.params.orderId} not found.` });
-
-    const formattedOrder = {
+    const formatted = orders.map(order => ({
       ...order._doc,
-      products: order.products.map(item => ({
-        _id: item.productId._id,
-        name: item.productId.name,
-        price: item.productId.price,
-        images: item.productId.images ? item.productId.images.map(img => `https://sheeka.onrender.com${img}`) : [],
-        quantity: item.quantity,
-        color: item.color,
-        size: item.size
-      })),
-      // Include confirmedBy details if populated
+      products: order.products.map(p => p.productId ? {
+        _id: p.productId._id,
+        name: p.productId.name,
+        price: p.productId.price,
+        images: (p.productId.images || []).map(img => `https://sheeka.onrender.com${img}`),
+        quantity: p.quantity,
+        color: p.color,
+        size: p.size
+      } : {}),
       confirmedBy: order.confirmedBy ? {
         _id: order.confirmedBy._id,
         name: order.confirmedBy.name,
         email: order.confirmedBy.email
       } : null,
-      // Include assignedTo details if populated
+      assignedTo: order.assignedTo ? {
+        _id: order.assignedTo._id,
+        name: order.assignedTo.name,
+        email: order.assignedTo.email
+      } : null
+    }));
+
+    res.status(200).json(formatted);
+  } catch (error) {
+    console.error('Fetch orders error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// GET: Single order by ID
+router.get('/:orderId', async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId)
+      .populate('products.productId')
+      .populate('confirmedBy', 'name email')
+      .populate('assignedTo', 'name email');
+
+    if (!order) return res.status(404).json({ message: 'Order not found.' });
+
+    const formatted = {
+      ...order._doc,
+      products: order.products.map(p => ({
+        _id: p.productId._id,
+        name: p.productId.name,
+        price: p.productId.price,
+        images: (p.productId.images || []).map(img => `https://sheeka.onrender.com${img}`),
+        quantity: p.quantity,
+        color: p.color,
+        size: p.size
+      })),
+      confirmedBy: order.confirmedBy ? {
+        _id: order.confirmedBy._id,
+        name: order.confirmedBy.name,
+        email: order.confirmedBy.email
+      } : null,
       assignedTo: order.assignedTo ? {
         _id: order.assignedTo._id,
         name: order.assignedTo.name,
@@ -184,15 +141,15 @@ router.get('/:orderId', async (req, res) => {
       } : null
     };
 
-    res.status(200).json(formattedOrder);
+    res.status(200).json(formatted);
   } catch (error) {
-    console.error('Error fetching single order:', error);
-    res.status(500).json({ message: 'Error fetching order', error: error.message });
+    console.error('Fetch order error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
-// ✅ Update order status and notes (confirmed, cancelled, tentative)
-router.patch('/:orderId/status', async (req, res) => {
+// PATCH: Update order status and notes
+router.patch('/:orderId/status', authenticateClient, async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status, notes } = req.body;
@@ -202,33 +159,24 @@ router.patch('/:orderId/status', async (req, res) => {
     if (status) {
       const allowedStatuses = ['pending', 'confirmed', 'tentative', 'cancelled'];
       if (!allowedStatuses.includes(status)) {
-        return res.status(400).json({ message: 'Invalid status value. Allowed: ' + allowedStatuses.join(', ') + '.' });
+        return res.status(400).json({ message: 'Invalid status. Allowed: ' + allowedStatuses.join(', ') });
       }
       updateFields.status = status;
 
-      // Logic for confirmedBy field based on status
       if (status === 'confirmed') {
-        // If status is confirmed, set confirmedBy to the authenticated client's ID
-        // This assumes req.client.clientId is set by an authentication middleware
-        if (req.client && req.client.clientId) {
-          updateFields.confirmedBy = req.client.clientId; // Client ID from auth (now references User ID)
-        } else {
-          // You might want to enforce authentication here if confirmedBy is critical
-          console.warn('Attempted to confirm order without authenticated client ID. confirmedBy will not be set.');
+        if (!req.client || !req.client.clientId) {
+          return res.status(401).json({ message: 'Unauthorized. Agent must be logged in to confirm order.' });
         }
+        updateFields.confirmedBy = req.client.clientId;
       } else {
-        // If status is not 'confirmed', clear the confirmedBy field
         updateFields.confirmedBy = null;
       }
     }
 
-    // Only update notes if it's explicitly provided in the request body
-    if (notes !== undefined) {
-      updateFields.notes = notes;
-    }
+    if (notes !== undefined) updateFields.notes = notes;
 
-    if (Object.keys(updateFields).length === 0) {
-      return res.status(400).json({ message: 'No valid fields provided for update (status or notes).' });
+    if (!Object.keys(updateFields).length) {
+      return res.status(400).json({ message: 'No fields provided to update.' });
     }
 
     const updatedOrder = await Order.findByIdAndUpdate(
@@ -236,105 +184,90 @@ router.patch('/:orderId/status', async (req, res) => {
       { $set: updateFields },
       { new: true, runValidators: true }
     ).populate('products.productId')
-     .populate('confirmedBy', 'name email') // Now references 'User'
-     .populate('assignedTo', 'name email'); // Now references 'User'
+     .populate('confirmedBy', 'name email')
+     .populate('assignedTo', 'name email');
 
     if (!updatedOrder) {
       return res.status(404).json({ message: 'Order not found.' });
     }
 
-    res.status(200).json({ message: 'Order status and/or notes updated', order: updatedOrder });
+    res.status(200).json({ message: 'Order updated', order: updatedOrder });
   } catch (error) {
-    console.error('Error updating order status or notes:', error);
-    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    console.error('Error updating order status:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
-// ✅ Update general order details (excluding products for now)
+// PATCH: General order update
 router.patch('/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
-    // Destructure fields that can be updated via this general edit route, including assignedTo
     const { fullName, phoneNumber, wilaya, commune, notes, assignedTo } = req.body;
-
     const updateFields = {};
+
     if (fullName !== undefined) updateFields.fullName = fullName;
     if (phoneNumber !== undefined) {
-      const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
+       const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
       if (!phoneRegex.test(phoneNumber)) {
-        return res.status(400).json({ message: 'Invalid Algerian phone number format.' });
+        return res.status(400).json({ message: 'Invalid phone number.' });
       }
       updateFields.phoneNumber = phoneNumber;
     }
     if (wilaya !== undefined) updateFields.wilaya = wilaya;
     if (commune !== undefined) updateFields.commune = commune;
     if (notes !== undefined) updateFields.notes = notes;
-    // Handle assignedTo field
+
     if (assignedTo !== undefined) {
-      // If assignedTo is null/empty string, it means unassign
       if (assignedTo === null || assignedTo === '') {
         updateFields.assignedTo = null;
       } else {
-        // Validate if the provided ID is a valid User ID
-        const user = await User.findById(assignedTo); // Changed from Client.findById to User.findById
+        const user = await User.findById(assignedTo);
         if (!user) {
-          return res.status(400).json({ message: `Assigned user with ID ${assignedTo} not found.` });
+          return res.status(400).json({ message: 'Assigned user not found.' });
         }
         updateFields.assignedTo = assignedTo;
       }
     }
 
-    if (Object.keys(updateFields).length === 0) {
-      return res.status(400).json({ message: 'No valid fields provided for update. Available fields: fullName, phoneNumber, wilaya, commune, notes, assignedTo.' });
+    if (!Object.keys(updateFields).length) {
+      return res.status(400).json({ message: 'No valid fields provided for update.' });
     }
 
-    const updatedOrder = await Order.findByIdAndUpdate(
-      orderId,
-      { $set: updateFields },
-      { new: true, runValidators: true }
-    ).populate('products.productId')
-     .populate('confirmedBy', 'name email') // Now references 'User'
-     .populate('assignedTo', 'name email'); // Now references 'User'
+    const updated = await Order.findByIdAndUpdate(orderId, { $set: updateFields }, { new: true, runValidators: true })
+      .populate('products.productId')
+      .populate('confirmedBy', 'name email')
+      .populate('assignedTo', 'name email');
 
-    if (!updatedOrder) {
-      return res.status(404).json({ message: 'Order not found.' });
-    }
-
-    res.status(200).json({ message: 'Order updated successfully', order: updatedOrder });
+    if (!updated) return res.status(404).json({ message: 'Order not found.' });
+    res.status(200).json({ message: 'Order updated', order: updated });
   } catch (error) {
-    console.error('Error updating order:', error);
-    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    console.error('Update order error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
-// ✅ Delete an order
+// DELETE: Remove order
 router.delete('/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
-
     const order = await Order.findById(orderId);
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found.' });
-    }
+    if (!order) return res.status(404).json({ message: 'Order not found.' });
 
-    // Restore product quantities before deleting the order
     for (const item of order.products) {
       const product = await Product.findById(item.productId);
       if (product) {
         product.quantity += item.quantity;
         await product.save();
-      } else {
-        console.warn(`Product with ID ${item.productId} not found during quantity restoration for order ${orderId}. This product might have been deleted previously.`);
       }
     }
 
     await Order.findByIdAndDelete(orderId);
-
-    res.status(200).json({ message: 'Order deleted successfully.' });
+    res.status(200).json({ message: 'Order deleted.' });
   } catch (error) {
-    console.error('Error deleting order:', error);
-    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    console.error('Delete order error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
+// Export router
 module.exports = router;
