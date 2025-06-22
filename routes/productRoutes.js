@@ -15,5 +15,16 @@ router.post('/', productController.upload.array('images'), productController.add
 router.get('/:id', productController.getProductById);
 router.put('/:id', productController.updateProduct);
 router.delete('/:id', productController.deleteProduct);
+// GET promo images
+router.get('/', productController.getProductImagesOnly);
 
+// POST upload promo images (multiple)
+router.post(
+  '/',
+  productController.uploadPromo.array('images'),
+  productController.uploadPromoImages
+);
+
+// DELETE a specific promo image by URL
+router.delete('/', productController.deletePromoImage);
 module.exports = router;
