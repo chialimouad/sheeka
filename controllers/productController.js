@@ -11,13 +11,17 @@ const mongoose = require('mongoose');
 // 📦 Multer Setup
 // =========================
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/');
-    },
-    filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname}`);
-    }
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const safeFilename = file.originalname
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9._-]/g, '');
+    cb(null, `${Date.now()}-${safeFilename}`);
+  },
 });
+
 const upload = multer({ storage });
 exports.upload = upload;
 const uploadPromo = multer({ storage });
