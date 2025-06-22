@@ -362,6 +362,34 @@ exports.getCollections = async (req, res) => {
     }
 };
 
+exports.getCollectionById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: 'Invalid collection ID format' });
+        }
+
+        const collection = await Collection.findById(id)
+            .populate({
+                path: 'productIds',
+                select: 'name description images price variants quantity', // Select all relevant product fields
+            })
+            .lean();
+
+        if (!collection) {
+            return res.status(404).json({ message: 'Collection not found' });
+        }
+
+        // Filter out any invalid or null products after population
+        collection.productIds = collection.productIds.filter(product => product && product._id);
+
+        res.json(collection);
+    } catch (error) {
+        console.error('Error fetching collection by ID:', error);
+        res.status(500).json({ message: 'Error fetching collection details', error: error.message });
+    }
+};
+
 exports.addCollection = async (req, res) => {
     try {
         const { name, thumbnailUrl, productIds } = req.body;
