@@ -17,7 +17,7 @@ const fs = require('fs');
 const mongoose = require('mongoose'); // Already imported, good.
 
 // Base URL for image serving (should ideally be from environment variables)
-const BASE_URL = 'https://sheeka.onrender.com/uploads/';
+const BASE_URL = 'https://sheeka.onrender.com';
 
 // =========================
 // 📦 Multer Setup
