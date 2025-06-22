@@ -1,9 +1,11 @@
+// controllers/productController.js
 const Product = require('../models/Product');
 const PromoImage = require('../models/imagespromo');
-const Collection = require('../models/Collection'); // Import the Collection model
+const Collection = require('../models/Collection');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const mongoose = require('mongoose');
 
 // =========================
 // 📦 Multer Setup
@@ -17,10 +19,9 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage });
-exports.upload = upload; // For product images
-
+exports.upload = upload;
 const uploadPromo = multer({ storage });
-exports.uploadPromo = uploadPromo; // For promo images
+exports.uploadPromo = uploadPromo;
 
 // =========================
 // 📸 Promo Image Handlers
@@ -60,42 +61,27 @@ exports.deletePromoImage = async (req, res) => {
             return res.status(400).json({ message: 'Image URL is required' });
         }
 
-        // Step 1: Get relative path
-        const relativePath = new URL(imageUrl).pathname; // e.g. /uploads/123-file.png
+        const relativePath = new URL(imageUrl).pathname;
+        const filePath = path.join(__dirname, '..', relativePath);
 
-        // Step 2: Build correct absolute path
-        const filePath = path.join(__dirname, '..', relativePath); // safe relativePath
-
-        console.log('🧩 Trying to delete:', filePath);
-
-        // Step 3: Check existence
         if (!fs.existsSync(filePath)) {
-            console.error('🚫 File not found:', filePath);
             return res.status(404).json({ message: 'File does not exist on disk' });
         }
 
-        // Step 4: Delete file from disk
         fs.unlink(filePath, async (err) => {
             if (err) {
-                console.error('❌ File deletion error:', err);
                 return res.status(500).json({ message: 'Failed to delete image from disk' });
             }
 
-            // Step 5: Remove from DB
             const dbResult = await PromoImage.updateMany({}, { $pull: { images: relativePath } });
-
-            // Step 6: Remove empty promo documents
             await PromoImage.deleteMany({ images: { $size: 0 } });
 
-            console.log('✅ File and DB entry deleted');
             res.json({ message: '✅ Image deleted', dbResult });
         });
     } catch (error) {
-        console.error('❌ Server error:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };
-
 
 // =========================
 // 🏢 Product Handlers
@@ -193,8 +179,6 @@ exports.deleteProduct = async (req, res) => {
 // =========================
 // 🛒 Collection Handlers
 // =========================
-
-// Add a new collection
 exports.addCollection = async (req, res) => {
     try {
         const { name, thumbnailUrl, productIds } = req.body;
@@ -207,101 +191,100 @@ exports.addCollection = async (req, res) => {
             return res.status(400).json({ error: 'productIds must be an array.' });
         }
 
+        const validProductIds = (productIds || []).filter(id => mongoose.Types.ObjectId.isValid(id));
+
         const newCollection = new Collection({
             name,
             thumbnailUrl,
-            productIds: productIds || []
+            productIds: validProductIds,
         });
 
         await newCollection.save();
         res.status(201).json(newCollection);
     } catch (error) {
-        if (error.code === 11000) { // Duplicate key error for unique 'name'
+        if (error.code === 11000) {
             return res.status(409).json({ error: 'Collection with this name already exists.' });
         }
         res.status(500).json({ error: error.message });
     }
 };
 
-// Get all collections
-// Get all collections
 exports.getCollections = async (req, res) => {
-  try {
-    const collections = await Collection.find()
-      .populate({
-        path: 'productIds',
-        select: 'name images price',
-      })
-      .lean();
+    try {
+        const collections = await Collection.find().populate({
+            path: 'productIds',
+            select: 'name images price'
+        }).lean();
 
-    const updatedCollections = collections.map((collection, i) => {
-      try {
-        const populatedProducts = Array.isArray(collection.productIds)
-          ? collection.productIds
-              .filter(product => product && typeof product === 'object')
-              .map(product => {
-                const images = Array.isArray(product.images)
-                  ? product.images
-                      .filter(img => typeof img === 'string')
-                      .map(img => `https://sheeka.onrender.com${img}`)
-                  : [];
+        const updatedCollections = collections.map((collection, i) => {
+            try {
+                const populatedProducts = Array.isArray(collection.productIds)
+                    ? collection.productIds.filter(product => product && typeof product === 'object').map(product => {
+                        const images = Array.isArray(product.images)
+                            ? product.images.filter(img => typeof img === 'string').map(img => `https://sheeka.onrender.com${img}`)
+                            : [];
+
+                        return {
+                            _id: product._id,
+                            name: product.name,
+                            price: product.price,
+                            images,
+                        };
+                    })
+                    : [];
 
                 return {
-                  _id: product._id,
-                  name: product.name,
-                  price: product.price,
-                  images,
+                    _id: collection._id,
+                    name: collection.name,
+                    thumbnailUrl: typeof collection.thumbnailUrl === 'string' && collection.thumbnailUrl.trim() !== ''
+                        ? collection.thumbnailUrl
+                        : 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+                    productIds: populatedProducts,
+                    createdAt: collection.createdAt,
+                    updatedAt: collection.updatedAt,
                 };
-              })
-          : [];
+            } catch (mapErr) {
+                return {
+                    _id: collection._id,
+                    name: collection.name,
+                    thumbnailUrl: 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+                    productIds: [],
+                    createdAt: collection.createdAt,
+                    updatedAt: collection.updatedAt,
+                };
+            }
+        });
 
-        return {
-          _id: collection._id,
-          name: collection.name,
-          thumbnailUrl:
-            typeof collection.thumbnailUrl === 'string' && collection.thumbnailUrl.trim() !== ''
-              ? collection.thumbnailUrl
-              : 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
-          productIds: populatedProducts,
-          createdAt: collection.createdAt,
-          updatedAt: collection.updatedAt,
-        };
-      } catch (mapErr) {
-        console.error(`❌ Error processing collection index ${i}:`, mapErr);
-        return {
-          _id: collection._id,
-          name: collection.name,
-          thumbnailUrl: 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
-          productIds: [],
-          createdAt: collection.createdAt,
-          updatedAt: collection.updatedAt,
-        };
-      }
-    });
-
-    res.json(updatedCollections);
-  } catch (error) {
-    console.error('❌ Error fetching collections:', error);
-    res.status(500).json({
-      message: 'Error fetching collections',
-      error: error.message,
-      stack: error.stack,
-    });
-  }
+        res.json(updatedCollections);
+    } catch (error) {
+        res.status(500).json({
+            message: 'Error fetching collections',
+            error: error.message,
+            stack: error.stack,
+        });
+    }
 };
 
-
-
-// Update a collection
 exports.updateCollection = async (req, res) => {
     try {
         const { name, thumbnailUrl, productIds } = req.body;
-        const updatedFields = { name, thumbnailUrl, productIds };
+
+        const validProductIds = Array.isArray(productIds)
+            ? productIds.filter(id => mongoose.Types.ObjectId.isValid(id))
+            : [];
+
+        const updatedFields = {
+            ...(name && { name }),
+            ...(thumbnailUrl && { thumbnailUrl }),
+            productIds: validProductIds,
+        };
 
         const collection = await Collection.findByIdAndUpdate(req.params.id, updatedFields, { new: true });
+
         if (!collection) {
             return res.status(404).json({ error: 'Collection not found' });
         }
+
         res.json({ message: 'Collection updated successfully', collection });
     } catch (error) {
         if (error.code === 11000) {
@@ -311,7 +294,6 @@ exports.updateCollection = async (req, res) => {
     }
 };
 
-// Delete a collection
 exports.deleteCollection = async (req, res) => {
     try {
         const collection = await Collection.findByIdAndDelete(req.params.id);
