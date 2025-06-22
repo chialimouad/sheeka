@@ -223,6 +223,7 @@ exports.addCollection = async (req, res) => {
     }
 };
 
+// Get all collections
 exports.getCollections = async (req, res) => {
   try {
     const collections = await Collection.find().populate({
@@ -230,23 +231,38 @@ exports.getCollections = async (req, res) => {
       select: 'name images price',
     }).lean();
 
-    const updatedCollections = collections.map(collection => {
-      const populatedProducts = Array.isArray(collection.productIds)
-        ? collection.productIds
-            .filter(product => product && typeof product === 'object')
-            .map(product => {
-              const images = Array.isArray(product.images)
-                ? product.images.filter(img => typeof img === 'string').map(img => `https://sheeka.onrender.com${img}`)
-                : [];
-              return { ...product, images };
-            })
-        : [];
+    const updatedCollections = collections.map((collection, i) => {
+      try {
+        const populatedProducts = Array.isArray(collection.productIds)
+          ? collection.productIds
+              .filter(product => product && typeof product === 'object')
+              .map(product => {
+                const images = Array.isArray(product.images)
+                  ? product.images
+                      .filter(img => typeof img === 'string')
+                      .map(img => `https://sheeka.onrender.com${img}`)
+                  : [];
 
-      return {
-        ...collection,
-        productIds: populatedProducts,
-        thumbnailUrl: collection.thumbnailUrl || 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
-      };
+                return { ...product, images };
+              })
+          : [];
+
+        return {
+          ...collection,
+          productIds: populatedProducts,
+          thumbnailUrl:
+            typeof collection.thumbnailUrl === 'string' && collection.thumbnailUrl.trim() !== ''
+              ? collection.thumbnailUrl
+              : 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+        };
+      } catch (mapErr) {
+        console.error(`❌ Error processing collection index ${i}:`, mapErr);
+        return {
+          ...collection,
+          productIds: [],
+          thumbnailUrl: 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+        };
+      }
     });
 
     res.json(updatedCollections);
