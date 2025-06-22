@@ -10,7 +10,8 @@ const helmet = require('helmet');
 const authRoutes = require('./routes/authRoutes');
 const orderRoutes = require('./routes/orders');
 const authroutesuser = require('./routes/authroutesuser');
-const productRoutes = require('./routes/productRoutes');
+const productRoutes = require('./routes/productRoutes'); // Import productRoutes
+const productController = require('./controllers/productController'); // Import productController directly
 
 dotenv.config(); // Load .env variables
 
@@ -52,8 +53,19 @@ connectDB();
 // ========================
 app.use('/auth', authRoutes);
 app.use('/authuser', authroutesuser);
-app.use('/products', productRoutes);
+app.use('/products', productRoutes); // All product-related routes are handled here
 app.use('/orders', orderRoutes);
+
+// New route for promo image uploads under /uploads/promo
+// This uses the multer upload middleware and controller function from productController.
+// Note: This creates an *additional* endpoint for promo image uploads.
+// The existing endpoint at POST /products/promo (defined in productRoutes.js) also works.
+app.post(
+  '/uploads/promo',
+  productController.uploadPromo.array('images', 5), // Correctly reference from productController
+  productController.uploadPromoImages // Correctly reference from productController
+);
+
 
 // ========================
 // ❌ 404 Handling
