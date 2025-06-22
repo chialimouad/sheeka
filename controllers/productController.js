@@ -136,20 +136,23 @@ exports.getProducts = async (req, res) => {
         res.status(500).json({ message: 'Error fetching products' });
     }
 };
-
 exports.getProductById = async (req, res) => {
-    try {
-        const product = await Product.findById(req.params.id);
-        if (!product) return res.status(404).json({ error: 'Product not found' });
+  console.log('📥 getProductById called with id:', req.params.id); // DEBUG
 
-        res.json({
-            ...product._doc,
-            images: product.images.map(img => `https://sheeka.onrender.com${img}`)
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    res.json({
+      ...product._doc,
+      images: product.images.map(img => `https://sheeka.onrender.com${img}`)
+    });
+  } catch (error) {
+    console.error('❌ getProductById failed:', error);
+    res.status(500).json({ error: error.message });
+  }
 };
+
 
 exports.updateProduct = async (req, res) => {
     try {
