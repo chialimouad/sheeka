@@ -15,19 +15,19 @@ router.get('/', productController.getProducts);
 router.post('/', productController.upload.array('images'), productController.addProduct);
 // GET a specific product by ID
 router.get('/:id', productController.getProductById);
-// PUT update a product by I
+// PUT update a product by ID
 router.put('/:id', productController.updateProduct);
 // DELETE a product by ID
 router.delete('/:id', productController.deleteProduct);
 
 
-// ✅ Promo Image routes (Moved to a distinct path to avoid conflict)
+// ✅ Promo Image routes
 // GET all promo images
 router.get('/promo', productController.getProductImagesOnly);
 
 // POST upload new promo images (multiple)
 router.post(
-    '/promo', // Changed to /promo
+    '/promo',
     productController.uploadPromo.array('images'),
     productController.uploadPromoImages
 );
