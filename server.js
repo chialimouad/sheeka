@@ -32,7 +32,7 @@ fs.promises.mkdir(uploadDir, { recursive: true }).catch(console.error);
 
 // ✅ Serve static image files
 // This allows your Flutter app to load images from paths like /uploads/image.png
-app.use('/uploads', express.static(uploadDir));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // If you have a specific promo sub-directory, ensure it's also served
 // (Though typically one static route for the parent directory is sufficient)
 app.use('/uploads/promo', express.static(uploadDir)); 
