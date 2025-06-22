@@ -223,49 +223,43 @@ exports.addCollection = async (req, res) => {
     }
 };
 
-// Get all collections
 exports.getCollections = async (req, res) => {
-    try {
-        // Populate productIds to get product details, selecting only specific fields
-        // Use `lean()` for faster queries when you don't need Mongoose documents methods
-        const collections = await Collection.find().populate({
-            path: 'productIds',
-            select: 'name images price',
-            // If a product ID doesn't exist, it will be null in the populated array.
-            // You can optionally match only existing products if you prefer:
-            // match: { _id: { $ne: null } }
-        }).lean(); // Add .lean() for plain JavaScript objects, often improves performance
+  try {
+    const collections = await Collection.find().populate({
+      path: 'productIds',
+      select: 'name images price',
+    }).lean();
 
-        const updatedCollections = collections.map(collection => {
-            // Ensure productIds is an array and filter out any null products
-            const populatedProducts = (collection.productIds || [])
-                .filter(product => product != null) // Filter out nulls from failed population
-                .map(product => {
-                    // Ensure 'images' property exists and is an array before mapping
-                    const images = (product.images && Array.isArray(product.images))
-                        ? product.images.map(img => `https://sheeka.onrender.com${img}`)
-                        : []; // Default to empty array if images is missing or not an array
+    const updatedCollections = collections.map(collection => {
+      const populatedProducts = Array.isArray(collection.productIds)
+        ? collection.productIds
+            .filter(product => product && typeof product === 'object')
+            .map(product => {
+              const images = Array.isArray(product.images)
+                ? product.images.filter(img => typeof img === 'string').map(img => `https://sheeka.onrender.com${img}`)
+                : [];
+              return { ...product, images };
+            })
+        : [];
 
-                    return {
-                        ...product, // Use product directly if .lean() is used
-                        images: images
-                    };
-                });
+      return {
+        ...collection,
+        productIds: populatedProducts,
+        thumbnailUrl: collection.thumbnailUrl || 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+      };
+    });
 
-            return {
-                ...collection, // Use collection directly if .lean() is used
-                productIds: populatedProducts,
-                // Add a default for thumbnailUrl if it might be null/undefined for client
-                thumbnailUrl: collection.thumbnailUrl || 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image'
-            };
-        });
-        res.json(updatedCollections);
-    } catch (error) {
-        // Log the full error stack for better debugging on the server
-        console.error('❌ Error fetching collections:', error);
-        res.status(500).json({ message: 'Error fetching collections', error: error.message });
-    }
+    res.json(updatedCollections);
+  } catch (error) {
+    console.error('❌ Error fetching collections:', error);
+    res.status(500).json({
+      message: 'Error fetching collections',
+      error: error.message,
+      stack: error.stack,
+    });
+  }
 };
+
 
 // Update a collection
 exports.updateCollection = async (req, res) => {
