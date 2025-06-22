@@ -182,129 +182,124 @@ exports.deleteProduct = async (req, res) => {
 // =========================
 // 🛒 Collection Handlers
 // =========================
-exports.addCollection = async (req, res) => {
-    try {
-        const { name, thumbnailUrl, productIds } = req.body;
+exports.getCollections = async (req, res) => {
+  try {
+    const collections = await Collection.find()
+      .populate({
+        path: 'productIds',
+        select: 'name images price',
+      })
+      .lean();
 
-        if (!name) {
-            return res.status(400).json({ error: 'Collection name is required.' });
-        }
+    const updatedCollections = collections.map((collection, i) => {
+      try {
+        const populatedProducts = Array.isArray(collection.productIds)
+          ? collection.productIds
+              .filter(product => product && typeof product === 'object')
+              .map(product => {
+                const images = Array.isArray(product.images)
+                  ? product.images
+                      .filter(img => typeof img === 'string')
+                      .map(img => `https://sheeka.onrender.com${img}`)
+                  : [];
 
-        if (productIds && !Array.isArray(productIds)) {
-            return res.status(400).json({ error: 'productIds must be an array.' });
-        }
+                return {
+                  _id: product._id,
+                  name: product.name,
+                  price: product.price,
+                  images,
+                };
+              })
+          : [];
 
-        const validProductIds = (productIds || []).filter(id => mongoose.Types.ObjectId.isValid(id));
+        return {
+          _id: collection._id,
+          name: collection.name,
+          thumbnailUrl: typeof collection.thumbnailUrl === 'string' && collection.thumbnailUrl.trim() !== ''
+            ? collection.thumbnailUrl
+            : 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+          productIds: populatedProducts,
+          createdAt: collection.createdAt,
+          updatedAt: collection.updatedAt,
+        };
+      } catch (err) {
+        console.error(`❌ Error processing collection at index ${i}:`, err);
+        return {
+          _id: collection._id,
+          name: collection.name,
+          thumbnailUrl: 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+          productIds: [],
+          createdAt: collection.createdAt,
+          updatedAt: collection.updatedAt,
+        };
+      }
+    });
 
-        const newCollection = new Collection({
-            name,
-            thumbnailUrl,
-            productIds: validProductIds,
-        });
-
-        await newCollection.save();
-        res.status(201).json(newCollection);
-    } catch (error) {
-        if (error.code === 11000) {
-            return res.status(409).json({ error: 'Collection with this name already exists.' });
-        }
-        res.status(500).json({ error: error.message });
-    }
+    res.json(updatedCollections);
+  } catch (error) {
+    console.error('❌ Error fetching collections:', error);
+    res.status(500).json({
+      error: error.message,
+    });
+  }
 };
 
-exports.getCollections = async (req, res) => {
-    try {
-        const collections = await Collection.find().populate({
-            path: 'productIds',
-            select: 'name images price'
-        }).lean();
+exports.addCollection = async (req, res) => {
+  try {
+    const { name, thumbnailUrl, productIds } = req.body;
 
-        const updatedCollections = collections.map((collection, i) => {
-            try {
-                const populatedProducts = Array.isArray(collection.productIds)
-                    ? collection.productIds.filter(product => product && typeof product === 'object').map(product => {
-                        const images = Array.isArray(product.images)
-                            ? product.images.filter(img => typeof img === 'string').map(img => `https://sheeka.onrender.com${img}`)
-                            : [];
-
-                        return {
-                            _id: product._id,
-                            name: product.name,
-                            price: product.price,
-                            images,
-                        };
-                    })
-                    : [];
-
-                return {
-                    _id: collection._id,
-                    name: collection.name,
-                    thumbnailUrl: typeof collection.thumbnailUrl === 'string' && collection.thumbnailUrl.trim() !== ''
-                        ? collection.thumbnailUrl
-                        : 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
-                    productIds: populatedProducts,
-                    createdAt: collection.createdAt,
-                    updatedAt: collection.updatedAt,
-                };
-            } catch (mapErr) {
-                return {
-                    _id: collection._id,
-                    name: collection.name,
-                    thumbnailUrl: 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
-                    productIds: [],
-                    createdAt: collection.createdAt,
-                    updatedAt: collection.updatedAt,
-                };
-            }
-        });
-
-        res.json(updatedCollections);
-    } catch (error) {
-        res.status(500).json({
-            message: 'Error fetching collections',
-            error: error.message,
-            stack: error.stack,
-        });
+    if (!name) {
+      return res.status(400).json({ error: 'Collection name is required.' });
     }
+
+    if (productIds && !Array.isArray(productIds)) {
+      return res.status(400).json({ error: 'productIds must be an array.' });
+    }
+
+    const newCollection = new Collection({
+      name,
+      thumbnailUrl,
+      productIds: productIds || [],
+    });
+
+    await newCollection.save();
+    res.status(201).json(newCollection);
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ error: 'Collection with this name already exists.' });
+    }
+    res.status(500).json({ error: error.message });
+  }
 };
 
 exports.updateCollection = async (req, res) => {
-    try {
-        const { name, thumbnailUrl, productIds } = req.body;
+  try {
+    const { name, thumbnailUrl, productIds } = req.body;
 
-        const validProductIds = Array.isArray(productIds)
-            ? productIds.filter(id => mongoose.Types.ObjectId.isValid(id))
-            : [];
+    const updatedFields = { name, thumbnailUrl, productIds };
+    const collection = await Collection.findByIdAndUpdate(req.params.id, updatedFields, { new: true });
 
-        const updatedFields = {
-            ...(name && { name }),
-            ...(thumbnailUrl && { thumbnailUrl }),
-            productIds: validProductIds,
-        };
-
-        const collection = await Collection.findByIdAndUpdate(req.params.id, updatedFields, { new: true });
-
-        if (!collection) {
-            return res.status(404).json({ error: 'Collection not found' });
-        }
-
-        res.json({ message: 'Collection updated successfully', collection });
-    } catch (error) {
-        if (error.code === 11000) {
-            return res.status(409).json({ error: 'Collection with this name already exists.' });
-        }
-        res.status(500).json({ error: error.message });
+    if (!collection) {
+      return res.status(404).json({ error: 'Collection not found' });
     }
+
+    res.json({ message: 'Collection updated successfully', collection });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ error: 'Collection with this name already exists.' });
+    }
+    res.status(500).json({ error: error.message });
+  }
 };
 
 exports.deleteCollection = async (req, res) => {
-    try {
-        const collection = await Collection.findByIdAndDelete(req.params.id);
-        if (!collection) {
-            return res.status(404).json({ error: 'Collection not found' });
-        }
-        res.json({ message: 'Collection deleted successfully' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+  try {
+    const collection = await Collection.findByIdAndDelete(req.params.id);
+    if (!collection) {
+      return res.status(404).json({ error: 'Collection not found' });
     }
+    res.json({ message: 'Collection deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 };
