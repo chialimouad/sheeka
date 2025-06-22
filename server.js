@@ -60,11 +60,7 @@ app.use('/orders', orderRoutes);
 // This uses the multer upload middleware and controller function from productController.
 // Note: This creates an *additional* endpoint for promo image uploads.
 // The existing endpoint at POST /products/promo (defined in productRoutes.js) also works.
-app.post(
-  '/uploads/promo',
-  productController.uploadPromo.array('images', 5), // Correctly reference from productController
-  productController.uploadPromoImages // Correctly reference from productController
-);
+
 
 
 // ========================
