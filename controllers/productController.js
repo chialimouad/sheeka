@@ -227,17 +227,42 @@ exports.addCollection = async (req, res) => {
 exports.getCollections = async (req, res) => {
     try {
         // Populate productIds to get product details, selecting only specific fields
-        const collections = await Collection.find().populate('productIds', 'name images price');
-        // If images in productIds need to be absolute URLs, map them here
-        const updatedCollections = collections.map(collection => ({
-            ...collection._doc,
-            productIds: collection.productIds.map(product => ({
-                ...product._doc,
-                images: product.images.map(img => `https://sheeka.onrender.com${img}`)
-            }))
-        }));
+        // Use `lean()` for faster queries when you don't need Mongoose documents methods
+        const collections = await Collection.find().populate({
+            path: 'productIds',
+            select: 'name images price',
+            // If a product ID doesn't exist, it will be null in the populated array.
+            // You can optionally match only existing products if you prefer:
+            // match: { _id: { $ne: null } }
+        }).lean(); // Add .lean() for plain JavaScript objects, often improves performance
+
+        const updatedCollections = collections.map(collection => {
+            // Ensure productIds is an array and filter out any null products
+            const populatedProducts = (collection.productIds || [])
+                .filter(product => product != null) // Filter out nulls from failed population
+                .map(product => {
+                    // Ensure 'images' property exists and is an array before mapping
+                    const images = (product.images && Array.isArray(product.images))
+                        ? product.images.map(img => `https://sheeka.onrender.com${img}`)
+                        : []; // Default to empty array if images is missing or not an array
+
+                    return {
+                        ...product, // Use product directly if .lean() is used
+                        images: images
+                    };
+                });
+
+            return {
+                ...collection, // Use collection directly if .lean() is used
+                productIds: populatedProducts,
+                // Add a default for thumbnailUrl if it might be null/undefined for client
+                thumbnailUrl: collection.thumbnailUrl || 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image'
+            };
+        });
         res.json(updatedCollections);
     } catch (error) {
+        // Log the full error stack for better debugging on the server
+        console.error('❌ Error fetching collections:', error);
         res.status(500).json({ message: 'Error fetching collections', error: error.message });
     }
 };
