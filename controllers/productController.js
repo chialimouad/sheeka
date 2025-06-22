@@ -264,6 +264,7 @@ exports.deleteProduct = async (req, res) => {
 // =========================
 exports.getCollections = async (req, res) => {
     try {
+        console.log('Fetching collections...'); // Add logging
         const collections = await Collection.find()
             .populate({
                 path: 'productIds',
@@ -271,26 +272,35 @@ exports.getCollections = async (req, res) => {
             })
             .lean(); // Use .lean() for faster execution if you don't need Mongoose document methods
 
+        console.log('Collections fetched from DB (before processing):', collections.length); // Log fetched count
+
         const updatedCollections = collections.map((collection, i) => {
             try {
+                // Ensure productIds is an array and filter out any null/undefined products that might result from populate
                 const populatedProducts = Array.isArray(collection.productIds)
                     ? collection.productIds
-                        .filter(product => product && typeof product === 'object' && product.name && product.price && Array.isArray(product.images)) // Ensure product is a valid object and has images array
+                        .filter(product => {
+                            // Filter conditions: product exists, is an object, has name, price, and images array
+                            const isValid = product && typeof product === 'object' &&
+                                product.name && product.price !== undefined && Array.isArray(product.images);
+                            if (!isValid) {
+                                console.warn(`⚠️ Invalid product data found in collection ID: ${collection._id}, product index: ${i}`);
+                            }
+                            return isValid;
+                        })
                         .map(product => {
                             const images = Array.isArray(product.images)
-                                ? product.images
-                                    .filter(img => typeof img === 'string' && img.trim() !== '') // Filter out non-string or empty image paths
-                                    .map(img => img) // Images are already full Cloudinary URLs
+                                ? product.images.filter(img => typeof img === 'string' && img.trim() !== '') // Filter out non-string or empty image paths
                                 : []; // Default to empty array if images is not an array
 
                             return {
                                 _id: product._id,
                                 name: product.name,
                                 price: product.price,
-                                images,
+                                images, // Images are already full Cloudinary URLs
                             };
                         })
-                    : []; // Default to empty array if productIds is not an array
+                    : []; // Default to empty array if productIds is not an array or is null/undefined
 
                 return {
                     _id: collection._id,
@@ -313,17 +323,19 @@ exports.getCollections = async (req, res) => {
                     productIds: [],
                     createdAt: collection.createdAt,
                     updatedAt: collection.updatedAt,
-                    error: 'Error processing collection data'
+                    error: 'Error processing collection data on server' // More descriptive error
                 };
             }
         });
 
+        console.log('Collections sent to client:', updatedCollections.length); // Log final count
         res.json(updatedCollections);
     } catch (error) {
         console.error('❌ Error fetching collections:', error);
         res.status(500).json({
             message: 'Error fetching collections',
             error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined // Provide stack only in dev
         });
     }
 };
