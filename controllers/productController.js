@@ -12,10 +12,13 @@ const mongoose = require('mongoose');
 // =========================
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
+        // Construct the absolute path to the 'uploads' directory
+        // This ensures files are saved at the root of your application
+        const uploadDir = path.join(__dirname, '..', 'uploads');
+        
         // Ensure the 'uploads/' directory exists
-        const uploadDir = 'uploads/';
         if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir);
+            fs.mkdirSync(uploadDir, { recursive: true }); // Create recursively if parent directories don't exist
         }
         cb(null, uploadDir);
     },
