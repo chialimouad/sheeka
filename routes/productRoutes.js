@@ -15,7 +15,7 @@ router.get('/', productController.getProducts);
 router.post('/', productController.upload.array('images'), productController.addProduct);
 // GET a specific product by ID
 router.get('/:id', productController.getProductById);
-// PUT update a product by ID
+// PUT update a product by I
 router.put('/:id', productController.updateProduct);
 // DELETE a product by ID
 router.delete('/:id', productController.deleteProduct);
