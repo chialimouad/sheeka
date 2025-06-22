@@ -17,7 +17,7 @@ const fs = require('fs');
 const mongoose = require('mongoose'); // Already imported, good.
 
 // Base URL for image serving (should ideally be from environment variables)
-const BASE_URL = 'https://sheeka.onrender.com';
+const BASE_URL = 'https://sheeka.onrender.com/uploads/';
 
 // =========================
 // 📦 Multer Setup
@@ -226,21 +226,22 @@ exports.addProduct = async (req, res) => {
     }
 };
 
-// GET: All products with absolute image URLs
 exports.getProducts = async (req, res) => {
-    try {
-        const products = await Product.find().sort({ createdAt: -1 });
-        const updatedProducts = products.map(p => ({
-            ...p._doc,
-            // Ensure images are always an array and mapped to absolute URLs
-            images: Array.isArray(p.images) ? p.images.map(img => `${BASE_URL}${img}`) : []
-        }));
-        res.json(updatedProducts);
-    } catch (error) {
-        console.error('❌ Error fetching products:', error);
-        res.status(500).json({ message: 'Error fetching products', error: error.message });
-    }
+  try {
+    const products = await Product.find().sort({ createdAt: -1 });
+    const updatedProducts = products.map(p => ({
+      ...p._doc,
+      images: Array.isArray(p.images) 
+        ? p.images.map(img => `${BASE_URL}${img}`) 
+        : []
+    }));
+    res.json(updatedProducts);
+  } catch (error) {
+    console.error('❌ Error fetching products:', error);
+    res.status(500).json({ message: 'Error fetching products', error: error.message });
+  }
 };
+
 
 // GET: Single product by ID with absolute image URLs
 exports.getProductById = async (req, res) => {
