@@ -1,10 +1,3 @@
-
-
-
-
-
-
-
 // Required Modules
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -24,7 +17,7 @@ const fs = require('fs');
 const mongoose = require('mongoose'); // Already imported, good.
 
 // Base URL for image serving (should ideally be from environment variables)
-const BASE_URL = '[https://sheeka.onrender.com](https://sheeka.onrender.com)';
+const BASE_URL = 'https://sheeka.onrender.com';
 
 // =========================
 // 📦 Multer Setup
@@ -372,7 +365,7 @@ exports.getCollections = async (req, res) => {
                     // Absolutize the collection thumbnail URL
                     thumbnailUrl: typeof collection.thumbnailUrl === 'string' && collection.thumbnailUrl.trim() !== ''
                         ? `${BASE_URL}${collection.thumbnailUrl}`
-                        : '[https://placehold.co/150x150/EEEEEE/333333?text=No+Image](https://placehold.co/150x150/EEEEEE/333333?text=No+Image)', // Fallback for missing/invalid thumbnail
+                        : 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image', // Fallback for missing/invalid thumbnail
                     productIds: populatedProducts,
                     createdAt: collection.createdAt,
                     updatedAt: collection.updatedAt,
@@ -383,7 +376,7 @@ exports.getCollections = async (req, res) => {
                 return {
                     _id: collection._id,
                     name: collection.name || 'Error Collection',
-                    thumbnailUrl: '[https://placehold.co/150x150/EEEEEE/333333?text=Error](https://placehold.co/150x150/EEEEEE/333333?text=Error)',
+                    thumbnailUrl: 'https://placehold.co/150x150/EEEEEE/333333?text=Error',
                     productIds: [],
                     createdAt: collection.createdAt,
                     updatedAt: collection.updatedAt,
