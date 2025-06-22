@@ -6,7 +6,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const mongoose = require('mongoose');
-const { v2: cloudinary } = require('cloudinary'); // Keep this one
+const { v2: cloudinary } = require('cloudinary');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 // =========================
@@ -14,7 +14,6 @@ const { CloudinaryStorage } = require('multer-storage-cloudinary');
 // =========================
 
 // ✅ Cloudinary Config
-// The cloudinary configuration should be done after importing it.
 cloudinary.config({
   cloud_name: 'di1u2ssnm',
   api_key: '382166879473993',
@@ -41,9 +40,8 @@ exports.uploadPromo = upload;
 exports.getProductImagesOnly = async (req, res) => {
     try {
         const promos = await PromoImage.find({}, 'images');
-        const allImages = promos.flatMap(p =>
-            p.images.map(img => `https://sheeka.onrender.com${img}`)
-        );
+        // Cloudinary stores full URLs, so no need to prepend base URL
+        const allImages = promos.flatMap(p => p.images);
         res.json(allImages);
     } catch (error) {
         console.error('❌ Error fetching promo images:', error);
@@ -75,15 +73,23 @@ exports.deletePromoImage = async (req, res) => {
             return res.status(400).json({ message: 'Image URL is required' });
         }
 
-        // Extract public ID from the Cloudinary URL
+        // Extract public ID from the Cloudinary URL.
+        // Example URL: https://res.cloudinary.com/di1u2ssnm/image/upload/v12345/sheeka_products/image_abcd123.jpg
+        // We need 'sheeka_products/image_abcd123' as publicId for deletion.
         const publicIdMatch = imageUrl.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
         let publicId = '';
         if (publicIdMatch && publicIdMatch[1]) {
-            publicId = publicIdMatch[1].split('/').slice(1).join('/'); // Remove 'sheeka_products' if it's the folder
+            // publicIdMatch[1] would be 'sheeka_products/image_abcd123.jpg'
+            const fullPathWithExt = publicIdMatch[1];
+            // Remove the file extension to get the public_id expected by Cloudinary's destroy method
+            publicId = fullPathWithExt.replace(/\.\w{3,4}$/, '');
+            if (publicId === '') { // Fallback if no extension was found or regex failed
+                publicId = fullPathWithExt;
+            }
         }
         
         if (!publicId) {
-            return res.status(400).json({ message: 'Could not extract public ID from image URL' });
+            return res.status(400).json({ message: 'Could not extract Cloudinary public ID from image URL' });
         }
 
         // Delete from Cloudinary
@@ -219,7 +225,11 @@ exports.deleteProduct = async (req, res) => {
                 const publicIdMatch = imageUrl.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
                 let publicId = '';
                 if (publicIdMatch && publicIdMatch[1]) {
-                    publicId = publicIdMatch[1].split('/').slice(1).join('/'); // Remove 'sheeka_products' if it's the folder
+                    const fullPathWithExt = publicIdMatch[1];
+                    publicId = fullPathWithExt.replace(/\.\w{3,4}$/, '');
+                    if (publicId === '') {
+                        publicId = fullPathWithExt;
+                    }
                 }
 
                 if (publicId) {
