@@ -38,15 +38,37 @@ exports.uploadPromo = upload;
 // 📸 Promo Image Handlers
 // =========================
 // Example getProductImagesOnly
+// controllers/productController.js
 exports.getProductImagesOnly = async (req, res) => {
-try {
- const promoImages = await PromoImage.find().select('url -_id');
- const urls = promoImages.map(img => img.url);
- res.json(urls); // ✅ List<String>
-} catch (err) {
- console.error(err);
- res.status(500).json({ message: 'Server error' });
- }
+    try {
+        console.log('Backend: Attempting to fetch promo images...');
+        const promos = await PromoImage.find({}, 'images');
+        console.log('Backend: Fetched raw promos:', JSON.stringify(promos, null, 2)); // Log the raw data
+
+        // Ensure images are indeed arrays and filter out invalid entries before flatMap
+        const allImages = promos.flatMap(p => {
+            if (p && Array.isArray(p.images)) {
+                // Filter out any non-string or empty string entries within the array
+                return p.images.filter(img => typeof img === 'string' && img.trim() !== '');
+            }
+            return []; // Return an empty array if 'images' is not an array or is null/undefined
+        });
+
+        console.log('Backend: Processed allImages:', JSON.stringify(allImages)); // Log the final list of images
+
+        if (allImages.length === 0) {
+            console.log('Backend: No promo images found, sending empty array.');
+            return res.json([]); // Explicitly send an empty array if no images
+        }
+
+        res.json(allImages);
+        console.log('Backend: Successfully sent promo images.');
+
+    } catch (error) {
+        console.error('❌ Backend: Error fetching promo images:', error);
+        // Improve error response: Send 500 for server errors, log detailed error
+        res.status(500).json({ message: 'Internal Server Error fetching promo images', error: error.message });
+    }
 };
 
 
