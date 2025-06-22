@@ -20,9 +20,13 @@ router.delete('/:id', productController.deleteProduct);
    
 
 
-
-router.post('/collections', productController.addCollection);
+// ✅ Define specific routes first
 router.get('/collections', productController.getCollections);
+router.post('/collections', productController.addCollection);
 router.put('/collections/:id', productController.updateCollection);
 router.delete('/collections/:id', productController.deleteCollection);
+
+// ✅ THEN define dynamic routes last
+router.get('/:id', productController.getProductById);
+
 module.exports = router;
