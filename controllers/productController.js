@@ -37,17 +37,18 @@ exports.uploadPromo = upload;
 // =========================
 // 📸 Promo Image Handlers
 // =========================
+// Example getProductImagesOnly
 exports.getProductImagesOnly = async (req, res) => {
-    try {
-        const promos = await PromoImage.find({}, 'images');
-        // Cloudinary stores full URLs, so no need to prepend base URL
-        const allImages = promos.flatMap(p => p.images);
-        res.json(allImages);
-    } catch (error) {
-        console.error('❌ Error fetching promo images:', error);
-        res.status(500).json({ message: 'Error fetching promo images' });
-    }
+try {
+ const promoImages = await PromoImage.find().select('url -_id');
+ const urls = promoImages.map(img => img.url);
+ res.json(urls); // ✅ List<String>
+} catch (err) {
+ console.error(err);
+ res.status(500).json({ message: 'Server error' });
+ }
 };
+
 
 
 // ✅ Exemple: Upload promo images
