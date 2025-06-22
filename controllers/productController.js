@@ -224,12 +224,15 @@ exports.addCollection = async (req, res) => {
 };
 
 // Get all collections
+// Get all collections
 exports.getCollections = async (req, res) => {
   try {
-    const collections = await Collection.find().populate({
-      path: 'productIds',
-      select: 'name images price',
-    }).lean();
+    const collections = await Collection.find()
+      .populate({
+        path: 'productIds',
+        select: 'name images price',
+      })
+      .lean();
 
     const updatedCollections = collections.map((collection, i) => {
       try {
@@ -243,24 +246,35 @@ exports.getCollections = async (req, res) => {
                       .map(img => `https://sheeka.onrender.com${img}`)
                   : [];
 
-                return { ...product, images };
+                return {
+                  _id: product._id,
+                  name: product.name,
+                  price: product.price,
+                  images,
+                };
               })
           : [];
 
         return {
-          ...collection,
-          productIds: populatedProducts,
+          _id: collection._id,
+          name: collection.name,
           thumbnailUrl:
             typeof collection.thumbnailUrl === 'string' && collection.thumbnailUrl.trim() !== ''
               ? collection.thumbnailUrl
               : 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+          productIds: populatedProducts,
+          createdAt: collection.createdAt,
+          updatedAt: collection.updatedAt,
         };
       } catch (mapErr) {
         console.error(`❌ Error processing collection index ${i}:`, mapErr);
         return {
-          ...collection,
-          productIds: [],
+          _id: collection._id,
+          name: collection.name,
           thumbnailUrl: 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+          productIds: [],
+          createdAt: collection.createdAt,
+          updatedAt: collection.updatedAt,
         };
       }
     });
@@ -275,6 +289,7 @@ exports.getCollections = async (req, res) => {
     });
   }
 };
+
 
 
 // Update a collection
