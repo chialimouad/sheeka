@@ -12,19 +12,24 @@ let transporter = null; // Initialize transporter as null
 // This will be called when credentials are set or updated.
 const initializeTransporter = () => {
     if (currentEmailUser && currentEmailPass) {
-        transporter = nodemailer.createTransport({
-            service: 'gmail', // Example: 'gmail'. Use your email service.
-            auth: {
-                user: currentEmailUser,
-                pass: currentEmailPass
-            },
-            // Optional: For self-signed certificates or development, you might need this.
-            // In production, ensure proper SSL/TLS.
-            tls: {
-                rejectUnauthorized: false
-            }
-        });
-        console.log('Nodemailer transporter re-initialized with new credentials.');
+        try {
+            transporter = nodemailer.createTransport({
+                service: 'gmail', // Example: 'gmail'. Ensure this matches your service provider.
+                auth: {
+                    user: currentEmailUser,
+                    pass: currentEmailPass
+                },
+                // Optional: For self-signed certificates or development, you might need this.
+                // In production, ensure proper SSL/TLS.
+                tls: {
+                    rejectUnauthorized: false
+                }
+            });
+            console.log('Nodemailer transporter re-initialized with new credentials for user:', currentEmailUser);
+        } catch (setupError) {
+            console.error('Error initializing Nodemailer transporter:', setupError.message);
+            transporter = null; // Ensure transporter is null if setup fails
+        }
     } else {
         transporter = null; // Clear transporter if credentials are removed or incomplete
         console.warn('Nodemailer transporter not initialized. Email user/pass are missing.');
@@ -45,7 +50,12 @@ exports.configureSender = (req, res) => {
     currentEmailPass = emailPass;
     initializeTransporter(); // Re-initialize the transporter with new credentials
 
-    res.status(200).json({ msg: 'Email sender credentials updated successfully.', configuredUser: currentEmailUser });
+    if (transporter) {
+        res.status(200).json({ msg: 'Email sender credentials updated successfully.', configuredUser: currentEmailUser });
+    } else {
+        // If transporter couldn't be initialized with provided credentials
+        res.status(500).json({ msg: 'Failed to initialize email sender with provided credentials. Check your email user and password.' });
+    }
 };
 
 
@@ -63,6 +73,7 @@ exports.sendEmail = async (req, res) => {
 
     // Check if transporter is initialized (i.e., credentials have been set)
     if (!transporter) {
+        console.warn('Attempted to send email but Nodemailer transporter is not configured.');
         return res.status(400).json({ msg: 'Email sender not configured. Please configure emailUser and emailPass first via /api/emails/configure-sender.' });
     }
 
@@ -78,6 +89,8 @@ exports.sendEmail = async (req, res) => {
 
         // Step 2: Save the new email document to MongoDB
         const savedEmail = await newEmail.save();
+        console.log('Email successfully saved to DB:', savedEmail._id);
+
 
         // Step 3: Send the actual email using the configured transporter
         const mailOptions = {
@@ -94,35 +107,39 @@ exports.sendEmail = async (req, res) => {
 
         let info;
         try {
+            console.log('Attempting to send email via Nodemailer...');
+            console.log('Mail options:', mailOptions);
             info = await transporter.sendMail(mailOptions);
-            console.log("Message sent: %s", info.messageId);
+            console.log("Message sent successfully! Message ID: %s", info.messageId);
             // Optionally, for Ethereal testing, uncomment:
             // console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
-        } catch (emailSendError) {
-            console.error("Error sending email via Nodemailer:", emailSendError);
-            // If email sending failed but saving to DB succeeded, inform the user
-            return res.status(200).json({
-                msg: 'Email saved to database, but there was an issue sending the actual email.',
+
+            // If both saving and sending were successful
+            res.status(201).json({
+                msg: 'Email sent and saved successfully.',
                 email: savedEmail,
-                emailServiceResponse: { success: false, error: emailSendError.message }
+                emailServiceResponse: { success: true, messageId: info.messageId }
+            });
+
+        } catch (emailSendError) {
+            console.error("Critical Error sending email via Nodemailer:", emailSendError);
+            // If email sending failed but saving to DB succeeded, inform the user
+            return res.status(200).json({ // Use 200 because DB save was successful
+                msg: 'Email saved to database, but there was an issue sending the actual email. Check server logs for details.',
+                email: savedEmail,
+                emailServiceResponse: { success: false, error: emailSendError.message, stack: emailSendError.stack } // Provide stack for debugging
             });
         }
-        
-        // If both saving and sending were successful
-        res.status(201).json({
-            msg: 'Email sent and saved successfully.',
-            email: savedEmail,
-            emailServiceResponse: { success: true, messageId: info.messageId }
-        });
 
     } catch (err) {
         // More specific error handling for Mongoose validation errors
         if (err.name === 'ValidationError') {
             const messages = Object.values(err.errors).map(val => val.message);
+            console.error('Mongoose Validation Error during email save:', messages);
             return res.status(400).json({ msg: messages.join(', ') });
         }
-        // General server error for other issues
-        console.error('Error in sendEmail controller (saving or other):', err.message);
+        // General server error for other issues (e.g., database connection issues)
+        console.error('Unhandled Server Error in sendEmail controller:', err.message, err.stack);
         res.status(500).json({ msg: 'Server Error: Could not process email request.', error: err.message });
     }
 };
