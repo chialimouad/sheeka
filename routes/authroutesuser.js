@@ -5,6 +5,6 @@ const router = express.Router();
 
 router.post('/registeruser', register);
 router.post('/loginuser', login);
-router.get('/users', getUsers); // Assuming you want this route for fetching user
+router.get('/users', getUsers); // Assming you want this route for fetching user
 
 module.exports = router;
