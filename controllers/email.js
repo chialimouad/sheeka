@@ -1,184 +1,213 @@
-// controllers/emailController.js
-const Email = require('../models/emails'); // Import the Email Mongoose model
-const nodemailer = require('nodemailer'); // Import nodemailer
 
-// Declare mutable variables for email credentials and transporter
-// These will be configured via the /configure-sender endpoint.
-let currentEmailUser = null;
-let currentEmailPass = null;
-let transporter = null; // Initialize transporter as null
 
-// Function to initialize or re-initialize the Nodemailer transporter
-// This will be called when credentials are set or updated.
-const initializeTransporter = () => {
-    if (currentEmailUser && currentEmailPass) {
-        try {
-            transporter = nodemailer.createTransport({
-                service: 'gmail', // Example: 'gmail'. Ensure this matches your service provider.
-                auth: {
-                    user: currentEmailUser,
-                    pass: currentEmailPass
-                },
-                // Optional: For self-signed certificates or development, you might need this.
-                // In production, ensure proper SSL/TLS.
-                tls: {
-                    rejectUnauthorized: false
-                }
-            });
-            console.log('Nodemailer transporter re-initialized with new credentials for user:', currentEmailUser);
-        } catch (setupError) {
-            console.error('Error initializing Nodemailer transporter:', setupError.message);
-            transporter = null; // Ensure transporter is null if setup fails
-        }
-    } else {
-        transporter = null; // Clear transporter if credentials are removed or incomplete
-        console.warn('Nodemailer transporter not initialized. Email user/pass are missing.');
+// --- controllers/emailController.js ---
+// Logic for handling email-related operations
+const Email = require('../models/emails');
+const ClientEmail = require('../models/clientemail');
+const Response = require('../models/emailres');
+const AdminCredential = require('../models/admin');
+const nodemailer = require('nodemailer');
+
+// Global transporter instance, will be initialized/updated dynamically
+let transporter;
+
+// Helper function to create or update the Nodemailer transporter
+const createTransporter = (email, password) => {
+  transporter = nodemailer.createTransport({
+    service: 'gmail', // You can configure this for other services or SMTP
+    auth: {
+      user: email,
+      pass: password
     }
+  });
+  console.log('Nodemailer transporter initialized/updated.');
 };
 
-// @desc    Configure/Update the email sender credentials
-// @route   PUT /api/emails/configure-sender
-// @access  Public (should be protected in production)
-exports.configureSender = (req, res) => {
-    const { emailUser, emailPass } = req.body;
+/**
+ * @desc    Set/Update admin email credentials.
+ * WARNING: Storing credentials directly is highly insecure.
+ * This route is for demonstrating dynamic credential setting per user's request.
+ * @route   POST /api/admin-credentials
+ * @access  Private (should be protected with proper authentication/authorization in production)
+ */
+exports.setAdminCredentials = async (req, res) => {
+  const { email, password } = req.body;
 
-    if (!emailUser || !emailPass) {
-        return res.status(400).json({ msg: 'Please provide both emailUser and emailPass.' });
-    }
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password are required to set admin credentials.' });
+  }
 
-    currentEmailUser = emailUser;
-    currentEmailPass = emailPass;
-    initializeTransporter(); // Re-initialize the transporter with new credentials
-
-    if (transporter) {
-        res.status(200).json({ msg: 'Email sender credentials updated successfully.', configuredUser: currentEmailUser });
+  try {
+    // Find if credentials already exist; if so, update them, otherwise create new
+    let adminCred = await AdminCredential.findOne();
+    if (adminCred) {
+      adminCred.email = email;
+      adminCred.password = password; // WARNING: Storing passwords directly is insecure
+      await adminCred.save();
+      console.log('Admin credentials updated.');
     } else {
-        // If transporter couldn't be initialized with provided credentials
-        res.status(500).json({ msg: 'Failed to initialize email sender with provided credentials. Check your email user and password.' });
+      adminCred = new AdminCredential({ email, password }); // WARNING: Storing passwords directly is insecure
+      await adminCred.save();
+      console.log('Admin credentials set.');
     }
+    // Initialize the transporter immediately after setting credentials
+    createTransporter(email, password);
+    res.status(200).json({ message: 'Admin email credentials set successfully. WARNING: Direct storage is insecure.', credentials: { email: adminCred.email } });
+  } catch (error) {
+    console.error('Error setting admin credentials:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 };
 
-
-// @desc    Send an email and save its details to the database
-// @route   POST /api/emails/send
-// @access  Public
+/**
+ * @desc    Send an email from a client and save it to the database.
+ * Also adds the client's email to the ClientEmail collection if it's new.
+ * @route   POST /api/emails
+ * @access  Public
+ */
 exports.sendEmail = async (req, res) => {
-    // Destructure required fields from the request body
-    const { senderName, senderEmail, recipientEmail, subject, message } = req.body;
+  const { senderEmail, senderName, message } = req.body;
 
-    // Basic server-side validation to ensure all necessary fields are provided
-    if (!senderName || !senderEmail || !recipientEmail || !subject || !message) {
-        return res.status(400).json({ msg: 'Please provide all required fields: senderName, senderEmail, recipientEmail, subject, and message.' });
+  // Basic validation
+  if (!senderEmail || !senderName || !message) {
+    return res.status(400).json({ message: 'Please enter all fields: senderEmail, senderName, message.' });
+  }
+
+  try {
+    // 1. Save the email message to the 'emails' collection
+    const newEmail = new Email({
+      senderEmail,
+      senderName,
+      message
+    });
+    await newEmail.save();
+
+    // 2. Add the sender's email to the 'clientemails' collection if it doesn't already exist
+    let client = await ClientEmail.findOne({ emailAddress: senderEmail });
+    if (!client) {
+      client = new ClientEmail({ emailAddress: senderEmail });
+      await client.save();
+      console.log(`New unique client email added: ${senderEmail}`);
     }
 
-    // Check if transporter is initialized (i.e., credentials have been set)
-    if (!transporter) {
-        console.warn('Attempted to send email but Nodemailer transporter is not configured.');
-        return res.status(400).json({ msg: 'Email sender not configured. Please configure emailUser and emailPass first via /api/emails/configure-sender.' });
+    res.status(201).json({ message: 'Email sent and saved successfully!', email: newEmail });
+  } catch (error) {
+    console.error('Error sending or saving email:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+/**
+ * @desc    Fetch all sent emails from the 'emails' collection.
+ * @route   GET /api/emails
+ * @access  Public (consider adding authentication for production)
+ */
+exports.getSentEmails = async (req, res) => {
+  try {
+    // Fetch all emails, sorted by creation date descending
+    const emails = await Email.find().sort({ createdAt: -1 });
+    res.status(200).json(emails);
+  } catch (error) {
+    console.error('Error fetching emails:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+/**
+ * @desc    Fetch all unique client emails from the 'clientemails' collection.
+ * @route   GET /api/clients
+ * @access  Private (should be protected with proper authentication/authorization)
+ */
+exports.getClientEmails = async (req, res) => {
+  try {
+    const clientEmails = await ClientEmail.find().sort({ createdAt: -1 });
+    res.status(200).json(clientEmails);
+  } catch (error) {
+    console.error('Error fetching client emails:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+/**
+ * @desc    Send a response email to all clients who have sent an email
+ * and have not yet received a response.
+ * @route   POST /api/emails/send-response
+ * @access  Private (requires admin authentication/authorization and Admin Credentials set)
+ */
+exports.sendResponseToAllClients = async (req, res) => {
+  const { responseSubject, responseMessage } = req.body;
+
+  if (!responseSubject || !responseMessage) {
+    return res.status(400).json({ message: 'Please provide a responseSubject and responseMessage.' });
+  }
+
+  // Retrieve admin email credentials from the database
+  const adminCred = await AdminCredential.findOne();
+  if (!adminCred) {
+    return res.status(400).json({ message: 'Admin email credentials are not set. Please set them first via /api/admin-credentials.' });
+  }
+
+  // Initialize the transporter with the retrieved admin credentials
+  createTransporter(adminCred.email, adminCred.password);
+  if (!transporter) {
+    return res.status(500).json({ message: 'Email transporter could not be initialized. Check admin credentials and Nodemailer configuration.' });
+  }
+
+  try {
+    // Find all emails that have been sent by clients
+    const allClientEmails = await Email.find({});
+
+    // Find all email IDs that have already received a response
+    const respondedEmailIds = (await Response.find({}, { emailId: 1, _id: 0 }))
+      .map(r => r.emailId.toString()); // Convert ObjectId to string for comparison
+
+    // Filter out emails that have already received a response
+    const emailsToRespond = allClientEmails.filter(emailDoc =>
+      !respondedEmailIds.includes(emailDoc._id.toString())
+    );
+
+    if (emailsToRespond.length === 0) {
+      return res.status(200).json({ message: 'No new emails found that require a response.' });
     }
 
-    try {
-        // Step 1: Create a new Email document based on the Mongoose model
-        const newEmail = new Email({
-            senderName,
-            senderEmail,
-            recipientEmail, // Store recipient email in the database
-            subject,
-            message
+    let successCount = 0;
+    let failedEmails = [];
+
+    for (const emailDoc of emailsToRespond) {
+      const mailOptions = {
+        from: adminCred.email, // Use the admin's email for sending
+        to: emailDoc.senderEmail,     // Recipient's email (original sender)
+        subject: responseSubject,
+        text: `Dear ${emailDoc.senderName},\n\n${responseMessage}\n\nBest regards,\nYour Team`
+      };
+
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log(`Response sent to: ${emailDoc.senderEmail} (Original Email ID: ${emailDoc._id})`);
+
+        // Create a new entry in the 'responses' collection for this sent response
+        const newResponse = new Response({
+          emailId: emailDoc._id,
+          subject: responseSubject,
+          message: responseMessage
         });
-
-        // Step 2: Save the new email document to MongoDB
-        const savedEmail = await newEmail.save();
-        console.log('Email successfully saved to DB:', savedEmail._id);
-
-
-        // Step 3: Send the actual email using the configured transporter
-        const mailOptions = {
-            from: currentEmailUser, // Sender address (currently configured email)
-            to: recipientEmail,          // List of recipients from request
-            subject: subject,            // Subject line from request
-            text: `From: ${senderName} <${senderEmail}>\n\n${message}`, // Plain text body
-            html: `
-                <p><strong>From:</strong> ${senderName} &lt;${senderEmail}&gt;</p>
-                <p><strong>Subject:</strong> ${subject}</p>
-                <p>${message}</p>
-            ` // HTML body
-        };
-
-        let info;
-        try {
-            console.log('Attempting to send email via Nodemailer...');
-            console.log('Mail options:', mailOptions);
-            info = await transporter.sendMail(mailOptions);
-            console.log("Message sent successfully! Message ID: %s", info.messageId);
-            // Optionally, for Ethereal testing, uncomment:
-            // console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
-
-            // If both saving and sending were successful
-            res.status(201).json({
-                msg: 'Email sent and saved successfully.',
-                email: savedEmail,
-                emailServiceResponse: { success: true, messageId: info.messageId }
-            });
-
-        } catch (emailSendError) {
-            console.error("Critical Error sending email via Nodemailer:", emailSendError);
-            // If email sending failed but saving to DB succeeded, inform the user
-            return res.status(200).json({ // Use 200 because DB save was successful
-                msg: 'Email saved to database, but there was an issue sending the actual email. Check server logs for details.',
-                email: savedEmail,
-                emailServiceResponse: { success: false, error: emailSendError.message, stack: emailSendError.stack } // Provide stack for debugging
-            });
-        }
-
-    } catch (err) {
-        // More specific error handling for Mongoose validation errors
-        if (err.name === 'ValidationError') {
-            const messages = Object.values(err.errors).map(val => val.message);
-            console.error('Mongoose Validation Error during email save:', messages);
-            return res.status(400).json({ msg: messages.join(', ') });
-        }
-        // General server error for other issues (e.g., database connection issues)
-        console.error('Unhandled Server Error in sendEmail controller:', err.message, err.stack);
-        res.status(500).json({ msg: 'Server Error: Could not process email request.', error: err.message });
+        await newResponse.save();
+        successCount++;
+      } catch (mailError) {
+        console.error(`Failed to send response to ${emailDoc.senderEmail} (Original Email ID: ${emailDoc._id}):`, mailError);
+        failedEmails.push(emailDoc.senderEmail);
+      }
     }
-};
 
-// @desc    Retrieve all emails stored in the database
-// @route   GET /api/emails
-// @access  Public
-exports.getEmails = async (req, res) => {
-    try {
-        // Find all emails and sort them by the 'sentAt' field in descending order (newest first)
-        const emails = await Email.find().sort({ sentAt: -1 });
-        res.json(emails); // Send the retrieved emails as a JSON response
-    } catch (err) {
-        // Handle any errors during database retrieval
-        console.error('Error in getEmails controller:', err.message);
-        res.status(500).json({ msg: 'Server Error: Could not retrieve emails.', error: err.message });
-    }
-};
+    res.status(200).json({
+      message: `Attempted to send responses to ${emailsToRespond.length} emails.`,
+      successfulSends: successCount,
+      failedSends: failedEmails.length,
+      failedEmails: failedEmails
+    });
 
-// @desc    Retrieve a single email by its ID
-// @route   GET /api/emails/:id
-// @access  Public
-exports.getEmailById = async (req, res) => {
-    try {
-        // Find an email by its ID from the request parameters
-        const email = await Email.findById(req.params.id);
-
-        // If no email is found with the given ID, return a 404 Not Found error
-        if (!email) {
-            return res.status(404).json({ msg: 'Email not found.' });
-        }
-
-        res.json(email); // Send the found email as a JSON response
-    } catch (err) {
-        // Handle errors, including invalid MongoDB ObjectId format
-        console.error('Error in getEmailById controller:', err.message);
-        if (err.kind === 'ObjectId') {
-            return res.status(400).json({ msg: 'Invalid email ID format.' });
-        }
-        res.status(500).json({ msg: 'Server Error: Could not retrieve email.', error: err.message });
-    }
+  } catch (error) {
+    console.error('Error in sendResponseToAllClients:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 };
