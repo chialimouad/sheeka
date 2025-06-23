@@ -5,12 +5,12 @@ const SiteConfigSchema = new mongoose.Schema({
     siteName: {
         type: String,
         required: true,
-        default: ''
+        default: '  '
     },
     slogan: {
         type: String,
         required: true,
-        default: ''
+        default: '  '
     },
     // Main brand colors (using hex codes for flexibility, can be mapped to Tailwind classes in frontend)
     primaryColor: { // Used for main accents, like buttons, active states
@@ -46,7 +46,7 @@ const SiteConfigSchema = new mongoose.Schema({
     aboutUsText: {
         type: String,
         required: true,
-        default: `At , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
+        default: `At  , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
 
 From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`
     },
@@ -164,8 +164,8 @@ SiteConfigSchema.statics.getSingleton = async function() {
     if (!config) {
         // Create a default configuration if none exists
         config = await this.create({
-            siteName: '',
-            slogan: '',
+            siteName: '  ',
+            slogan: '  ',
             primaryColor: '#C8797D',
             secondaryColor: '#A85F64',
             tertiaryColor: '#FDF5E6',
@@ -173,7 +173,7 @@ SiteConfigSchema.statics.getSingleton = async function() {
             footerBgColor: '#4A4A4A',
             footerTextColor: '#DDCACA',
             footerLinkColor: '#E6B89C',
-            aboutUsText: `At , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
+            aboutUsText: `At  , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
 
 From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`,
             aboutUsImageUrl: 'https://placehold.co/800x600/F020D8/FFFFFF?text=About+Us',
