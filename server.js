@@ -1,3 +1,5 @@
+// --- server.js ---
+// Main application file
 require('dotenv').config(); // Load environment variables
 const express = require('express');
 const mongoose = require('mongoose');
@@ -60,7 +62,7 @@ app.use('/authuser', authroutesuser);
 app.use('/products', productRoutes); // All product-related routes are handled here
 app.use('/orders', orderRoutes);
 app.use('/api/site-config', siteConfigRoutes); // New: Route for site configuration
-app.use('/api', emailRoutes); // Mount email routes under /api, consistent with previous plan
+app.use('/api', emailRoutes); // Mount email routes under /api, which includes /api/emails, /api/responses, etc.
 
 
 // ========================

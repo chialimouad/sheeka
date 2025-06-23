@@ -4,10 +4,11 @@ const express = require('express');
 const {
   sendEmail,
   getSentEmails,
-  getClientEmails,       // New controller function
+  getClientEmails,
+  getResponses, // Added this import
   sendResponseToAllClients,
-  setAdminCredentials    // New controller function
-} = require('../controllers/email');
+  setAdminCredentials
+} = require('../controllers/emailController'); // Corrected import path from '../controllers/email'
 const router = express.Router();
 
 // Route to set or update the admin email credentials
@@ -22,6 +23,9 @@ router.get('/emails', getSentEmails);
 
 // Route to fetch all unique client email addresses
 router.get('/clients', getClientEmails);
+
+// New route to fetch all sent responses
+router.get('/responses', getResponses); // Added this route
 
 // Route for an administrator to send a collective response to clients
 // This route should also be protected with authentication/authorization in production.

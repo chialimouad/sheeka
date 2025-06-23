@@ -1,5 +1,3 @@
-
-
 // --- controllers/emailController.js ---
 // Logic for handling email-related operations
 const Email = require('../models/emails');
@@ -124,6 +122,21 @@ exports.getClientEmails = async (req, res) => {
     res.status(200).json(clientEmails);
   } catch (error) {
     console.error('Error fetching client emails:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+/**
+ * @desc    Fetch all sent responses from the 'responses' collection.
+ * @route   GET /api/responses
+ * @access  Private (should be protected with proper authentication/authorization)
+ */
+exports.getResponses = async (req, res) => {
+  try {
+    const responses = await Response.find().sort({ sentAt: -1 });
+    res.status(200).json(responses);
+  } catch (error) {
+    console.error('Error fetching responses:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
