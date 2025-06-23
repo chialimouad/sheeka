@@ -1,3 +1,4 @@
+require('dotenv').config(); // Load environment variables
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -7,12 +8,13 @@ const fs = require('fs');
 const morgan = require('morgan');
 const helmet = require('helmet');
 
+// Import your routes
 const authRoutes = require('./routes/authRoutes');
 const orderRoutes = require('./routes/orders');
 const authroutesuser = require('./routes/authroutesuser');
-const productRoutes = require('./routes/productRoutes'); // Import productRoutes
-const siteConfigRoutes = require('./routes/site'); // Import siteConfigRoutes
-const emailRoutes = require('./routes/emails'); // Import your updated email routes
+const productRoutes = require('./routes/productRoutes');
+const siteConfigRoutes = require('./routes/site');
+const emailRoutes = require('./routes/emails'); // Corrected import path to emailRoutes.js
 
 dotenv.config(); // Load .env variables
 
@@ -34,7 +36,7 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadDir)); // Serve static files from uploads
-app.use('/api/emails', emailRoutes);
+// Removed: app.use('/api/emails', emailRoutes); - This was a duplicate and misplaced.
 
 // ========================
 // 🌐 MongoDB Connection
@@ -58,12 +60,7 @@ app.use('/authuser', authroutesuser);
 app.use('/products', productRoutes); // All product-related routes are handled here
 app.use('/orders', orderRoutes);
 app.use('/api/site-config', siteConfigRoutes); // New: Route for site configuration
-
-// New route for promo image uploads under /uploads/promo
-// This uses the multer upload middleware and controller function from productController.
-// Note: This creates an *additional* endpoint for promo image uploads.
-// The existing endpoint at POST /products/promo (defined in productRoutes.js) also works.
-// Removed the redundant app.post('/uploads/promo', ...) since it's now handled by productRoutes.
+app.use('/api', emailRoutes); // Mount email routes under /api, consistent with previous plan
 
 
 // ========================
