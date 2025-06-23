@@ -1,4 +1,4 @@
-const SiteConfig = require('../models/sitecontroll');
+const SiteConfig = require('../models/sitecontroll'); // Corrected model import name
 
 // @desc    Get site configuration
 // @route   GET /api/site-config
@@ -22,7 +22,6 @@ exports.updateSiteConfig = async (req, res) => {
         let config = await SiteConfig.getSingleton(); 
         
         // Update fields from request body. Use defaults if not provided in request.
-        // Ensure that socialMediaLinks is handled properly as an array
         const { 
             siteName, 
             slogan, 
@@ -34,7 +33,9 @@ exports.updateSiteConfig = async (req, res) => {
             footerTextColor, 
             footerLinkColor, 
             aboutUsText, 
-            socialMediaLinks 
+            aboutUsImageUrl, // NEW: Added aboutUsImageUrl
+            socialMediaLinks,
+            deliveryFees // NEW: Added deliveryFees
         } = req.body;
 
         if (siteName !== undefined) config.siteName = siteName;
@@ -47,6 +48,7 @@ exports.updateSiteConfig = async (req, res) => {
         if (footerTextColor !== undefined) config.footerTextColor = footerTextColor;
         if (footerLinkColor !== undefined) config.footerLinkColor = footerLinkColor;
         if (aboutUsText !== undefined) config.aboutUsText = aboutUsText;
+        if (aboutUsImageUrl !== undefined) config.aboutUsImageUrl = aboutUsImageUrl; // NEW: Update aboutUsImageUrl
 
         if (socialMediaLinks !== undefined) {
             if (Array.isArray(socialMediaLinks)) {
@@ -58,6 +60,26 @@ exports.updateSiteConfig = async (req, res) => {
                 }));
             } else {
                 return res.status(400).json({ message: 'socialMediaLinks must be an array.' });
+            }
+        }
+
+        // NEW: Handle deliveryFees update
+        if (deliveryFees !== undefined) {
+            if (Array.isArray(deliveryFees)) {
+                // Basic validation for deliveryFees array structure
+                const isValid = deliveryFees.every(fee => 
+                    typeof fee.wilayaId === 'number' &&
+                    typeof fee.wilayaName === 'string' &&
+                    typeof fee.price === 'number'
+                );
+                if (isValid) {
+                    // Sort fees by wilayaId to maintain a consistent order if needed
+                    config.deliveryFees = deliveryFees.sort((a, b) => a.wilayaId - b.wilayaId);
+                } else {
+                    return res.status(400).json({ message: 'deliveryFees must be an array of objects with wilayaId (number), wilayaName (string), and price (number).' });
+                }
+            } else {
+                return res.status(400).json({ message: 'deliveryFees must be an array.' });
             }
         }
 

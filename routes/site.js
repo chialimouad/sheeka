@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const siteConfigController = require('../controllers/site');
+const siteConfigController = require('../controllers/site'); // Corrected import path
 
 // GET site configuration
 router.get('/', siteConfigController.getSiteConfig);
