@@ -8,7 +8,7 @@ const {
   getResponses, // Added this import
   sendResponseToAllClients,
   setAdminCredentials
-} = require('../controllers/emailController'); // Corrected import path from '../controllers/email'
+} = require('../controllers/email'); // Corrected import path from '../controllers/email'
 const router = express.Router();
 
 // Route to set or update the admin email credentials
