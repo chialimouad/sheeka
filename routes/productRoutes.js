@@ -16,6 +16,7 @@ router.delete('/promo', productController.deletePromoImage);
 // ================================
 router.get('/collections', productController.getCollections);
 router.post('/collections', productController.addCollection);
+router.get('/collections/:id', productController.getCollectionById); // Get collection by ID
 router.put('/collections/:id', productController.updateCollection);
 router.delete('/collections/:id', productController.deleteCollection);
 
@@ -24,9 +25,9 @@ router.delete('/collections/:id', productController.deleteCollection);
 // ================================
 router.get('/', productController.getProducts); // Get all products
 router.post(
-  '/',
-  productController.upload.array('images', 5), // max 5 images
-  productController.addProduct
+  '/',
+  productController.upload.array('images', 5), // max 5 images
+  productController.addProduct
 );
 router.get('/:id', productController.getProductById); // Get product by ID
 router.put('/:id', productController.updateProduct); // Update product (only text fields, no image)
