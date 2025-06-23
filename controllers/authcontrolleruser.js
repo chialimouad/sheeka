@@ -10,7 +10,7 @@ dotenv.config();
 const generateToken = (id, role) => {
   // It's highly recommended to use an environment variable for your JWT secret
   // process.env.JWT_SECRET should be set in your .env file
-  return jwt.sign({ id, role }, process.env.JWT_SECRET || "mouadsecret_fallback", { expiresIn: '1month' });
+  return jwt.sign({ id, role }, process.env.JWT_SECRET || "mouadsecret_fallback", { expiresIn: '28d' });
 };
 
 exports.getUsers = async (req, res) => {

@@ -6,7 +6,7 @@ dotenv.config();
 
 // ✅ Generate JWT Token
 const generateToken = (id, role) => {
-  return jwt.sign({ id, role }, "mouadsecret", { expiresIn: '1month' });
+  return jwt.sign({ id, role }, "mouadsecret", { expiresIn: '28d' });
 };
 exports.getUsers = async (req, res) => {
   try {
