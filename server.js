@@ -12,6 +12,7 @@ const orderRoutes = require('./routes/orders');
 const authroutesuser = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes'); // Import productRoutes
 const siteConfigRoutes = require('./routes/site'); // Import siteConfigRoutes
+const emailRoutes = require('./routes/emails'); // Import your updated email routes
 
 dotenv.config(); // Load .env variables
 
@@ -33,6 +34,7 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadDir)); // Serve static files from uploads
+app.use('/api/emails', emailRoutes);
 
 // ========================
 // 🌐 MongoDB Connection
