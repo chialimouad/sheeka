@@ -27,7 +27,7 @@ router.get('/clients', getClientEmails);
 // New route to fetch all sent responses
 router.get('/responses', getResponses); // Added this route
 
-// Route for an administrator to send a collective response to clients
+// Route for an administrtor to send a collective response to clients
 // This route should also be protected with authentication/authorization in production.
 router.post('/emails/send-response', sendResponseToAllClients);
 
