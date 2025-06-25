@@ -9,6 +9,7 @@ const PixelController = {
   /**
    * Handles the creation of a new pixel entry.
    * Expected request body: { "fbPixelId": "YOUR_FB_PIXEL_ID", "tiktokPixelId": "YOUR_TIKTOK_PIXEL_ID" }
+   * Note: Both fbPixelId and tiktokPixelId are now optional, but at least one must be provided.
    * @param {object} req - The Express request object.
    * @param {object} res - The Express response object.
    */
@@ -16,22 +17,24 @@ const PixelController = {
     // Destructure fbPixelId and tiktokPixelId from the request body
     const { fbPixelId, tiktokPixelId } = req.body;
 
-    // Input validation: Check if both IDs are provided
-    if (!fbPixelId || !tiktokPixelId) {
-      // If not, send a 400 Bad Request response with an error message
-      return res.status(400).json({ message: 'Both fbPixelId and tiktokPixelId are required.' });
+    // Input validation: Check if at least one ID is provided
+    if (!fbPixelId && !tiktokPixelId) {
+      // If neither is provided, send a 400 Bad Request response with an error message
+      return res.status(400).json({ message: 'At least one of fbPixelId or tiktokPixelId is required.' });
     }
 
     try {
       // Call the model to create a new pixel entry. Await the promise.
+      // Pass both IDs. The model should handle cases where one might be undefined/null.
       const newPixel = await PixelModel.createPixel({ fbPixelId, tiktokPixelId });
       // Send a 201 Created response with the newly created pixel object
       res.status(201).json({ message: 'Pixel IDs stored successfully!', pixel: newPixel });
     } catch (error) {
       // Handle any potential errors during the creation process,
       // especially unique constraint errors from MongoDB/Mongoose.
-      if (error.code === 11000) { // MongoDB duplicate key error code
-        return res.status(409).json({ message: 'Pixel ID already exists. Please use unique IDs.', error: error.message });
+      // MongoDB duplicate key error code is 11000.
+      if (error.code === 11000) {
+        return res.status(409).json({ message: 'A pixel entry with one of the provided IDs already exists. Please use unique IDs or update the existing entry.', error: error.message });
       }
       console.error('Error saving pixel IDs:', error);
       res.status(500).json({ message: 'Failed to save pixel IDs.', error: error.message });
