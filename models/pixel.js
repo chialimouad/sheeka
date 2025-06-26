@@ -1,27 +1,31 @@
-// pixelModel.js (Model Definition with Mongoose)
-// This file defines the structure of our data (the "model") and how to interact with it,
-// using Mongoose for MongoDB database operations.
+const mongoose = require('mongoose');
 
-const mongoose = require('mongoose'); // Import Mongoose
-
-// Define the schema for our Pixel data
 const PixelSchema = new mongoose.Schema({
   fbPixelId: {
     type: String,
-    required: true, // Facebook Pixel ID is required
-    unique: true,   // Ensure each FB Pixel ID is unique
-    trim: true      // Remove whitespace from both ends of the string
+    unique: true,
+    sparse: true, // Allows multiple null/undefined values
   },
   tiktokPixelId: {
     type: String,
-    required: true, // TikTok Pixel ID is required
-    unique: true,   // Ensure each TikTok Pixel ID is unique
-    trim: true      // Remove whitespace from both ends of the string
+    unique: true,
+    sparse: true,
   },
-}, {
-  timestamps: true // Adds createdAt and updatedAt timestamps automatically
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
-// Create a Mongoose model from the schema
-const Pixel = mongoose.model('Pixel', PixelSchema);
-s
+// Static method to create a pixel entry
+PixelSchema.statics.createPixel = async function (pixelData) {
+  const pixel = new this(pixelData);
+  return await pixel.save();
+};
+
+// Static method to fetch all pixels
+PixelSchema.statics.getAllPixels = async function () {
+  return await this.find().sort({ createdAt: -1 });
+};
+
+module.exports = mongoose.model('Pixel', PixelSchema);

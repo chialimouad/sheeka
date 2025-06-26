@@ -1,64 +1,46 @@
-// pixelController.js (Controller Logic)
-// This file contains the business logic for handling requests related to pixels.
-// It interacts with the model to perform data operations and sends responses back to the client.
-
-// Import the PixelModel to interact with our data
 const PixelModel = require('../models/pixel');
 
 const PixelController = {
-  /**
-   * Handles the creation of a new pixel entry.
-   * Expected request body: { "fbPixelId": "YOUR_FB_PIXEL_ID", "tiktokPixelId": "YOUR_TIKTOK_PIXEL_ID" }
-   * Note: Both fbPixelId and tiktokPixelId are now optional, but at least one must be provided.
-   * @param {object} req - The Express request object.
-   * @param {object} res - The Express response object.
-   */
-  postPixel: async (req, res) => { // Made async to await model operations
-    // Destructure fbPixelId and tiktokPixelId from the request body
-    const { fbPixelId, tiktokPixelId } = req.body;
+  postPixel: async (req, res) => {
+    const fbPixelId = req.body.fbPixelId?.trim();
+    const tiktokPixelId = req.body.tiktokPixelId?.trim();
 
-    // Input validation: Check if at least one ID is provided
     if (!fbPixelId && !tiktokPixelId) {
-      // If neither is provided, send a 400 Bad Request response with an error message
-      return res.status(400).json({ message: 'At least one of fbPixelId or tiktokPixelId is required.' });
+      return res.status(400).json({
+        message: 'At least one of fbPixelId or tiktokPixelId is required.'
+      });
     }
 
     try {
-      // Call the model to create a new pixel entry. Await the promise.
-      // Pass both IDs. The model should handle cases where one might be undefined/null.
       const newPixel = await PixelModel.createPixel({ fbPixelId, tiktokPixelId });
-      // Send a 201 Created response with the newly created pixel object
-      res.status(201).json({ message: 'Pixel IDs stored successfully!', pixel: newPixel });
+      res.status(201).json({
+        message: 'Pixel IDs stored successfully!',
+        pixel: newPixel
+      });
     } catch (error) {
-      // Handle any potential errors during the creation process,
-      // especially unique constraint errors from MongoDB/Mongoose.
-      // MongoDB duplicate key error code is 11000.
       if (error.code === 11000) {
-        return res.status(409).json({ message: 'A pixel entry with one of the provided IDs already exists. Please use unique IDs or update the existing entry.', error: error.message });
+        return res.status(409).json({
+          message: 'A pixel entry with one of the provided IDs already exists.',
+          error: error.message
+        });
       }
       console.error('Error saving pixel IDs:', error);
       res.status(500).json({ message: 'Failed to save pixel IDs.', error: error.message });
     }
   },
 
-  /**
-   * Handles fetching all existing pixel entries.
-   * @param {object} req - The Express request object.
-   * @param {object} res - The Express response object.
-   */
-  getPixels: async (req, res) => { // Made async to await model operations
+  getPixels: async (req, res) => {
     try {
-      // Call the model to retrieve all pixel entries. Await the promise.
       const pixels = await PixelModel.getAllPixels();
-      // Send a 200 OK response with the array of pixels
-      res.status(200).json({ message: 'Fetched all pixel IDs successfully!', pixels });
+      res.status(200).json({
+        message: 'Fetched all pixel IDs successfully!',
+        pixels
+      });
     } catch (error) {
-      // Handle any potential errors during the fetching process
       console.error('Error fetching pixel IDs:', error);
       res.status(500).json({ message: 'Failed to fetch pixel IDs.', error: error.message });
     }
   }
 };
 
-// Export the PixelController so it can be used by the routes
 module.exports = PixelController;
