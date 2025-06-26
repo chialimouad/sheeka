@@ -33,9 +33,10 @@ exports.updateSiteConfig = async (req, res) => {
             footerTextColor, 
             footerLinkColor, 
             aboutUsText, 
-            aboutUsImageUrl, // NEW: Added aboutUsImageUrl
+            aboutUsImageUrl,
             socialMediaLinks,
-            deliveryFees // NEW: Added deliveryFees
+            deliveryFees,
+            currentDataIndex 
         } = req.body;
 
         if (siteName !== undefined) config.siteName = siteName;
@@ -48,7 +49,7 @@ exports.updateSiteConfig = async (req, res) => {
         if (footerTextColor !== undefined) config.footerTextColor = footerTextColor;
         if (footerLinkColor !== undefined) config.footerLinkColor = footerLinkColor;
         if (aboutUsText !== undefined) config.aboutUsText = aboutUsText;
-        if (aboutUsImageUrl !== undefined) config.aboutUsImageUrl = aboutUsImageUrl; // NEW: Update aboutUsImageUrl
+        if (aboutUsImageUrl !== undefined) config.aboutUsImageUrl = aboutUsImageUrl;
 
         if (socialMediaLinks !== undefined) {
             if (Array.isArray(socialMediaLinks)) {
@@ -63,7 +64,7 @@ exports.updateSiteConfig = async (req, res) => {
             }
         }
 
-        // NEW: Handle deliveryFees update
+        // Handle deliveryFees update
         if (deliveryFees !== undefined) {
             if (Array.isArray(deliveryFees)) {
                 // Basic validation for deliveryFees array structure
@@ -83,10 +84,46 @@ exports.updateSiteConfig = async (req, res) => {
             }
         }
 
+        // Handle currentDataIndex update
+        if (currentDataIndex !== undefined) {
+            if (typeof currentDataIndex === 'number') {
+                config.currentDataIndex = currentDataIndex;
+            } else {
+                return res.status(400).json({ message: 'currentDataIndex must be a number.' });
+            }
+        }
+
         await config.save();
         res.json({ message: 'Site configuration updated successfully', config });
     } catch (error) {
         console.error('Error updating site configuration:', error);
         res.status(500).json({ message: 'Server error updating site configuration', error: error.message });
+    }
+};
+
+
+// @desc    Update only the currentDataIndex field of site configuration
+// @route   PUT /api/site-config/index
+// @access  Private (e.g., Admin only)
+exports.updateCurrentDataIndex = async (req, res) => {
+    try {
+        let config = await SiteConfig.getSingleton(); 
+        const { currentDataIndex } = req.body;
+
+        if (currentDataIndex === undefined) {
+            return res.status(400).json({ message: 'currentDataIndex is required.' });
+        }
+
+        if (typeof currentDataIndex === 'number') {
+            config.currentDataIndex = currentDataIndex;
+        } else {
+            return res.status(400).json({ message: 'currentDataIndex must be a number.' });
+        }
+
+        await config.save();
+        res.json({ message: 'Current data index updated successfully', config: { currentDataIndex: config.currentDataIndex } });
+    } catch (error) {
+        console.error('Error updating current data index:', error);
+        res.status(500).json({ message: 'Server error updating current data index', error: error.message });
     }
 };

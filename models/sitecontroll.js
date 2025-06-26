@@ -5,12 +5,12 @@ const SiteConfigSchema = new mongoose.Schema({
     siteName: {
         type: String,
         required: true,
-        default: '  '
+        default: ''
     },
     slogan: {
         type: String,
         required: true,
-        default: '  '
+        default: ''
     },
     // Main brand colors (using hex codes for flexibility, can be mapped to Tailwind classes in frontend)
     primaryColor: { // Used for main accents, like buttons, active states
@@ -46,7 +46,7 @@ const SiteConfigSchema = new mongoose.Schema({
     aboutUsText: {
         type: String,
         required: true,
-        default: `At  , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
+        default: `At , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
 
 From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`
     },
@@ -71,7 +71,7 @@ From conceptualization to creation, every piece is crafted with meticulous atten
             }
         }
     ],
-    // Delivery Fees (new field)
+    // Delivery Fees
     deliveryFees: [
         {
             wilayaId: {
@@ -88,7 +88,12 @@ From conceptualization to creation, every piece is crafted with meticulous atten
                 default: 0
             }
         }
-    ]
+    ],
+    // NEW FIELD: A generic number data field
+    currentDataIndex: {
+        type: Number,
+        default: 0 // Default value
+    }
 }, {
     timestamps: true // Adds createdAt and updatedAt timestamps
 });
@@ -164,8 +169,8 @@ SiteConfigSchema.statics.getSingleton = async function() {
     if (!config) {
         // Create a default configuration if none exists
         config = await this.create({
-            siteName: '  ',
-            slogan: '  ',
+            siteName: '',
+            slogan: '',
             primaryColor: '#C8797D',
             secondaryColor: '#A85F64',
             tertiaryColor: '#FDF5E6',
@@ -173,7 +178,7 @@ SiteConfigSchema.statics.getSingleton = async function() {
             footerBgColor: '#4A4A4A',
             footerTextColor: '#DDCACA',
             footerLinkColor: '#E6B89C',
-            aboutUsText: `At  , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
+            aboutUsText: `At , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
 
 From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`,
             aboutUsImageUrl: 'https://placehold.co/800x600/F020D8/FFFFFF?text=About+Us',
@@ -182,30 +187,38 @@ From conceptualization to creation, every piece is crafted with meticulous atten
                 { platform: 'Instagram', url: '#', iconClass: 'fab fa-instagram' },
                 { platform: 'Twitter', url: '#', iconClass: 'fab fa-twitter' }
             ],
-            deliveryFees: generateDefaultDeliveryFees() // Initialize with default fees
+            deliveryFees: generateDefaultDeliveryFees(), // Initialize with default fees
+            currentDataIndex: 0 // NEW: Initialize currentDataIndex
         });
     } else {
         // Ensure that existing configs have the deliveryFees field.
         // If not, initialize it with defaults or merge.
+        let changed = false;
         if (!config.deliveryFees || config.deliveryFees.length === 0) {
             config.deliveryFees = generateDefaultDeliveryFees();
-            await config.save();
+            changed = true;
         } else {
-             // Optional: If you want to ensure all 58 wilayas are always present,
-             // you could iterate through `generateDefaultDeliveryFees()` and add
-             // any missing wilayas to `config.deliveryFees`.
-             const existingWilayaIds = new Set(config.deliveryFees.map(f => f.wilayaId));
-             const defaultFeesList = generateDefaultDeliveryFees();
-             let changed = false;
-             defaultFeesList.forEach(defaultFee => {
-                 if (!existingWilayaIds.has(defaultFee.wilayaId)) {
-                     config.deliveryFees.push(defaultFee);
-                     changed = true;
-                 }
-             });
-             if (changed) {
-                 await config.save();
-             }
+            // Optional: If you want to ensure all 58 wilayas are always present,
+            // you could iterate through `generateDefaultDeliveryFees()` and add
+            // any missing wilayas to `config.deliveryFees`.
+            const existingWilayaIds = new Set(config.deliveryFees.map(f => f.wilayaId));
+            const defaultFeesList = generateDefaultDeliveryFees();
+            defaultFeesList.forEach(defaultFee => {
+                if (!existingWilayaIds.has(defaultFee.wilayaId)) {
+                    config.deliveryFees.push(defaultFee);
+                    changed = true;
+                }
+            });
+        }
+
+        // NEW: Ensure currentDataIndex exists on existing configurations
+        if (config.currentDataIndex === undefined) {
+            config.currentDataIndex = 0;
+            changed = true;
+        }
+
+        if (changed) {
+            await config.save();
         }
     }
     return config;
