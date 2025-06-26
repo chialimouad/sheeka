@@ -59,6 +59,31 @@ const PixelController = {
   },
 
   /**
+   * Handles DELETE requests to remove a specific pixel entry by ID.
+   * @param {object} req - Express request object (expects pixel ID in params).
+   * @param {object} res - Express response object.
+   */
+  deletePixel: async (req, res) => {
+    const pixelId = req.params.id; // Get the pixel ID from the URL parameters
+
+    try {
+      const deletedPixel = await PixelModel.deletePixel(pixelId); // Assuming a delete method in your PixelModel
+
+      if (!deletedPixel) {
+        return res.status(404).json({ message: 'Pixel ID not found.' });
+      }
+
+      res.status(200).json({
+        message: 'Pixel ID deleted successfully!',
+        pixel: deletedPixel
+      });
+    } catch (error) {
+      console.error('Error deleting pixel ID:', error);
+      res.status(500).json({ message: 'Failed to delete pixel ID.', error: error.message });
+    }
+  },
+
+  /**
    * Handles GET requests to provide overall site configuration,
    * including active Facebook and TikTok pixel IDs and delivery fees.
    * This is designed to be the endpoint consumed by the frontend's fetchSiteConfig function.
@@ -75,7 +100,30 @@ const PixelController = {
       // from a dedicated configuration service or database table.
       const siteConfigData = {
         siteName: "", // Example site name
-        metaDescription: "متجر  الإلكتروني يوفر أجود المنتجات بأسعار تنافسية.", // Example meta description
+        slogan: "Where Fashion Meets Comfort", // Added slogan as requested in previous HTML response
+        aboutUsText: `At Sheeka, we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
+
+From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`, // Added about us text
+        aboutUsImageUrl: "/images/about_us_placeholder.jpg", // Example placeholder image URL
+        metaDescription: "متجر الإلكتروني يوفر أجود المنتجات بأسعار تنافسية.", // Example meta description
+        primaryColor: "#C8797D", // Example primary color
+        secondaryColor: "#A85F64", // Example secondary color
+        tertiaryColor: "#FDF5E6", // Example tertiary color
+        generalTextColor: "#4A4A4A", // Example general text color
+        footerBgColor: "#4A4A4A", // Example footer background color
+        footerTextColor: "#DDCACA", // Example footer text color
+        footerLinkColor: "#E6B89C", // Example footer link color
+        socialMediaLinks: [ // Example social media links
+            { "platform": "facebook", "url": "https://facebook.com/sheeka", "iconClass": "fab fa-facebook-f" },
+            { "platform": "instagram", "url": "https://instagram.com/sheeka", "iconClass": "fab fa-instagram" },
+            { "platform": "twitter", "url": "https://twitter.com/sheeka", "iconClass": "fab fa-twitter" },
+            { "platform": "linkedin", "url": "https://linkedin.com/company/sheeka", "iconClass": "fab fa-linkedin-in" }
+        ],
+        promoImages: [ // Example promo images for hero carousel
+            "/images/hero_image1.jpg",
+            "/images/hero_image2.jpg",
+            "/images/hero_image3.jpg"
+        ],
         deliveryFees: [
           { "wilayaId": 1, "wilayaName": "Adrar", "price": 700 },
           { "wilayaId": 2, "wilayaName": "Chlef", "price": 650 },

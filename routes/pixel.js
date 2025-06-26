@@ -12,7 +12,10 @@ router.post('/pixels', PixelController.postPixel);
 // GET route to retrieve all stored pixel IDs
 router.get('/pixels', PixelController.getPixels);
 
-// NEW: GET route to retrieve general site configuration, including pixel IDs
+// DELETE route to remove a specific pixel ID by its database ID
+router.delete('/pixels/:id', PixelController.deletePixel); // NEW DELETE ROUTE
+
+// GET route to retrieve general site configuration, including pixel IDs
 router.get('/site-config', PixelController.getSiteConfig);
 
 module.exports = router;
