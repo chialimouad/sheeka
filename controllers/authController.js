@@ -6,14 +6,12 @@ dotenv.config();
 
 // ✅ Generate JWT Token
 const generateToken = (id, role) => {
-  // It's highly recommended to use an environment variable for your JWT secret
-  // process.env.JWT_SECRET should be set in your .env file
-  return jwt.sign({ id, role }, process.env.JWT_SECRET || "mouadsecret_fallback", { expiresIn: '28d' });
+  return jwt.sign({ id, role }, "mouadsecret", { expiresIn: '28d' });
 };
-
 exports.getUsers = async (req, res) => {
   try {
     const users = await User.find({}, 'name email role'); // Fetch only necessary fields
+
     res.status(200).json(users);
   } catch (error) {
     console.error('Error fetching users:', error);
@@ -37,8 +35,7 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Password hashing is handled by the pre-save hook in the User model.
-    // Ensure your User model has a pre-save hook to hash the password before saving.
+    // Directly store the password without hashing
     const newUser = await User.create({ name, email: email.toLowerCase(), password, role });
 
     // Generate JWT Token
@@ -60,7 +57,6 @@ exports.register = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
-
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -78,16 +74,15 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Compare the input password with the stored hashed password using the model method.
-    // Ensure your User model has a method like 'matchPassword' that uses bcrypt.compare().
-    const isMatch = await user.matchPassword(password);
-    if (!isMatch) {
+    // Compare the input password with the stored password
+    if (password !== user.password) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Generate JWT Token
     const token = generateToken(user._id, user.role);
 
+    // Send successful login response
     res.status(200).json({
       message: "Login successful",
       user: {
@@ -100,8 +95,44 @@ exports.login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login Error:', error);
+    console.error('Registration Error:', error);
+  
     // Send back the actual error message
     res.status(500).json({ message: error.message || 'Unexpected server error' });
   }
+  exports.updateindex = async (req, res) => {
+    try {
+      const { email, newIndexValue } = req.body;
+  
+      // Validate required fields
+      if (!email || (newIndexValue !== 0 && newIndexValue !== 1)) {
+        return res.status(400).json({ message: 'Email and a valid new index value (0 or 1) are required' });
+      }
+  
+      // Find and update the AdminCredential document
+      const updatedCredential = await AdminCredential.findOneAndUpdate(
+        { email: email.toLowerCase() },
+        { index: newIndexValue },
+        { new: true } // Return the updated document
+      );
+  
+      // If credential not found
+      if (!updatedCredential) {
+        return res.status(404).json({ message: 'Admin credential not found' });
+      }
+  
+      res.status(200).json({
+        message: 'Admin credential index updated successfully',
+        credential: {
+          id: updatedCredential._id,
+          email: updatedCredential.email,
+          index: updatedCredential.index
+        }
+      });
+  
+    } catch (error) {
+      console.error('Update Index Error:', error);
+      res.status(500).json({ message: 'Server error' });
+    }
+  };
 };
