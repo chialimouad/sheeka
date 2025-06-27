@@ -2,7 +2,7 @@
  * @fileoverview Handles API logic for pixel ID management and site configuration.
  */
 
-const PixelModel = require('../models/pixel'); // Import the pixel model. Assuming pixel.js is in the same directory, or adjust path if nested.
+const PixelModel = require('../models/pixel'); // Import the pixel model. Ensure path is correct.
 
 const PixelController = {
   /**
@@ -93,21 +93,19 @@ const PixelController = {
   getSiteConfig: async (req, res) => {
     try {
       // Fetch pixel IDs from the model (e.g., the latest active ones)
-      // This is the line that was identified as problematic.
-      // Ensure PixelModel is correctly imported and Mongoose is connected.
       const pixelConfig = await PixelModel.getLatestPixelConfig();
 
       // Simulate other site configuration data. In a real application,
       // 'siteName', 'metaDescription', and 'deliveryFees' would likely come
       // from a dedicated configuration service or database table.
       const siteConfigData = {
-        siteName: "Sheeka", // Example site name (added default "Sheeka" as it was empty)
+        siteName: "Sheeka Store", // Example site name (added default "Sheeka")
         slogan: "Where Fashion Meets Comfort",
-        aboutUsText: `At Sheeka, we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
+        aboutUsText: `At Sheeka Store, we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
 
 From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`,
         aboutUsImageUrl: "/images/about_us_placeholder.jpg",
-        metaDescription: "متجر الإلكتروني يوفر أجود المنتجات بأسعار تنافسية.",
+        metaDescription: "متجر Sheeka الإلكتروني يوفر أجود المنتجات بأسعار تنافسية.", // Added default meta description
         primaryColor: "#C8797D",
         secondaryColor: "#A85F64",
         tertiaryColor: "#FDF5E6",

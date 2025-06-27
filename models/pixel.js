@@ -52,7 +52,7 @@ PixelSchema.statics.getLatestPixelConfig = async function () {
   return {}; // No pixel configuration found
 };
 
-// NEW: Static method to delete a pixel entry by its ID.
+// Static method to delete a pixel entry by its ID.
 // This method finds and deletes a document based on the provided ID.
 PixelSchema.statics.deletePixel = async function (pixelId) {
   return await this.findByIdAndDelete(pixelId);

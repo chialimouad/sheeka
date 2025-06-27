@@ -13,7 +13,7 @@ router.post('/pixels', PixelController.postPixel);
 router.get('/pixels', PixelController.getPixels);
 
 // DELETE route to remove a specific pixel ID by its database ID
-router.delete('/pixels/:id', PixelController.deletePixel); // NEW DELETE ROUTE
+router.delete('/pixels/:id', PixelController.deletePixel);
 
 // GET route to retrieve general site configuration, including pixel IDs
 router.get('/site-config', PixelController.getSiteConfig);
