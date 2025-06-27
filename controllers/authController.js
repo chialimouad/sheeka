@@ -1,5 +1,4 @@
 const User = require('../models/User'); // Ensure your User model has an 'index' field
-// const AdminCredential = require('../models/admin'); // Removed: AdminCredential is not used for user index updates
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
 
@@ -158,5 +157,35 @@ exports.updateindex = async (req, res) => {
   } catch (error) {
     console.error('Update Index Error:', error);
     res.status(500).json({ message: 'Server error during index update: ' + error.message });
+  }
+};
+
+// ✅ New: Get User Index by ID
+exports.getUserIndex = async (req, res) => {
+  try {
+    const userId = req.params.id; // Get user ID from URL parameter
+
+    // Find the user by ID and select only the 'index' field
+    const user = await User.findById(userId, 'index');
+
+    // If user not found
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // If user is found, but for some reason index is missing (should not happen with schema)
+    if (user.index === undefined || user.index === null) {
+        return res.status(404).json({ message: 'User index not found for this user.' });
+    }
+
+    res.status(200).json({
+      message: 'User index fetched successfully',
+      userId: user._id,
+      index: user.index
+    });
+
+  } catch (error) {
+    console.error('Get User Index Error:', error);
+    res.status(500).json({ message: 'Server error during fetching user index: ' + error.message });
   }
 };

@@ -4,7 +4,7 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-// ✅ Generate JWT Token - now includes 'index' for completeness if needed in token
+// ✅ Generate JWT Token - now includes 'index'
 const generateToken = (id, role, index) => { // Added 'index' parameter
   // It's highly recommended to use an environment variable for your JWT secret
   // process.env.JWT_SECRET should be set in your .env file
@@ -49,7 +49,7 @@ exports.register = async (req, res) => {
       email: email.toLowerCase(),
       password, // Password will be hashed by the User model's pre-save hook
       role,
-      index: index !== undefined ? index : 0 // Set index, default to 0 (OFF)
+      index: index !== undefined ? index : 0 // Set index, default to 0 (ON)
     });
 
     // Generate JWT Token, now including the user's index
@@ -91,6 +91,10 @@ exports.login = async (req, res) => {
     }
 
     // Compare the input password with the stored hashed password using the model method
+    // (e.g., user.matchPassword(password) assuming bcrypt.compare is used there)
+    // If you are storing plaintext passwords, replace this with 'password !== user.password'.
+    // NOTE: The provided code snippets have switched between hashed and plaintext.
+    // Ensure your User model consistently uses one approach. Hashing is strongly recommended.
     const isMatch = await user.matchPassword(password); // Assuming matchPassword method exists
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
@@ -121,7 +125,7 @@ exports.login = async (req, res) => {
 // ✅ Update Index Controller - now correctly updates 'User' by ID
 exports.updateindex = async (req, res) => {
   try {
-    const userId = req.params.id; // Get user ID from URL parameter (e.g., /users/:id)
+    const userId = req.params.id; // Get user ID from URL parameter (e.g., /users/:id/status)
     const { newIndexValue } = req.body; // Get new index value (0 or 1) from the request body
 
     // Validate newIndexValue
@@ -153,5 +157,35 @@ exports.updateindex = async (req, res) => {
   } catch (error) {
     console.error('Update Index Error:', error);
     res.status(500).json({ message: 'Server error during index update: ' + error.message });
+  }
+};
+
+// ✅ New: Get User Index by ID
+exports.getUserIndex = async (req, res) => {
+  try {
+    const userId = req.params.id; // Get user ID from URL parameter
+
+    // Find the user by ID and select only the 'index' field
+    const user = await User.findById(userId, 'index');
+
+    // If user not found
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // If user is found, but for some reason index is missing (should not happen with schema)
+    if (user.index === undefined || user.index === null) {
+        return res.status(404).json({ message: 'User index not found for this user.' });
+    }
+
+    res.status(200).json({
+      message: 'User index fetched successfully',
+      userId: user._id,
+      index: user.index
+    });
+
+  } catch (error) {
+    console.error('Get User Index Error:', error);
+    res.status(500).json({ message: 'Server error during fetching user index: ' + error.message });
   }
 };
