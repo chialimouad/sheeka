@@ -212,23 +212,51 @@ exports.getProductById = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
     try {
-        const { name, description, quantity, price } = req.body;
-        // Only update fields provided in the body
+        // Destructure all possible fields from req.body
+        const { name, description, quantity, price, images, variants } = req.body;
+
+        // Create an object to hold all fields that might be updated
         const updatedFields = {};
-        if (name) updatedFields.name = name;
-        if (description) updatedFields.description = description;
-        if (quantity) updatedFields.quantity = quantity;
-        if (price) updatedFields.price = price;
 
+        // Assign fields if they are provided in the request body
+        if (name !== undefined) updatedFields.name = name;
+        if (description !== undefined) updatedFields.description = description;
+        if (quantity !== undefined) updatedFields.quantity = quantity;
+        if (price !== undefined) updatedFields.price = price;
+        if (images !== undefined) updatedFields.images = images;
+        if (variants !== undefined) updatedFields.variants = variants;
+
+        // Check if there are any fields to update
+        if (Object.keys(updatedFields).length === 0) {
+            return res.status(400).json({ message: 'No fields provided for update.' });
+        }
+
+        // Find the product by ID and update it with the provided fields
+        // { new: true } returns the modified document rather than the original
+        // { runValidators: true } ensures that schema validators are run on the update
         const product = await Product.findByIdAndUpdate(req.params.id, updatedFields, { new: true, runValidators: true });
-        if (!product) return res.status(404).json({ error: 'Product not found' });
 
+        // If no product is found with the given ID, return a 404 error
+        if (!product) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+
+        // Return a success message along with the updated product
         res.json({ message: 'Product updated successfully', product });
     } catch (error) {
+        // Log the error for debugging purposes
         console.error('Error updating product:', error);
+
+        // Handle specific Mongoose CastError for invalid ID format
         if (error instanceof mongoose.Error.CastError) {
             return res.status(400).json({ error: 'Invalid Product ID format' });
         }
+        // Handle Mongoose validation errors (e.g., required fields missing if attempting to set to undefined)
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ error: error.message });
+        }
+
+        // Catch any other unexpected errors and return a 500 status
         res.status(500).json({ error: error.message });
     }
 };
