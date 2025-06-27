@@ -2,7 +2,7 @@
  * @fileoverview Handles API logic for pixel ID management and site configuration.
  */
 
-const PixelModel = require('../models/pixel'); // Import the pixel model. Ensure path is correct.
+const PixelModel = require('../models/pixel'); // This path must be correct!
 
 const PixelController = {
   /**
@@ -22,18 +22,23 @@ const PixelController = {
     }
 
     try {
+      // Calling the static method directly on the imported Model
       const newPixel = await PixelModel.createPixel({ fbPixelId, tiktokPixelId });
       res.status(201).json({
         message: 'Pixel IDs stored successfully!',
         pixel: newPixel
       });
     } catch (error) {
-      // Handle duplicate key error (e.g., if IDs are meant to be unique per entry)
+      // Handle duplicate key error (if 'unique: true' is added to schema fields)
       if (error.code === 11000) {
         return res.status(409).json({
           message: 'A pixel entry with one of the provided IDs already exists.',
           error: error.message
         });
+      }
+      // Handle custom errors from model (e.g., the 'statusCode' from createPixel)
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({ message: error.message });
       }
       console.error('Error saving pixel IDs:', error);
       res.status(500).json({ message: 'Failed to save pixel IDs.', error: error.message });
@@ -47,6 +52,7 @@ const PixelController = {
    */
   getPixels: async (req, res) => {
     try {
+      // Calling the static method directly on the imported Model
       const pixels = await PixelModel.getAllPixels();
       res.status(200).json({
         message: 'Fetched all pixel IDs successfully!',
@@ -67,7 +73,8 @@ const PixelController = {
     const pixelId = req.params.id; // Get the pixel ID from the URL parameters
 
     try {
-      const deletedPixel = await PixelModel.deletePixel(pixelId); // Assuming a delete method in your PixelModel
+      // Calling the static method directly on the imported Model
+      const deletedPixel = await PixelModel.deletePixel(pixelId);
 
       if (!deletedPixel) {
         return res.status(404).json({ message: 'Pixel ID not found.' });
@@ -92,20 +99,18 @@ const PixelController = {
    */
   getSiteConfig: async (req, res) => {
     try {
-      // Fetch pixel IDs from the model (e.g., the latest active ones)
+      // Correct: Calling the static method directly on the imported Model
       const pixelConfig = await PixelModel.getLatestPixelConfig();
 
-      // Simulate other site configuration data. In a real application,
-      // 'siteName', 'metaDescription', and 'deliveryFees' would likely come
-      // from a dedicated configuration service or database table.
+      // Simulated other site configuration data
       const siteConfigData = {
-        siteName: "Sheeka Store", // Example site name (added default "Sheeka")
+        siteName: "Sheeka Store",
         slogan: "Where Fashion Meets Comfort",
         aboutUsText: `At Sheeka Store, we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
 
 From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`,
         aboutUsImageUrl: "/images/about_us_placeholder.jpg",
-        metaDescription: "متجر Sheeka الإلكتروني يوفر أجود المنتجات بأسعار تنافسية.", // Added default meta description
+        metaDescription: "متجر Sheeka الإلكتروني يوفر أجود المنتجات بأسعار تنافسية.",
         primaryColor: "#C8797D",
         secondaryColor: "#A85F64",
         tertiaryColor: "#FDF5E6",

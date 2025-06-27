@@ -1,48 +1,37 @@
-/**
- * @fileoverview Mongoose Pixel Model for interacting with a MongoDB database.
- * This model defines the schema for storing Facebook and TikTok pixel IDs.
- */
-
 const mongoose = require('mongoose');
 
 const PixelSchema = new mongoose.Schema({
   fbPixelId: {
     type: String,
-    unique: true, // Ensures uniqueness for fbPixelId
-    sparse: true, // Allows multiple documents to have a null/undefined fbPixelId
+    trim: true,
+    // You might want to make these unique if only one set of IDs should exist at a time,
+    // or if a specific ID should only appear once.
+    // However, if you're tracking history, you'd allow duplicates and just fetch the latest.
+    // For this 'latest config' scenario, uniqueness per entry isn't strictly necessary
+    // but useful if you intend for only ONE active Facebook ID at any point.
+    // unique: true // Uncomment if you want each fbPixelId to be unique across all documents
   },
   tiktokPixelId: {
     type: String,
-    unique: true, // Ensures uniqueness for tiktokPixelId
-    sparse: true, // Allows multiple documents to have a null/undefined tiktokPixelId
+    trim: true,
+    // unique: true // Uncomment if you want each tiktokPixelId to be unique across all documents
   },
   createdAt: {
     type: Date,
-    default: Date.now, // Automatically sets the creation timestamp
-  },
+    default: Date.now,
+    // Ensures we can easily sort to find the latest
+  }
 });
 
-// Static method to create a new pixel entry in the database.
-// This method takes pixelData (containing fbPixelId and/or tiktokPixelId)
-// and saves it as a new document in the 'pixels' collection.
-PixelSchema.statics.createPixel = async function (pixelData) {
-  const pixel = new this(pixelData);
-  return await pixel.save();
-};
+// --- Static Methods ---
 
-// Static method to fetch all pixel entries from the database,
-// sorted by creation date in descending order (newest first).
-PixelSchema.statics.getAllPixels = async function () {
-  return await this.find().sort({ createdAt: -1 });
-};
-
-// Static method to fetch the latest (most recently created) pixel configuration.
-// This is used to retrieve the active Facebook and TikTok pixel IDs for the site.
+/**
+ * Retrieves the latest pixel configuration based on the creation date.
+ * This is a static method accessible directly on the PixelModel.
+ * @returns {object} An object containing facebookPixelId and tiktokPixelId, or an empty object if none found.
+ */
 PixelSchema.statics.getLatestPixelConfig = async function () {
-  // Find one document, sorted by createdAt in descending order to get the latest one.
-  const latestPixel = await this.findOne().sort({ createdAt: -1 });
-
-  // If a pixel configuration is found, return its IDs; otherwise, return an empty object.
+  const latestPixel = await this.findOne().sort({ createdAt: -1 }).lean(); // .lean() for plain JS object, better performance
   if (latestPixel) {
     return {
       facebookPixelId: latestPixel.fbPixelId,
@@ -52,12 +41,39 @@ PixelSchema.statics.getLatestPixelConfig = async function () {
   return {}; // No pixel configuration found
 };
 
-// Static method to delete a pixel entry by its ID.
-// This method finds and deletes a document based on the provided ID.
-PixelSchema.statics.deletePixel = async function (pixelId) {
-  return await this.findByIdAndDelete(pixelId);
+/**
+ * Creates a new pixel entry.
+ * @param {object} data - Object containing fbPixelId and/or tiktokPixelId.
+ * @returns {object} The newly created pixel document.
+ */
+PixelSchema.statics.createPixel = async function (data) {
+  // Basic validation could also happen here or in the controller
+  if (!data.fbPixelId && !data.tiktokPixelId) {
+    const error = new Error('At least one of fbPixelId or tiktokPixelId is required.');
+    error.statusCode = 400; // Custom property for handling in controller
+    throw error;
+  }
+  return this.create(data);
 };
 
-// Export the Mongoose model named 'Pixel'.
-// This will create a collection named 'pixels' in your MongoDB database.
-module.exports = mongoose.model('Pixel', PixelSchema);
+/**
+ * Fetches all stored pixel entries.
+ * @returns {Array<object>} An array of pixel documents.
+ */
+PixelSchema.statics.getAllPixels = async function () {
+  return this.find({}).sort({ createdAt: -1 }).lean(); // Sort and lean for efficiency
+};
+
+/**
+ * Deletes a pixel entry by its MongoDB _id.
+ * @param {string} id - The MongoDB _id of the pixel entry to delete.
+ * @returns {object|null} The deleted pixel document, or null if not found.
+ */
+PixelSchema.statics.deletePixel = async function (id) {
+  return this.findByIdAndDelete(id).lean();
+};
+
+// --- Compile and Export the Model ---
+const PixelModel = mongoose.model('Pixel', PixelSchema);
+
+module.exports = PixelModel;
