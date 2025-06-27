@@ -150,7 +150,6 @@ exports.updateindex = async (req, res) => {
       message: 'User index updated successfully',
       user: {
         id: updatedUser._id,
-        email: updatedUser.email,
         index: updatedUser.index,
         role: updatedUser.role // Include role for consistency
       }

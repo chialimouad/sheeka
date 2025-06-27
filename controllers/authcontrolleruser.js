@@ -110,17 +110,19 @@ exports.login = async (req, res) => {
 
 // ✅ Update Index Controller
 exports.updateindex = async (req, res) => {
+      const userId = req.params.id; // Get user ID from URL parameter (e.g., /users/:id/status)
+
   try {
-    const { email, newIndexValue } = req.body;
+    const {  newIndexValue } = req.body;
 
     // Validate required fields
-    if (!email || (newIndexValue !== 0 && newIndexValue !== 1)) {
+    if ( (newIndexValue !== 0 && newIndexValue !== 1)) {
       return res.status(400).json({ message: 'Email and a valid new index value (0 or 1) are required' });
     }
 
     // Find and update the AdminCredential document
     const updatedCredential = await AdminCredential.findOneAndUpdate(
-      { email: email.toLowerCase() },
+      userId,
       { index: newIndexValue },
       { new: true } // Return the updated document
     );
@@ -134,7 +136,6 @@ exports.updateindex = async (req, res) => {
       message: 'Admin credential index updated successfully',
       credential: {
         id: updatedCredential._id,
-        email: updatedCredential.email,
         index: updatedCredential.index
       }
     });
