@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const AdminCredential = require('../models/admin'); // Import the AdminCredential model
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
 // bcrypt is now used in the User model, but you might need it here directly for comparison if not using a model method
@@ -104,5 +105,42 @@ exports.login = async (req, res) => {
     console.error('Login Error:', error);
     // Send back the actual error message
     res.status(500).json({ message: error.message || 'Unexpected server error' });
+  }
+};
+
+// ✅ Update Index Controller
+exports.updateindex = async (req, res) => {
+  try {
+    const { email, newIndexValue } = req.body;
+
+    // Validate required fields
+    if (!email || (newIndexValue !== 0 && newIndexValue !== 1)) {
+      return res.status(400).json({ message: 'Email and a valid new index value (0 or 1) are required' });
+    }
+
+    // Find and update the AdminCredential document
+    const updatedCredential = await AdminCredential.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      { index: newIndexValue },
+      { new: true } // Return the updated document
+    );
+
+    // If credential not found
+    if (!updatedCredential) {
+      return res.status(404).json({ message: 'Admin credential not found' });
+    }
+
+    res.status(200).json({
+      message: 'Admin credential index updated successfully',
+      credential: {
+        id: updatedCredential._id,
+        email: updatedCredential.email,
+        index: updatedCredential.index
+      }
+    });
+
+  } catch (error) {
+    console.error('Update Index Error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };

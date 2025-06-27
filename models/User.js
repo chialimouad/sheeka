@@ -9,6 +9,11 @@ const UserSchema = new mongoose.Schema({
     enum: ['admin', 'confirmation', 'stockagent'], 
     default: 'confirmation'
   },
+  index: {
+    type: Number,
+    enum: [0, 1], // Ensures the 'index' field can only be 0 or 1
+    default: 0   // Sets a default value of 0, aligning with "0 for on server"
+  },
   orders: [
     {
       type: mongoose.Schema.Types.ObjectId,
