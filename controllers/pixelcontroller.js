@@ -2,7 +2,7 @@
  * @fileoverview Handles API logic for pixel ID management and site configuration.
  */
 
-const PixelModel = require('../models/pixel'); // Import the pixel model
+const PixelModel = require('../models/pixel'); // Import the pixel model. Assuming pixel.js is in the same directory, or adjust path if nested.
 
 const PixelController = {
   /**
@@ -93,36 +93,38 @@ const PixelController = {
   getSiteConfig: async (req, res) => {
     try {
       // Fetch pixel IDs from the model (e.g., the latest active ones)
+      // This is the line that was identified as problematic.
+      // Ensure PixelModel is correctly imported and Mongoose is connected.
       const pixelConfig = await PixelModel.getLatestPixelConfig();
 
       // Simulate other site configuration data. In a real application,
       // 'siteName', 'metaDescription', and 'deliveryFees' would likely come
       // from a dedicated configuration service or database table.
       const siteConfigData = {
-        siteName: "", // Example site name
-        slogan: "Where Fashion Meets Comfort", // Added slogan as requested in previous HTML response
+        siteName: "Sheeka", // Example site name (added default "Sheeka" as it was empty)
+        slogan: "Where Fashion Meets Comfort",
         aboutUsText: `At Sheeka, we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
 
-From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`, // Added about us text
-        aboutUsImageUrl: "/images/about_us_placeholder.jpg", // Example placeholder image URL
-        metaDescription: "متجر الإلكتروني يوفر أجود المنتجات بأسعار تنافسية.", // Example meta description
-        primaryColor: "#C8797D", // Example primary color
-        secondaryColor: "#A85F64", // Example secondary color
-        tertiaryColor: "#FDF5E6", // Example tertiary color
-        generalTextColor: "#4A4A4A", // Example general text color
-        footerBgColor: "#4A4A4A", // Example footer background color
-        footerTextColor: "#DDCACA", // Example footer text color
-        footerLinkColor: "#E6B89C", // Example footer link color
-        socialMediaLinks: [ // Example social media links
-            { "platform": "facebook", "url": "https://facebook.com/sheeka", "iconClass": "fab fa-facebook-f" },
-            { "platform": "instagram", "url": "https://instagram.com/sheeka", "iconClass": "fab fa-instagram" },
-            { "platform": "twitter", "url": "https://twitter.com/sheeka", "iconClass": "fab fa-twitter" },
-            { "platform": "linkedin", "url": "https://linkedin.com/company/sheeka", "iconClass": "fab fa-linkedin-in" }
+From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`,
+        aboutUsImageUrl: "/images/about_us_placeholder.jpg",
+        metaDescription: "متجر الإلكتروني يوفر أجود المنتجات بأسعار تنافسية.",
+        primaryColor: "#C8797D",
+        secondaryColor: "#A85F64",
+        tertiaryColor: "#FDF5E6",
+        generalTextColor: "#4A4A4A",
+        footerBgColor: "#4A4A4A",
+        footerTextColor: "#DDCACA",
+        footerLinkColor: "#E6B89C",
+        socialMediaLinks: [
+          { "platform": "facebook", "url": "https://facebook.com/sheeka", "iconClass": "fab fa-facebook-f" },
+          { "platform": "instagram", "url": "https://instagram.com/sheeka", "iconClass": "fab fa-instagram" },
+          { "platform": "twitter", "url": "https://twitter.com/sheeka", "iconClass": "fab fa-twitter" },
+          { "platform": "linkedin", "url": "https://linkedin.com/company/sheeka", "iconClass": "fab fa-linkedin-in" }
         ],
-        promoImages: [ // Example promo images for hero carousel
-            "/images/hero_image1.jpg",
-            "/images/hero_image2.jpg",
-            "/images/hero_image3.jpg"
+        promoImages: [
+          "/images/hero_image1.jpg",
+          "/images/hero_image2.jpg",
+          "/images/hero_image3.jpg"
         ],
         deliveryFees: [
           { "wilayaId": 1, "wilayaName": "Adrar", "price": 700 },
@@ -140,7 +142,7 @@ From conceptualization to creation, every piece is crafted with meticulous atten
           { "wilayaId": 13, "wilayaName": "Tlemcen", "price": 600 },
           { "wilayaId": 14, "wilayaName": "Tiaret", "price": 700 },
           { "wilayaId": 15, "wilayaName": "Tizi Ouzou", "price": 500 },
-          { "wilayaId": 16, "wilayaName": "Alger", "price": 500 }, // Example delivery fee for Alger
+          { "wilayaId": 16, "wilayaName": "Alger", "price": 500 },
           { "wilayaId": 17, "wilayaName": "Djelfa", "price": 750 },
           { "wilayaId": 18, "wilayaName": "Jijel", "price": 600 },
           { "wilayaId": 19, "wilayaName": "Sétif", "price": 550 },
@@ -169,7 +171,7 @@ From conceptualization to creation, every piece is crafted with meticulous atten
           { "wilayaId": 42, "wilayaName": "Tipaza", "price": 400 },
           { "wilayaId": 43, "wilayaName": "Mila", "price": 570 },
           { "wilayaId": 44, "wilayaName": "Aïn Defla", "price": 480 },
-          { "wilayaId": 45, "wilayaName": "Naâma", "price": 700 }, // Example delivery fee for Naâma
+          { "wilayaId": 45, "wilayaName": "Naâma", "price": 700 },
           { "wilayaId": 46, "wilayaName": "Aïn Témouchent", "price": 630 },
           { "wilayaId": 47, "wilayaName": "Ghardaïa", "price": 900 },
           { "wilayaId": 48, "wilayaName": "Relizane", "price": 700 },
@@ -184,6 +186,7 @@ From conceptualization to creation, every piece is crafted with meticulous atten
           { "wilayaId": 57, "wilayaName": "El Meniaa", "price": 1000 },
           { "wilayaId": 58, "wilayaName": "In Salah", "price": 1400 }
         ],
+        // These will be fetched from the database if available, otherwise null.
         facebookPixelId: pixelConfig.facebookPixelId || null,
         tiktokPixelId: pixelConfig.tiktokPixelId || null
       };
