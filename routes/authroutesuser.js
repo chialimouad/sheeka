@@ -7,6 +7,6 @@ router.post('/registeruser', register);
 router.post('/loginuser', login);
 router.get('/users', getUsers); // Assuming you want this route for fetching users
 
-router.put('/users', updateindex); // This route now correctly references the imported updateindex function
+router.put('/users/:id', updateindex); // FIX: Added :id to match controller expectation
 
 module.exports = router;
