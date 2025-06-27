@@ -90,12 +90,11 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Compare the input password with the stored hashed password using the model method
-    // (e.g., user.matchPassword(password) assuming bcrypt.compare is used there)
-    // If you are storing plaintext passwords, replace this with 'password !== user.password'.
-    // NOTE: The provided code snippets have switched between hashed and plaintext.
-    // Ensure your User model consistently uses one approach. Hashing is strongly recommended.
-    const isMatch = await user.matchPassword(password); // Assuming matchPassword method exists
+    // !!! IMPORTANT SECURITY WARNING !!!
+    // Direct password comparison is highly insecure if passwords are not hashed.
+    // It is strongly recommended to use a secure hashing library (e.g., bcrypt)
+    // and a method like 'user.matchPassword(password)' to compare hashed passwords.
+    const isMatch = password === user.password; // Changed from user.matchPassword
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
