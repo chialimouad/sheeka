@@ -1,12 +1,11 @@
-
 const express = require('express');
 const router = express.Router(); // Create an Express router instance
 
 // Import controller functions
-const orderCountController = require('../controllers/controller');
+const orderCountController = require('../controllers/orderCountController');
 
 // Define routes:
-// POST request to create a new order count record
+// POST request to create or update an order count record (using upsert logic in controller)
 router.post('/order-counts', orderCountController.createOrderCount);
 
 // GET request to retrieve all order count records (optional, for viewing history)
