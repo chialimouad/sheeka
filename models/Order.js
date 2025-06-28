@@ -39,10 +39,8 @@ const orderSchema = new mongoose.Schema({
       }
     }
   ],
-  // Added totalQuantityOfItems field
-  totalQuantityOfItems: {
+  totalOrdersCount: {
     type: Number,
-    required: true,
     default: 0
   },
   status: {
