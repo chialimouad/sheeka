@@ -39,6 +39,12 @@ const orderSchema = new mongoose.Schema({
       }
     }
   ],
+  // Added totalQuantityOfItems field
+  totalQuantityOfItems: {
+    type: Number,
+    required: true,
+    default: 0
+  },
   status: {
     type: String,
     enum: ['pending', 'confirmed', 'cancelled', 'tentative'],
