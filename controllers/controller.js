@@ -60,12 +60,12 @@ exports.createOrderCount = async (req, res) => {
 };
 
 // Optional: Controller function to get all order count records (for demonstration/dashboard)
-exports.getTotalOrderCount = async (req, res) => {
+exports.getAllOrderCounts = async (req, res) => {
   try {
-    const count = await OrderCount.countDocuments(); // This directly gets the total count
-    res.status(200).json({ count: count }); // Respond with an object containing the count
+    const orderCounts = await OrderCount.find().sort({ timestamp: -1 }); // Sort by newest first
+    res.status(200).json(orderCounts);
   } catch (error) {
-    console.error('Error fetching total order count:', error);
+    console.error('Error fetching order counts:', error);
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
