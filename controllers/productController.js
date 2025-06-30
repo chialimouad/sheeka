@@ -1,206 +1,167 @@
 const Product = require('../models/Product');
-const PromoImage = require('../models/imagespromo'); // Assuming this model exists
-const Collection = require('../models/Collection'); // Assuming this model exists
+const PromoImage = require('../models/imagespromo');
+const Collection = require('../models/Collection');
 const multer = require('multer');
-const path = require('path'); // IMPORTANT: This is needed for path.extname in fileFilter
-// const fs = require('fs'); // Not strictly needed with Cloudinary storage
 const mongoose = require('mongoose');
 const { v2: cloudinary } = require('cloudinary');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const dotenv = require('dotenv');
-
-dotenv.config(); // Load environment variables from .env file
+const { body, param, query, validationResult } = require('express-validator'); // Import express-validator
 
 // =========================
 // 📦 Multer Setup
 // =========================
 
-// ✅ Cloudinary Config
-// IMPORTANT: For production, ensure these environment variables are set securely
-// (e.g., in your hosting provider's environment settings like Render, Netlify, Vercel).
-// Hardcoded fallbacks are for development convenience but should be avoided in production.
+// IMPORTANT: Use environment variables for sensitive credentials!
+// For example, in your .env file:
+// CLOUDINARY_CLOUD_NAME=your_cloud_name
+// CLOUDINARY_API_KEY=your_api_key
+// CLOUDINARY_API_SECRET=your_api_secret
 cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'YOUR_CLOUDINARY_CLOUD_NAME', // Replace with your actual Cloud Name
-    api_key: process.env.CLOUDINARY_API_KEY || 'YOUR_CLOUDINARY_API_KEY', // Replace with your actual API Key
-    api_secret: process.env.CLOUDINARY_API_SECRET || 'YOUR_CLOUDINARY_API_SECRET', // Replace with your actual API Secret
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'di1u2ssnm',
+    api_key: process.env.CLOUDINARY_API_KEY || '382166879473993',
+    api_secret: process.env.CLOUDINARY_API_SECRET || 'R4mh6IC2ilC88VKiTFPyyxtBeFU',
 });
 
 // ✅ Multer + Cloudinary Storage Setup
 const storage = new CloudinaryStorage({
     cloudinary,
     params: {
-        folder: 'sheeka_products', // Folder in Cloudinary where images will be stored
+        folder: 'sheeka_products', // Folder in Cloudinary
         allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-        transformation: [{ width: 800, crop: 'limit' }], // Optimize image size for web display
+        transformation: [{ width: 800, crop: 'limit' }],
     },
 });
 
-const upload = multer({
-    storage,
-    limits: {
-        fileSize: 5 * 1024 * 1024 // Limit file size to 5MB (5 * 1024 * 1024 bytes)
-    },
-    fileFilter: (req, file, cb) => {
-        // Define allowed MIME types and file extensions
-        const allowedMimeTypes = /jpeg|jpg|png|webp/;
-        const mimeType = allowedMimeTypes.test(file.mimetype);
-        const extname = allowedMimeTypes.test(path.extname(file.originalname).toLowerCase());
-
-        if (mimeType && extname) {
-            // If both MIME type and extension are allowed, accept the file
-            return cb(null, true);
-        } else {
-            // If not allowed, reject the file with an error message
-            cb(new Error('Invalid file type. Only JPEG, JPG, PNG, and WebP image files are allowed.'));
-        }
-    }
-});
-
-// Export the configured multer upload middleware for use in routes
+const upload = multer({ storage });
 exports.upload = upload;
-// Reusing the same upload configuration for promo images, assuming similar requirements
-exports.uploadPromo = upload;
+exports.uploadPromo = upload; // Reusing the same upload instance for promo images
 
 // =========================
 // 📸 Promo Image Handlers
 // =========================
 
 /**
- * @desc Fetches all promo image URLs from the database.
- * @route GET /api/promo-images (or /products/promo as per frontend)
- * @access Public (or private if only for admin dashboard)
- * @param {object} req - Express request object.
- * @param {object} res - Express response object.
+ * @desc Get all promo images
+ * @route GET /api/promo/images
+ * @access Public
  */
-exports.getProductImagesOnly = async (req, res) => {
+exports.getProductImagesOnly = async (req, res, next) => {
     try {
-        // console.log('Backend: Attempting to fetch promo images...'); // Removed console.log for cleaner production logs
-        // Select only the 'images' field for efficiency and use .lean() for faster query execution
-        const promos = await PromoImage.find({}, 'images').lean();
+        console.log('Backend: Attempting to fetch promo images...');
+        const promos = await PromoImage.find({}, 'images').lean(); // Use .lean() for faster queries if not modifying documents
+        console.log('Backend: Fetched raw promos:', JSON.stringify(promos, null, 2));
 
-        // Ensure images are indeed arrays and filter out invalid/empty string entries
         const allImages = promos.flatMap(p => {
+            // Ensure p and p.images exist and p.images is an array
             if (p && Array.isArray(p.images)) {
+                // Filter out any non-string or empty string entries within the array
                 return p.images.filter(img => typeof img === 'string' && img.trim() !== '');
             }
             return []; // Return an empty array if 'images' is not an array or is null/undefined
         });
 
-        // console.log(`Backend: Processed ${allImages.length} promo images.`); // Removed console.log
+        console.log('Backend: Processed allImages:', JSON.stringify(allImages));
 
         if (allImages.length === 0) {
-            // If no promo images are found, send an empty array with 200 OK status
-            // console.log('Backend: No promo images found, sending empty array.'); // Removed console.log
-            return res.status(200).json([]);
+            console.log('Backend: No promo images found, sending empty array.');
+            return res.json([]); // Explicitly send an empty array if no images
         }
 
-        res.status(200).json(allImages);
-        // console.log('Backend: Successfully sent promo images.'); // Removed console.log
-
+        res.json(allImages);
+        console.log('Backend: Successfully sent promo images.');
     } catch (error) {
-        console.error('❌ Backend: Error fetching promo images:', error.message);
-        // Send 500 for internal server errors and provide a user-friendly message
-        res.status(500).json({ message: 'Internal Server Error fetching promo images. Please try again.', error: error.message });
+        console.error('❌ Backend: Error fetching promo images:', error);
+        next(error); // Pass error to centralized error handler
     }
 };
 
-
 /**
- * @desc Uploads new promo images to Cloudinary and saves their URLs to the database.
- * @route POST /api/promo-images/upload (or /products/promo/upload as per frontend)
- * @access Private (should be protected with authentication/authorization)
- * @param {object} req - Express request object (expects files from multer via `req.files`).
- * @param {object} res - Express response object.
+ * @desc Upload promo images
+ * @route POST /api/promo/upload
+ * @access Private (e.g., Admin)
+ * @validation Requires `req.files` to be present.
  */
-exports.uploadPromoImages = async (req, res) => {
+exports.uploadPromoImages = async (req, res, next) => {
+    // Check for validation errors from express-validator (if any were applied before this handler)
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
     try {
         if (!req.files || req.files.length === 0) {
-            return res.status(400).json({ message: 'No images uploaded. Please select at least one image file.' });
+            return res.status(400).json({ error: 'No images uploaded' });
         }
 
-        // When using CloudinaryStorage, `file.path` already contains the full public URL
-        const images = req.files.map(file => file.path);
+        const images = req.files.map(file => file.path); // Cloudinary provides full URLs
         const newPromo = new PromoImage({ images });
-        await newPromo.save(); // Save the new PromoImage document to MongoDB
-
-        res.status(201).json({
-            message: 'Promo images uploaded and saved successfully!',
-            promo: newPromo // Return the newly created promo document
-        });
+        await newPromo.save();
+        res.status(201).json(newPromo);
     } catch (error) {
-        console.error('Error uploading promo images:', error.message);
-        res.status(500).json({ message: 'Failed to upload promo images. Please try again.', error: error.message });
+        console.error('❌ Backend: Error uploading promo images:', error);
+        next(error); // Pass error to centralized error handler
     }
 };
 
 /**
- * @desc Deletes a specific promo image from Cloudinary and removes its reference from the database.
- * @route DELETE /api/promo-images/delete (or /products/promo/delete as per frontend)
- * @access Private (should be protected with authentication/authorization)
- * @param {object} req - Express request object (expects image URL in query parameter `url`).
- * @param {object} res - Express response object.
+ * @desc Delete a promo image
+ * @route DELETE /api/promo/delete?url=<imageUrl>
+ * @access Private (e.g., Admin)
+ * @validation Requires 'url' query parameter.
  */
-exports.deletePromoImage = async (req, res) => {
-    try {
-        const imageUrl = req.query.url;
-        if (!imageUrl) {
-            return res.status(400).json({ message: 'Image URL is required for deletion.' });
+exports.deletePromoImage = [
+    query('url').isURL().withMessage('Image URL must be a valid URL.').notEmpty().withMessage('Image URL is required.'),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
 
-        // Robustly extract public ID from the Cloudinary URL.
-        // This regex handles various Cloudinary URL formats and ensures correct publicId extraction.
-        // Example URL: https://res.cloudinary.com/your_cloud_name/image/upload/v1234567890/folder/image_name.jpg
-        const publicIdMatch = imageUrl.match(/(?:upload\/v\d+\/)(.+?)(?:\.\w{3,4})?$/);
-        let publicId = '';
-
-        if (publicIdMatch && publicIdMatch[1]) {
-            // publicIdMatch[1] would be 'folder/image_name' or 'folder/image_name.ext'
-            publicId = publicIdMatch[1].replace(/\.\w{3,4}$/, ''); // Remove file extension if present
-        }
-
-        if (!publicId) {
-            return res.status(400).json({ message: 'Could not extract a valid Cloudinary public ID from the provided image URL.' });
-        }
-
-        let cloudinaryDeletionResult = { result: 'not_attempted' };
         try {
-            // Attempt to delete from Cloudinary
-            cloudinaryDeletionResult = await cloudinary.uploader.destroy(publicId);
+            const imageUrl = req.query.url;
 
-            if (cloudinaryDeletionResult.result !== 'ok' && cloudinaryDeletionResult.result !== 'not found') {
-                // Log a warning if Cloudinary reports an issue other than 'ok' or 'not found'
-                console.warn(`⚠️ Cloudinary deletion warning for ${publicId}:`, cloudinaryDeletionResult);
-                // Continue to DB update even if Cloudinary reports an issue (e.g., rate limit, partial success)
-            } else if (cloudinaryDeletionResult.result === 'ok') {
-                console.log(`🗑️ Deleted image from Cloudinary: ${publicId}`);
-            } else if (cloudinaryDeletionResult.result === 'not found') {
-                console.log(`ℹ️ Image not found on Cloudinary, proceeding with DB update: ${publicId}`);
+            // Extract public ID from the Cloudinary URL.
+            // Example URL: https://res.cloudinary.com/di1u2ssnm/image/upload/v12345/sheeka_products/image_abcd123.jpg
+            // We need 'sheeka_products/image_abcd123' as publicId for deletion.
+            const publicIdMatch = imageUrl.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
+            let publicId = '';
+            if (publicIdMatch && publicIdMatch[1]) {
+                // publicIdMatch[1] would be 'sheeka_products/image_abcd123.jpg'
+                const fullPathWithExt = publicIdMatch[1];
+                // Remove the file extension to get the public_id expected by Cloudinary's destroy method
+                publicId = fullPathWithExt.replace(/\.\w{3,4}$/, '');
             }
-        } catch (cloudinaryError) {
-            console.error(`❌ Error during Cloudinary deletion for ${publicId}:`, cloudinaryError.message);
-            // Log the error but don't stop the process, try to update DB
+
+            if (!publicId) {
+                return res.status(400).json({ message: 'Could not extract Cloudinary public ID from image URL.' });
+            }
+
+            // Delete from Cloudinary
+            let cloudinaryResult = { result: 'not_attempted' };
+            try {
+                cloudinaryResult = await cloudinary.uploader.destroy(publicId);
+                if (cloudinaryResult.result === 'ok') {
+                    console.log(`🗑️ Deleted image from Cloudinary: ${publicId}`);
+                } else {
+                    console.warn(`⚠️ Cloudinary deletion failed for ${publicId}:`, cloudinaryResult);
+                }
+            } catch (cloudinaryError) {
+                console.error(`❌ Error calling Cloudinary API for ${publicId}:`, cloudinaryError);
+                // Continue to update DB even if Cloudinary deletion fails
+            }
+
+            // Remove the image path from any PromoImage documents
+            const dbResult = await PromoImage.updateMany({}, { $pull: { images: imageUrl } });
+            // Delete any PromoImage documents that now have no images
+            await PromoImage.deleteMany({ images: { $size: 0 } });
+
+            res.json({ message: '✅ Image deletion process completed.', dbResult, cloudinaryResult });
+        } catch (error) {
+            console.error('Server error during promo image deletion:', error);
+            next(error); // Pass error to centralized error handler
         }
-
-        // Remove the image path from any PromoImage documents
-        // Using $pull to remove the specific URL from the 'images' array across all documents
-        const dbResult = await PromoImage.updateMany(
-            { images: imageUrl }, // Find documents where this image URL exists in the 'images' array
-            { $pull: { images: imageUrl } } // Remove that specific URL from the 'images' array
-        );
-
-        // Delete any PromoImage documents that now have no images left in their array
-        await PromoImage.deleteMany({ images: { $size: 0 } });
-
-        res.status(200).json({
-            message: '✅ Image deletion process completed.',
-            cloudinaryResult: cloudinaryDeletionResult, // Provide Cloudinary's result for debugging
-            databaseUpdateResult: dbResult // Provide MongoDB update result for debugging
-        });
-    } catch (error) {
-        console.error('Server error during promo image deletion:', error.message);
-        res.status(500).json({ message: 'Server error during promo image deletion. Please try again.', error: error.message });
     }
-};
+];
 
 
 // =========================
@@ -208,349 +169,279 @@ exports.deletePromoImage = async (req, res) => {
 // =========================
 
 /**
- * @desc Adds a new product to the database, including image uploads to Cloudinary.
- * @route POST /api/products (or /products as per frontend)
- * @access Private (should be protected with authentication/authorization)
- * @param {object} req - Express request object. Expects product details in `req.body` and files in `req.files`.
- * @param {object} res - Express response object.
+ * @desc Add a new product
+ * @route POST /api/products
+ * @access Private (e.g., Admin)
+ * @validation Validates name, description, quantity, price, and variants.
  */
-exports.addProduct = async (req, res) => {
-    try {
-        const { name, description, quantity, price, variants } = req.body;
-
-        // Basic validation for required fields
-        if (!name || !description || quantity === undefined || price === undefined) {
-            return res.status(400).json({ message: 'Product name, description, quantity, and price are required.' });
-        }
-
-        // Validate quantity and price as numbers and non-negative
-        const parsedQuantity = Number(quantity);
-        const parsedPrice = Number(price);
-
-        if (isNaN(parsedQuantity) || parsedQuantity < 0) {
-            return res.status(400).json({ message: 'Quantity must be a non-negative number.' });
-        }
-        if (isNaN(parsedPrice) || parsedPrice < 0) {
-            return res.status(400).json({ message: 'Price must be a non-negative number.' });
-        }
-
-        let parsedVariants = [];
-        if (variants) {
+exports.addProduct = [
+    body('name').trim().notEmpty().withMessage('Product name is required.'),
+    body('description').trim().notEmpty().withMessage('Product description is required.'),
+    body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
+    body('price').isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
+    body('variants')
+        .optional()
+        .custom((value, { req }) => {
             try {
-                // Variants might come as a stringified JSON from a form, so attempt to parse
-                parsedVariants = typeof variants === 'string' ? JSON.parse(variants) : variants;
-                if (!Array.isArray(parsedVariants)) {
-                    return res.status(400).json({ message: 'Variants should be a JSON array string or an array.' });
+                // Attempt to parse the variants string
+                const parsed = JSON.parse(value);
+                if (!Array.isArray(parsed)) {
+                    throw new Error('Variants must be a JSON array.');
                 }
-                // Optional: Further validate each variant object structure (e.g., color, size, stock) if needed
-            } catch (parseError) {
-                return res.status(400).json({ message: 'Invalid variants format: Must be a valid JSON array string.', error: parseError.message });
+                // Optionally, add more specific validation for each variant object structure here
+                // e.g., parsed.every(v => v.color && v.size && typeof v.stock === 'number')
+                return true;
+            } catch (e) {
+                throw new Error('Invalid variants format: Must be a valid JSON array string.');
             }
+        }),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
 
-        if (!req.files || req.files.length === 0) {
-            return res.status(400).json({ message: 'At least one image is required for a product.' });
-        }
-        // When using CloudinaryStorage, `file.path` already contains the full URL
-        const images = req.files.map(file => file.path);
+        try {
+            const { name, description, quantity, price, variants } = req.body;
 
-        const newProduct = new Product({
-            name: String(name).trim(), // Trim whitespace from name
-            description: String(description).trim(), // Trim whitespace from description
-            quantity: parsedQuantity,
-            price: parsedPrice,
-            images,
-            variants: parsedVariants
-        });
-
-        await newProduct.save(); // Save the new product document to MongoDB
-        res.status(201).json({
-            message: 'Product added successfully!',
-            product: newProduct // Return the newly created product
-        });
-    } catch (error) {
-        console.error('Error adding product:', error.message);
-        // Handle specific Mongoose validation errors
-        if (error.name === 'ValidationError') {
-            // Mongoose validation errors often contain detailed messages
-            return res.status(400).json({ message: error.message });
-        }
-        // Handle duplicate key errors (e.g., if product name is unique)
-        if (error.code === 11000) {
-            return res.status(409).json({ message: 'A product with this name already exists. Please choose a different name.' });
-        }
-        res.status(500).json({ message: 'Failed to add product. Please try again.', error: error.message });
-    }
-};
-
-/**
- * @desc Fetches all products from the database.
- * @route GET /api/products (or /products as per frontend)
- * @access Public (or private depending on use case)
- * @param {object} req - Express request object.
- * @param {object} res - Express response object.
- */
-exports.getProducts = async (req, res) => {
-    try {
-        // Fetch all products, sort by creation date (newest first), and use .lean() for performance
-        const products = await Product.find().sort({ createdAt: -1 }).lean();
-        res.status(200).json({
-            message: 'Products fetched successfully!',
-            products // Return the array of products
-        });
-    } catch (error) {
-        console.error('Error fetching products:', error.message);
-        res.status(500).json({ message: 'Error fetching products. Please try again.', error: error.message });
-    }
-};
-
-/**
- * @desc Fetches a single product by its ID.
- * @route GET /api/products/:id (or /products/:id as per frontend)
- * @access Public (or private depending on use case)
- * @param {object} req - Express request object (expects product ID in `req.params.id`).
- * @param {object} res - Express response object.
- */
-exports.getProductById = async (req, res) => {
-    const productId = req.params.id;
-
-    // Validate if the provided ID is a valid Mongoose ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(productId)) {
-        return res.status(400).json({ message: 'Invalid Product ID format.' });
-    }
-
-    try {
-        // Find product by ID and use .lean() for performance
-        const product = await Product.findById(productId).lean();
-        if (!product) {
-            return res.status(404).json({ message: 'Product not found.' });
-        }
-
-        res.status(200).json({
-            message: 'Product fetched successfully!',
-            product // Return the found product
-        });
-    } catch (error) {
-        console.error('Error fetching product by ID:', error.message);
-        // Handle CastError specifically if ID format is valid but doesn't match any document
-        if (error.name === 'CastError') {
-            return res.status(404).json({ message: 'Product not found with the provided ID.' });
-        }
-        res.status(500).json({ message: 'Error fetching product details. Please try again.', error: error.message });
-    }
-};
-
-/**
- * @desc Updates an existing product by its ID.
- * @route PUT /api/products/:id (or /products/:id as per frontend)
- * @access Private (should be protected with authentication/authorization)
- * @param {object} req - Express request object. Expects fields to update in `req.body`.
- * @param {object} res - Express response object.
- */
-exports.updateProduct = async (req, res) => {
-    const productId = req.params.id;
-
-    // Validate if the provided ID is a valid Mongoose ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(productId)) {
-        return res.status(400).json({ message: 'Invalid Product ID format.' });
-    }
-
-    try {
-        const { name, description, quantity, price, images, variants } = req.body;
-
-        const updatedFields = {};
-
-        // Only add fields to update if they are provided in the request body
-        if (name !== undefined) updatedFields.name = String(name).trim();
-        if (description !== undefined) updatedFields.description = String(description).trim();
-
-        if (quantity !== undefined) {
-            const parsedQuantity = Number(quantity);
-            if (isNaN(parsedQuantity) || parsedQuantity < 0) {
-                return res.status(400).json({ message: 'Quantity must be a non-negative number.' });
+            if (!req.files || req.files.length === 0) {
+                return res.status(400).json({ error: 'At least one image is required for a product.' });
             }
-            updatedFields.quantity = parsedQuantity;
-        }
+            const images = req.files.map(file => file.path); // Cloudinary gives you full URLs
 
-        if (price !== undefined) {
-            const parsedPrice = Number(price);
-            if (isNaN(parsedPrice) || parsedPrice < 0) {
-                return res.status(400).json({ message: 'Price must be a non-negative number.' });
-            }
-            updatedFields.price = parsedPrice;
-        }
-
-        // Handle images update: If new images are provided, they replace old ones.
-        // IMPORTANT: If you need to delete old images from Cloudinary that are no longer referenced,
-        // you'd need to fetch the product first, compare the old and new image arrays,
-        // and then explicitly delete the ones no longer present via Cloudinary's API.
-        // This is a more complex logic and is not implemented here to keep the example focused.
-        if (images !== undefined) {
-            if (!Array.isArray(images) || !images.every(img => typeof img === 'string' && img.trim() !== '')) {
-                return res.status(400).json({ message: 'Images must be an array of valid image URLs.' });
-            }
-            updatedFields.images = images.map(img => String(img).trim());
-        }
-
-        if (variants !== undefined) {
             let parsedVariants = [];
-            try {
-                // Variants might come as a stringified JSON or already as an array
-                parsedVariants = typeof variants === 'string' ? JSON.parse(variants) : variants;
-                if (!Array.isArray(parsedVariants)) {
-                    return res.status(400).json({ message: 'Variants should be a JSON array string or an array.' });
-                }
-                updatedFields.variants = parsedVariants;
-            } catch (parseError) {
-                return res.status(400).json({ message: 'Invalid variants format: Must be a valid JSON array string or an array.', error: parseError.message });
+            if (variants) {
+                parsedVariants = JSON.parse(variants); // Already validated by custom validator
             }
+
+            const newProduct = new Product({
+                name,
+                description,
+                quantity,
+                price,
+                images,
+                variants: parsedVariants
+            });
+
+            await newProduct.save();
+            res.status(201).json(newProduct);
+        } catch (error) {
+            console.error('Error adding product:', error);
+            next(error); // Pass error to centralized error handler
         }
+    }
+];
 
-        if (Object.keys(updatedFields).length === 0) {
-            return res.status(400).json({ message: 'No valid fields provided for update.' });
-        }
-
-        const product = await Product.findByIdAndUpdate(
-            productId,
-            { $set: updatedFields }, // Use $set to update only provided fields, preventing accidental overwrites of unmentioned fields
-            { new: true, runValidators: true } // Return the modified document and run schema validators
-        );
-
-        if (!product) {
-            return res.status(404).json({ message: 'Product not found.' });
-        }
-
-        res.status(200).json({ message: 'Product updated successfully!', product });
+/**
+ * @desc Get all products
+ * @route GET /api/products
+ * @access Public
+ */
+exports.getProducts = async (req, res, next) => {
+    try {
+        const products = await Product.find().sort({ createdAt: -1 }).lean(); // Use .lean()
+        res.json(products);
     } catch (error) {
-        console.error('Error updating product:', error.message);
-        if (error.name === 'ValidationError') {
-            return res.status(400).json({ message: error.message });
-        }
-        // Handle duplicate key errors (e.g., if product name is unique)
-        if (error.code === 11000) {
-            return res.status(409).json({ message: 'A product with this name already exists. Please choose a different name.' });
-        }
-        res.status(500).json({ message: 'Failed to update product. Please try again.', error: error.message });
+        console.error('Error fetching products:', error);
+        next(error); // Pass error to centralized error handler
     }
 };
 
 /**
- * @desc Deletes a product by its ID and removes associated images from Cloudinary.
- * @route DELETE /api/products/:id (or /products/:id as per frontend)
- * @access Private (should be protected with authentication/authorization)
- * @param {object} req - Express request object (expects product ID in `req.params.id`).
- * @param {object} res - Express response object.
+ * @desc Get product by ID
+ * @route GET /api/products/:id
+ * @access Public
+ * @validation Validates ID format.
  */
-exports.deleteProduct = async (req, res) => {
-    const productId = req.params.id;
-
-    // Validate if the provided ID is a valid Mongoose ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(productId)) {
-        return res.status(400).json({ message: 'Invalid Product ID format.' });
-    }
-
-    try {
-        const product = await Product.findByIdAndDelete(productId);
-        if (!product) {
-            return res.status(404).json({ message: 'Product not found.' });
+exports.getProductById = [
+    param('id').isMongoId().withMessage('Invalid Product ID format.'),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
 
-        // Delete associated image files from Cloudinary concurrently
-        if (product.images && product.images.length > 0) {
-            const deletionPromises = product.images.map(async (imageUrl) => {
-                // Extract public ID from the Cloudinary URL
-                const publicIdMatch = imageUrl.match(/(?:upload\/v\d+\/)(.+?)(?:\.\w{3,4})?$/);
-                let publicId = '';
+        console.log('📥 getProductById called with id:', req.params.id);
 
-                if (publicIdMatch && publicIdMatch[1]) {
-                    publicId = publicIdMatch[1].replace(/\.\w{3,4}$/, ''); // Remove extension if present
+        try {
+            const product = await Product.findById(req.params.id).lean(); // Use .lean()
+            if (!product) {
+                return res.status(404).json({ error: 'Product not found.' });
+            }
+            res.json(product);
+        } catch (error) {
+            console.error('❌ getProductById failed:', error);
+            next(error); // Pass error to centralized error handler
+        }
+    }
+];
+
+/**
+ * @desc Update a product
+ * @route PUT /api/products/:id
+ * @access Private (e.g., Admin)
+ * @validation Validates ID format and optional fields.
+ */
+exports.updateProduct = [
+    param('id').isMongoId().withMessage('Invalid Product ID format.'),
+    body('name').optional().trim().notEmpty().withMessage('Product name cannot be empty.'),
+    body('description').optional().trim().notEmpty().withMessage('Product description cannot be empty.'),
+    body('quantity').optional().isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
+    body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
+    body('images').optional().isArray().withMessage('Images must be an array of URLs.')
+        .custom(images => images.every(img => typeof img === 'string' && img.trim() !== '')).withMessage('Each image must be a non-empty string URL.'),
+    body('variants')
+        .optional()
+        .custom((value, { req }) => {
+            try {
+                const parsed = JSON.parse(value);
+                if (!Array.isArray(parsed)) {
+                    throw new Error('Variants must be a JSON array.');
                 }
+                return true;
+            } catch (e) {
+                throw new Error('Invalid variants format: Must be a valid JSON array string.');
+            }
+        }),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
 
-                if (publicId) {
-                    try {
-                        const cloudinaryResult = await cloudinary.uploader.destroy(publicId);
-                        if (cloudinaryResult.result === 'ok') {
-                            console.log(`🗑️ Deleted image from Cloudinary: ${publicId}`);
-                            return { publicId, status: 'success' };
-                        } else {
-                            console.warn(`⚠️ Cloudinary deletion failed for ${publicId}:`, cloudinaryResult);
-                            return { publicId, status: 'failed', result: cloudinaryResult };
-                        }
-                    } catch (cloudinaryError) {
-                        console.error(`❌ Error deleting image from Cloudinary ${publicId}:`, cloudinaryError.message);
-                        return { publicId, status: 'error', error: cloudinaryError.message };
+        try {
+            const { name, description, quantity, price, images, variants } = req.body;
+
+            const updatedFields = {};
+            if (name !== undefined) updatedFields.name = name;
+            if (description !== undefined) updatedFields.description = description;
+            if (quantity !== undefined) updatedFields.quantity = quantity;
+            if (price !== undefined) updatedFields.price = price;
+            if (images !== undefined) updatedFields.images = images; // Assumes client sends full array of image URLs
+            if (variants !== undefined) updatedFields.variants = JSON.parse(variants); // Already validated
+
+            if (Object.keys(updatedFields).length === 0) {
+                return res.status(400).json({ message: 'No fields provided for update.' });
+            }
+
+            const product = await Product.findByIdAndUpdate(req.params.id, updatedFields, { new: true, runValidators: true }).lean();
+
+            if (!product) {
+                return res.status(404).json({ error: 'Product not found.' });
+            }
+
+            res.json({ message: 'Product updated successfully', product });
+        } catch (error) {
+            console.error('Error updating product:', error);
+            next(error); // Pass error to centralized error handler
+        }
+    }
+];
+
+/**
+ * @desc Delete a product
+ * @route DELETE /api/products/:id
+ * @access Private (e.g., Admin)
+ * @validation Validates ID format.
+ */
+exports.deleteProduct = [
+    param('id').isMongoId().withMessage('Invalid Product ID format.'),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        try {
+            const product = await Product.findByIdAndDelete(req.params.id);
+            if (!product) {
+                return res.status(404).json({ error: 'Product not found.' });
+            }
+
+            // Delete associated image files from Cloudinary
+            if (product.images && product.images.length > 0) {
+                for (const imageUrl of product.images) {
+                    const publicIdMatch = imageUrl.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
+                    let publicId = '';
+                    if (publicIdMatch && publicIdMatch[1]) {
+                        publicId = publicIdMatch[1].replace(/\.\w{3,4}$/, '');
                     }
-                } else {
-                    console.warn(`⚠️ Could not extract public ID for image (skipping Cloudinary deletion): ${imageUrl}`);
-                    return { publicId: null, status: 'skipped', message: 'Invalid URL for public ID extraction' };
-                }
-            });
-            // Wait for all image deletion promises to settle (don't fail if one image fails to delete)
-            await Promise.allSettled(deletionPromises);
-        }
 
-        res.status(200).json({ message: 'Product deleted successfully!' });
-    } catch (error) {
-        console.error('Error deleting product:', error.message);
-        res.status(500).json({ message: 'Failed to delete product. Please try again.', error: error.message });
+                    if (publicId) {
+                        try {
+                            const cloudinaryResult = await cloudinary.uploader.destroy(publicId);
+                            if (cloudinaryResult.result === 'ok') {
+                                console.log(`🗑️ Deleted image from Cloudinary: ${publicId}`);
+                            } else {
+                                console.warn(`⚠️ Cloudinary deletion failed for ${publicId}:`, cloudinaryResult);
+                            }
+                        } catch (cloudinaryError) {
+                            console.error(`❌ Error deleting image from Cloudinary ${publicId}:`, cloudinaryError);
+                            // Log the error but don't block the product deletion success
+                        }
+                    } else {
+                        console.warn(`⚠️ Could not extract public ID for image: ${imageUrl}`);
+                    }
+                }
+            }
+            res.json({ message: 'Product deleted successfully' });
+        } catch (error) {
+            console.error('Error deleting product:', error);
+            next(error); // Pass error to centralized error handler
+        }
     }
-};
+];
 
 // =========================
 // 🛒 Collection Handlers
 // =========================
 
 /**
- * @desc Fetches all collections, populating associated product details.
- * @route GET /api/collections (or /products/collections as per frontend)
- * @access Public (or private depending on use case)
- * @param {object} req - Express request object.
- * @param {object} res - Express response object.
+ * @desc Get all collections with populated products
+ * @route GET /api/collections
+ * @access Public
  */
-exports.getCollections = async (req, res) => {
+exports.getCollections = async (req, res, next) => {
     try {
-        // console.log('Fetching collections...'); // Removed console.log
+        console.log('Fetching collections...');
         const collections = await Collection.find()
             .populate({
                 path: 'productIds',
-                select: 'name images price', // Select specific fields from populated products for efficiency
+                select: 'name images price', // Select specific fields from populated products
             })
             .lean(); // Use .lean() for faster execution if you don't need Mongoose document methods
 
-        // console.log(`Collections fetched from DB: ${collections.length}`); // Removed console.log
+        console.log('Collections fetched from DB (before processing):', collections.length);
 
         const updatedCollections = collections.map((collection, i) => {
             try {
-                // Ensure productIds is an array and filter out any null/undefined products that might result from populate
                 const populatedProducts = Array.isArray(collection.productIds)
                     ? collection.productIds
                         .filter(product => {
-                            // Filter conditions: product exists, is an object, has name, price, and images array
                             const isValid = product && typeof product === 'object' &&
                                 product.name && product.price !== undefined && Array.isArray(product.images);
                             if (!isValid) {
-                                console.warn(`⚠️ Invalid product data found in collection ID: ${collection._id}, product index: ${i}. Product will be excluded.`);
+                                console.warn(`⚠️ Invalid product data found in collection ID: ${collection._id}, product index: ${i}`);
                             }
                             return isValid;
                         })
                         .map(product => {
                             const images = Array.isArray(product.images)
-                                ? product.images.filter(img => typeof img === 'string' && img.trim() !== '') // Filter out non-string or empty string entries
-                                : []; // Default to empty array if images is not an an array
+                                ? product.images.filter(img => typeof img === 'string' && img.trim() !== '')
+                                : [];
 
                             return {
                                 _id: product._id,
                                 name: product.name,
                                 price: product.price,
-                                images, // Images are already full Cloudinary URLs
+                                images,
                             };
                         })
-                    : []; // Default to empty array if productIds is not an array or is null/undefined
+                    : [];
 
                 return {
                     _id: collection._id,
                     name: collection.name,
-                    // Provide a fallback placeholder image if thumbnailUrl is missing or invalid
                     thumbnailUrl: typeof collection.thumbnailUrl === 'string' && collection.thumbnailUrl.trim() !== ''
                         ? collection.thumbnailUrl
                         : 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
@@ -559,8 +450,7 @@ exports.getCollections = async (req, res) => {
                     updatedAt: collection.updatedAt,
                 };
             } catch (err) {
-                console.error(`❌ Error processing collection data at index ${i} (ID: ${collection._id}):`, err.message);
-                // Return a simplified object for the problematic collection to avoid breaking the entire response
+                console.error(`❌ Error processing collection at index ${i} (ID: ${collection._id}):`, err);
                 return {
                     _id: collection._id,
                     name: collection.name || 'Unknown Collection',
@@ -568,190 +458,167 @@ exports.getCollections = async (req, res) => {
                     productIds: [],
                     createdAt: collection.createdAt,
                     updatedAt: collection.updatedAt,
-                    error: 'Error processing collection data on server' // More descriptive error
+                    error: 'Error processing collection data on server'
                 };
             }
         });
 
-        // console.log(`Collections sent to client: ${updatedCollections.length}`); // Removed console.log
-        res.status(200).json(updatedCollections);
+        console.log('Collections sent to client:', updatedCollections.length);
+        res.json(updatedCollections);
     } catch (error) {
-        console.error('❌ Error fetching collections:', error.message);
-        res.status(500).json({
-            message: 'Error fetching collections. Please try again.',
-            error: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined // Provide stack only in dev
-        });
+        console.error('❌ Error fetching collections:', error);
+        next(error); // Pass error to centralized error handler
     }
 };
 
 /**
- * @desc Fetches a single collection by its ID, populating associated product details.
- * @route GET /api/collections/:id (or /products/collections/:id as per frontend)
- * @access Public (or private depending on use case)
- * @param {object} req - Express request object (expects collection ID in `req.params.id`).
- * @param {object} res - Express response object.
+ * @desc Get collection by ID with populated products
+ * @route GET /api/collections/:id
+ * @access Public
+ * @validation Validates ID format.
  */
-exports.getCollectionById = async (req, res) => {
-    const collectionId = req.params.id;
-
-    // Validate if the provided ID is a valid Mongoose ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(collectionId)) {
-        return res.status(400).json({ message: 'Invalid collection ID format.' });
-    }
-
-    try {
-        const collection = await Collection.findById(collectionId)
-            .populate({
-                path: 'productIds',
-                select: 'name description images price variants quantity', // Select all relevant product fields
-            })
-            .lean(); // Use .lean() for performance
-
-        if (!collection) {
-            return res.status(404).json({ message: 'Collection not found.' });
+exports.getCollectionById = [
+    param('id').isMongoId().withMessage('Invalid collection ID format.'),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
 
-        // Filter out any invalid or null products after population
-        collection.productIds = collection.productIds.filter(product => product && product._id);
+        try {
+            const { id } = req.params;
+            const collection = await Collection.findById(id)
+                .populate({
+                    path: 'productIds',
+                    select: 'name description images price variants quantity',
+                })
+                .lean();
 
-        res.status(200).json({
-            message: 'Collection fetched successfully!',
-            collection
-        });
-    } catch (error) {
-        console.error('Error fetching collection by ID:', error.message);
-        if (error.name === 'CastError') {
-            return res.status(404).json({ message: 'Collection not found with the provided ID.' });
-        }
-        res.status(500).json({ message: 'Error fetching collection details. Please try again.', error: error.message });
-    }
-};
-
-/**
- * @desc Adds a new collection to the database.
- * @route POST /api/collections (or /products/collections as per frontend)
- * @access Private (should be protected with authentication/authorization)
- * @param {object} req - Express request object. Expects collection details in `req.body`.
- * @param {object} res - Express response object.
- */
-exports.addCollection = async (req, res) => {
-    try {
-        const { name, thumbnailUrl, productIds } = req.body;
-
-        if (!name || String(name).trim() === '') {
-            return res.status(400).json({ message: 'Collection name is required and cannot be empty.' });
-        }
-
-        // Validate productIds if provided
-        if (productIds !== undefined) {
-            if (!Array.isArray(productIds) || !productIds.every(id => mongoose.Types.ObjectId.isValid(id))) {
-                return res.status(400).json({ message: 'productIds must be an array of valid MongoDB Object IDs.' });
+            if (!collection) {
+                return res.status(404).json({ message: 'Collection not found.' });
             }
-        }
 
-        const newCollection = new Collection({
-            name: String(name).trim(),
-            thumbnailUrl: thumbnailUrl ? String(thumbnailUrl).trim() : 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image', // Default thumbnail
-            productIds: productIds || [],
-        });
+            collection.productIds = collection.productIds.filter(product => product && product._id);
 
-        await newCollection.save(); // Save the new collection document to MongoDB
-        res.status(201).json({
-            message: 'Collection added successfully!',
-            collection: newCollection // Return the newly created collection
-        });
-    } catch (error) {
-        console.error('Error adding collection:', error.message);
-        if (error.code === 11000) { // Duplicate key error (e.g., if collection name is unique)
-            return res.status(409).json({ message: 'Collection with this name already exists. Please choose a different name.' });
+            res.json(collection);
+        } catch (error) {
+            console.error('Error fetching collection by ID:', error);
+            next(error); // Pass error to centralized error handler
         }
-        if (error.name === 'ValidationError') {
-            return res.status(400).json({ message: error.message });
-        }
-        res.status(500).json({ message: 'Failed to add collection. Please try again.', error: error.message });
     }
-};
+];
 
 /**
- * @desc Updates an existing collection by its ID.
- * @route PUT /api/collections/:id (or /products/collections/:id as per frontend)
- * @access Private (should be protected with authentication/authorization)
- * @param {object} req - Express request object. Expects fields to update in `req.body`.
- * @param {object} res - Express response object.
+ * @desc Add a new collection
+ * @route POST /api/collections
+ * @access Private (e.g., Admin)
+ * @validation Validates name, optional thumbnailUrl, and productIds.
  */
-exports.updateCollection = async (req, res) => {
-    const collectionId = req.params.id;
+exports.addCollection = [
+    body('name').trim().notEmpty().withMessage('Collection name is required.'),
+    body('thumbnailUrl').optional().isURL().withMessage('Thumbnail URL must be a valid URL.'),
+    body('productIds').optional().isArray().withMessage('Product IDs must be an array.')
+        .custom(ids => ids.every(id => mongoose.Types.ObjectId.isValid(id))).withMessage('Each product ID must be a valid MongoDB Object ID.'),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
 
-    // Validate if the provided ID is a valid Mongoose ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(collectionId)) {
-        return res.status(400).json({ message: 'Invalid Collection ID format.' });
-    }
+        try {
+            const { name, thumbnailUrl, productIds } = req.body;
 
-    try {
-        const { name, thumbnailUrl, productIds } = req.body;
+            const newCollection = new Collection({
+                name,
+                thumbnailUrl: thumbnailUrl || 'https://placehold.co/150x150/EEEEEE/333333?text=No+Image',
+                productIds: productIds || [],
+            });
 
-        const updatedFields = {};
-        if (name !== undefined) updatedFields.name = String(name).trim();
-        if (thumbnailUrl !== undefined) updatedFields.thumbnailUrl = String(thumbnailUrl).trim();
-
-        if (productIds !== undefined) {
-            if (!Array.isArray(productIds) || !productIds.every(id => mongoose.Types.ObjectId.isValid(id))) {
-                return res.status(400).json({ message: 'productIds must be an array of valid MongoDB Object IDs.' });
+            await newCollection.save();
+            res.status(201).json(newCollection);
+        } catch (error) {
+            console.error('Error adding collection:', error);
+            if (error.code === 11000) { // Duplicate key error
+                return res.status(409).json({ error: 'Collection with this name already exists.' });
             }
-            updatedFields.productIds = productIds;
+            next(error); // Pass other errors to centralized error handler
         }
-
-        if (Object.keys(updatedFields).length === 0) {
-            return res.status(400).json({ message: 'No valid fields provided for update.' });
-        }
-
-        const collection = await Collection.findByIdAndUpdate(
-            collectionId,
-            { $set: updatedFields }, // Use $set to update only provided fields
-            { new: true, runValidators: true } // Return the modified document and run schema validators
-        );
-
-        if (!collection) {
-            return res.status(404).json({ message: 'Collection not found.' });
-        }
-
-        res.status(200).json({ message: 'Collection updated successfully!', collection });
-    } catch (error) {
-        console.error('Error updating collection:', error.message);
-        if (error.code === 11000) { // Duplicate key error
-            return res.status(409).json({ message: 'Collection with this name already exists. Please choose a different name.' });
-        }
-        if (error.name === 'ValidationError') {
-            return res.status(400).json({ message: error.message });
-        }
-        res.status(500).json({ message: 'Failed to update collection. Please try again.', error: error.message });
     }
-};
+];
 
 /**
- * @desc Deletes a collection by its ID.
- * @route DELETE /api/collections/:id (or /products/collections/:id as per frontend)
- * @access Private (should be protected with authentication/authorization)
- * @param {object} req - Express request object (expects collection ID in `req.params.id`).
- * @param {object} res - Express response object.
+ * @desc Update a collection
+ * @route PUT /api/collections/:id
+ * @access Private (e.g., Admin)
+ * @validation Validates ID format and optional fields.
  */
-exports.deleteCollection = async (req, res) => {
-    const collectionId = req.params.id;
-
-    // Validate if the provided ID is a valid Mongoose ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(collectionId)) {
-        return res.status(400).json({ message: 'Invalid Collection ID format.' });
-    }
-
-    try {
-        const collection = await Collection.findByIdAndDelete(collectionId);
-        if (!collection) {
-            return res.status(404).json({ message: 'Collection not found.' });
+exports.updateCollection = [
+    param('id').isMongoId().withMessage('Invalid Collection ID format.'),
+    body('name').optional().trim().notEmpty().withMessage('Collection name cannot be empty.'),
+    body('thumbnailUrl').optional().isURL().withMessage('Thumbnail URL must be a valid URL.'),
+    body('productIds').optional().isArray().withMessage('Product IDs must be an array.')
+        .custom(ids => ids.every(id => mongoose.Types.ObjectId.isValid(id))).withMessage('Each product ID must be a valid MongoDB Object ID.'),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
-        res.status(200).json({ message: 'Collection deleted successfully!' });
-    } catch (error) {
-        console.error('Error deleting collection:', error.message);
-        res.status(500).json({ message: 'Failed to delete collection. Please try again.', error: error.message });
+
+        try {
+            const { name, thumbnailUrl, productIds } = req.body;
+
+            const updatedFields = {};
+            if (name !== undefined) updatedFields.name = name;
+            if (thumbnailUrl !== undefined) updatedFields.thumbnailUrl = thumbnailUrl;
+            if (productIds !== undefined && Array.isArray(productIds)) {
+                updatedFields.productIds = productIds; // Already validated
+            }
+
+            if (Object.keys(updatedFields).length === 0) {
+                return res.status(400).json({ message: 'No fields provided for update.' });
+            }
+
+            const collection = await Collection.findByIdAndUpdate(req.params.id, updatedFields, { new: true, runValidators: true }).lean();
+
+            if (!collection) {
+                return res.status(404).json({ error: 'Collection not found.' });
+            }
+
+            res.json({ message: 'Collection updated successfully', collection });
+        } catch (error) {
+            console.error('Error updating collection:', error);
+            if (error.code === 11000) {
+                return res.status(409).json({ error: 'Collection with this name already exists.' });
+            }
+            next(error); // Pass other errors to centralized error handler
+        }
     }
-};
+];
+
+/**
+ * @desc Delete a collection
+ * @route DELETE /api/collections/:id
+ * @access Private (e.g., Admin)
+ * @validation Validates ID format.
+ */
+exports.deleteCollection = [
+    param('id').isMongoId().withMessage('Invalid Collection ID format.'),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        try {
+            const collection = await Collection.findByIdAndDelete(req.params.id);
+            if (!collection) {
+                return res.status(404).json({ error: 'Collection not found.' });
+            }
+            res.json({ message: 'Collection deleted successfully' });
+        } catch (error) {
+            console.error('Error deleting collection:', error);
+            next(error); // Pass error to centralized error handler
+        }
+    }
+];
+
