@@ -129,9 +129,9 @@ const PixelController = {
      */
     getSiteConfig: async (req, res) => {
         try {
-            // Correct: Calling the static method directly on the imported Model
-            // Assuming getLatestPixelConfig fetches the most recent or active pixel configuration.
+            // Fetch pixel configuration from the model
             const pixelConfig = await PixelModel.getLatestPixelConfig();
+            console.log('PixelConfig fetched from model:', pixelConfig); // Debugging: Log what the model returns
 
             // Simulated other site configuration data
             // In a real application, these might also come from a database (e.g., a 'SiteConfig' model)
@@ -222,9 +222,9 @@ From conceptualization to creation, every piece is crafted with meticulous atten
                     { "wilayaId": 57, "wilayaName": "El Meniaa", "price": 1000 },
                     { "wilayaId": 58, "wilayaName": "In Salah", "price": 1400 }
                 ],
-                // These will be fetched from the database if available, otherwise null.
-                facebookPixelId: pixelConfig ? pixelConfig.facebookPixelId : null,
-                tiktokPixelId: pixelConfig ? pixelConfig.tiktokPixelId : null
+                // These will be fetched from the database if available, otherwise use a default placeholder.
+                facebookPixelId: pixelConfig && pixelConfig.facebookPixelId ? pixelConfig.facebookPixelId : 'YOUR_DEFAULT_FACEBOOK_PIXEL_ID', // Replace with your actual pixel ID
+                tiktokPixelId: pixelConfig && pixelConfig.tiktokPixelId ? pixelConfig.tiktokPixelId : 'YOUR_DEFAULT_TIKTOK_PIXEL_ID' // Replace with your actual pixel ID
             };
 
             res.status(200).json(siteConfigData);
