@@ -4,7 +4,7 @@
 
 const express = require('express');
 const router = express.Router();
-const PixelController = require('../controllers/pixelcontroller'); // Import the pixel controller
+const { PixelController, SiteConfigController } = require('../controllers/pixelcontroller'); // Import both controllers
 
 // POST route to add new Facebook or TikTok pixel IDs
 router.post('/pixels', PixelController.postPixel);
@@ -16,6 +16,6 @@ router.get('/pixels', PixelController.getPixels);
 router.delete('/pixels/:id', PixelController.deletePixel);
 
 // GET route to retrieve general site configuration, including pixel IDs
-router.get('/site-config', PixelController.getSiteConfig);
+router.get('/site-config', SiteConfigController.getSiteConfig); // Corrected to use SiteConfigController
 
 module.exports = router;
