@@ -117,7 +117,9 @@ const PixelController = {
             res.status(500).json({ message: 'Failed to delete pixel ID. Please try again.' });
         }
     },
+};
 
+const SiteConfigController = {
     /**
      * @desc Handles GET requests to provide overall site configuration,
      * including active Facebook and TikTok pixel IDs and delivery fees.
@@ -223,7 +225,7 @@ From conceptualization to creation, every piece is crafted with meticulous atten
                     { "wilayaId": 58, "wilayaName": "In Salah", "price": 1400 }
                 ],
                 // These will be fetched from the database if available, otherwise use a default placeholder.
-                facebookPixelId: pixelConfig && pixelConfig.facebookPixelId ? pixelConfig.facebookPixelId : null, 
+                facebookPixelId: pixelConfig && pixelConfig.facebookPixelId ? pixelConfig.facebookPixelId : null,
                 tiktokPixelId: pixelConfig && pixelConfig.tiktokPixelId ? pixelConfig.tiktokPixelId : null
             };
 
@@ -236,4 +238,4 @@ From conceptualization to creation, every piece is crafted with meticulous atten
     }
 };
 
-module.exports = PixelController;
+module.exports = { PixelController, SiteConfigController };
