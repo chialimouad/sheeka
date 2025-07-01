@@ -63,7 +63,7 @@ app.use('/auth', authRoutes);
 app.use('/authuser', authroutesuser);
 app.use('/products', productRoutes);
 app.use('/orders', orderRoutes);
-app.use('/api', siteConfigRoutes); // This correctly mounts all routes from routes/site.js
+app.use('/api/site-config', siteConfigRoutes); // This correctly mounts all routes from routes/site.js
 app.use('/api/emails', emailRoutes);
 app.use('/api', pixelRoutes); // ✅ Mount pixel endpoints at /api/pixels
 app.use('/countorder', ordercount); // ✅ Mount pixel endpoints at /api/pixels
