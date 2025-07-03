@@ -2,10 +2,10 @@
 const visitorModel = require('../models/visit'); // Import the model
 
 /**
- * Handles GET requests to get the real-time count of visitors.
- * It updates user activity and returns the current visitor count.
+ * Handles GET requests to get various real-time and historical counts of visitors.
+ * It updates user activity and returns the current visitor count, daily, monthly, and total unique visitors.
  */
-function getRealtimeVisitors(req, res) {
+function getVisitorStats(req, res) {
     // Prioritize the unique client ID sent from the frontend.
     // This allows for more accurate tracking of individual browser sessions,
     // even if the user's IP address changes (e.g., on mobile networks).
@@ -17,8 +17,11 @@ function getRealtimeVisitors(req, res) {
         console.warn('No identifiable user ID (X-Client-ID or IP) found for a visitor request. Cannot track unique visitor.');
         // Still return the current count, but indicate a tracking issue.
         return res.status(400).json({
-            count: visitorModel.getVisitorCount(),
-            message: "Could not identify client for tracking this request."
+            realtimeCount: visitorModel.getRealtimeVisitorCount(), // Return real-time even on error
+            dailyCount: visitorModel.getDailyVisitorCount(),
+            monthlyCount: visitorModel.getMonthlyVisitorCount(),
+            totalCount: visitorModel.getTotalUniqueVisitorCount(),
+            message: "Could not identify client for tracking this request. Counts may be incomplete."
         });
     }
 
@@ -29,16 +32,22 @@ function getRealtimeVisitors(req, res) {
     // This is crucial for "discounting" users who have left or become inactive.
     visitorModel.cleanupInactiveVisitors();
 
-    // Get the current active visitor count from the model
-    const count = visitorModel.getVisitorCount();
+    // Get all the current visitor counts from the model
+    const realtimeCount = visitorModel.getRealtimeVisitorCount();
+    const dailyCount = visitorModel.getDailyVisitorCount();
+    const monthlyCount = visitorModel.getMonthlyVisitorCount();
+    const totalCount = visitorModel.getTotalUniqueVisitorCount();
 
-    // Return the response as JSON
+    // Return the response as JSON with all metrics
     res.json({
-        count: count,
-        message: "Current active visitors on the site."
+        realtimeCount: realtimeCount,
+        dailyCount: dailyCount,
+        monthlyCount: monthlyCount,
+        totalCount: totalCount,
+        message: "Current active, daily, monthly, and total unique visitors."
     });
 }
 
 module.exports = {
-    getRealtimeVisitors
+    getVisitorStats // Renamed the export for clarity
 };
