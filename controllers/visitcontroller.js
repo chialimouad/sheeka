@@ -3,17 +3,27 @@ const visitorModel = require('../models/visit'); // Import the model
 
 /**
  * Handles GET requests to get the real-time count of visitors.
- * It updates user activity, cleans up inactive users, and returns the current count.
- * @param {object} req - The Express request object.
- * @param {object} res - The Express response object.
+ * It updates user activity and returns the current visitor count.
  */
 function getRealtimeVisitors(req, res) {
-    // Get a unique identifier for the user.
-    // req.headers['x-forwarded-for'] is preferred for production behind proxies.
-    // req.socket.remoteAddress is a fallback for direct connections.
+    // Get the user's IP address.
+    // 'x-forwarded-for' is used when behind a proxy (like a load balancer or CDN).
+    // req.socket.remoteAddress is the direct client IP if no proxy, or the proxy's IP.
+    // By prioritizing these, we count based on IP.
     const userId = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
-    // Record the activity for the current user
+    // Optional: Log if no IP is found, though it should almost always be present.
+    if (!userId) {
+        console.warn('No IP address found for a visitor request. Cannot track unique visitor.');
+        // You might choose to return an error or a default count here,
+        // but for real-time tracking, an identifiable ID is crucial.
+        return res.status(400).json({
+            count: visitorModel.getVisitorCount(), // Still return current count
+            message: "Could not identify client IP for tracking this request."
+        });
+    }
+
+    // Record the activity for the current user (identified by IP)
     visitorModel.recordActivity(userId);
 
     // Clean up inactive users and recount active visitors
@@ -25,7 +35,7 @@ function getRealtimeVisitors(req, res) {
     // Return the response as JSON
     res.json({
         count: count,
-        message: "Current active visitors on the site."
+        message: "Current active visitors on the site based on IP addresses."
     });
 }
 
