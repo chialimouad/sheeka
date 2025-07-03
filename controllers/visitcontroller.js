@@ -6,27 +6,27 @@ const visitorModel = require('../models/visit'); // Import the model
  * It updates user activity and returns the current visitor count.
  */
 function getRealtimeVisitors(req, res) {
-    // Get the user's IP address.
-    // 'x-forwarded-for' is used when behind a proxy (like a load balancer or CDN).
-    // req.socket.remoteAddress is the direct client IP if no proxy, or the proxy's IP.
-    // By prioritizing these, we count based on IP.
-    const userId = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    // Prioritize the unique client ID sent from the frontend.
+    // This allows for more accurate tracking of individual browser sessions,
+    // even if the user's IP address changes (e.g., on mobile networks).
+    // If no client ID is provided, fall back to the IP address.
+    const userId = req.headers['x-client-id'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
-    // Optional: Log if no IP is found, though it should almost always be present.
+    // Optional: Log if no identifiable ID is found.
     if (!userId) {
-        console.warn('No IP address found for a visitor request. Cannot track unique visitor.');
-        // You might choose to return an error or a default count here,
-        // but for real-time tracking, an identifiable ID is crucial.
+        console.warn('No identifiable user ID (X-Client-ID or IP) found for a visitor request. Cannot track unique visitor.');
+        // Still return the current count, but indicate a tracking issue.
         return res.status(400).json({
-            count: visitorModel.getVisitorCount(), // Still return current count
-            message: "Could not identify client IP for tracking this request."
+            count: visitorModel.getVisitorCount(),
+            message: "Could not identify client for tracking this request."
         });
     }
 
-    // Record the activity for the current user (identified by IP)
+    // Record the activity for the current user (identified by client ID or IP)
     visitorModel.recordActivity(userId);
 
     // Clean up inactive users and recount active visitors
+    // This is crucial for "discounting" users who have left or become inactive.
     visitorModel.cleanupInactiveVisitors();
 
     // Get the current active visitor count from the model
@@ -35,7 +35,7 @@ function getRealtimeVisitors(req, res) {
     // Return the response as JSON
     res.json({
         count: count,
-        message: "Current active visitors on the site based on IP addresses."
+        message: "Current active visitors on the site."
     });
 }
 
