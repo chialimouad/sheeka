@@ -55,6 +55,7 @@ const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emails');
 const pixelRoutes = require('./routes/pixel'); // ✅ Pixel routes
 const ordercount = require('./routes/ordecount'); // ✅ Pixel route
+const visitor = require('./routes/visit'); // ✅ Pixel route
 
 // ========================
 // 🚏 Mount Routes
@@ -67,6 +68,7 @@ app.use('/api/site-config', siteConfigRoutes); // This correctly mounts all rout
 app.use('/api/emails', emailRoutes);
 app.use('/site', pixelRoutes); // ✅ Mount pixel endpoints at /api/pixels
 app.use('/countorder', ordercount); // ✅ Mount pixel endpoints at /api/pixels
+app.use('/visitors', visitor); // ✅ Mount pixel endpoints at /api/pixels
 
 // ========================
 // ❌ 404 Not Found Handler
