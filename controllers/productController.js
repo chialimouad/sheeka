@@ -172,7 +172,7 @@ exports.deletePromoImage = [
  * @desc Add a new product
  * @route POST /api/products
  * @access Private (e.g., Admin)
- * @validation Validates name, description, quantity, price, and variants
+ * @validation Validates name, description, quantity, price, and variants.
  */
 exports.addProduct = [
     body('name').trim().notEmpty().withMessage('Product name is required.'),
@@ -181,29 +181,19 @@ exports.addProduct = [
     body('price').isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
     body('variants')
         .optional()
-        .isArray()
-        .withMessage('Variants must be an array.')
-        .custom((variantsArray) => {
-            if (!Array.isArray(variantsArray)) {
-                throw new Error('Variants must be an array.');
+        .custom((value, { req }) => {
+            try {
+                // Attempt to parse the variants string
+                const parsed = JSON.parse(value);
+                if (!Array.isArray(parsed)) {
+                    throw new Error('Variants must be a JSON array.');
+                }
+                // Optionally, add more specific validation for each variant object structure here
+                // e.g., parsed.every(v => v.color && v.size && typeof v.stock === 'number')
+                return true;
+            } catch (e) {
+                throw new Error('Invalid variants format: Must be a valid JSON array string.');
             }
-            for (const variant of variantsArray) {
-                if (typeof variant !== 'object' || variant === null) {
-                    throw new Error('Each variant must be an object.');
-                }
-                // Check for required fields within each variant, e.g., colors and sizes arrays
-                if (!Array.isArray(variant.colors)) {
-                    throw new Error('Variant colors must be an array.');
-                }
-                if (!Array.isArray(variant.sizes)) {
-                    throw new Error('Variant sizes must be an array.');
-                }
-                // If you have quantity per variant, validate it here:
-                // if (typeof variant.quantity !== 'number' || variant.quantity < 0) {
-                //     throw new Error('Variant quantity must be a non-negative number.');
-                // }
-            }
-            return true;
         }),
     async (req, res, next) => {
         const errors = validationResult(req);
@@ -219,14 +209,18 @@ exports.addProduct = [
             }
             const images = req.files.map(file => file.path); // Cloudinary gives you full URLs
 
-            // Variants are now directly an array, no need to parse
+            let parsedVariants = [];
+            if (variants) {
+                parsedVariants = JSON.parse(variants); // Already validated by custom validator
+            }
+
             const newProduct = new Product({
                 name,
                 description,
                 quantity,
                 price,
                 images,
-                variants: variants || [] // Ensure it's an empty array if not provided
+                variants: parsedVariants
             });
 
             await newProduct.save();
@@ -298,33 +292,16 @@ exports.updateProduct = [
         .custom(images => images.every(img => typeof img === 'string' && img.trim() !== '')).withMessage('Each image must be a non-empty string URL.'),
     body('variants')
         .optional()
-        .isArray()
-        .withMessage('Variants must be an array.')
-        .custom((variantsArray) => {
-            if (!Array.isArray(variantsArray)) {
-                throw new Error('Variants must be an array.');
+        .custom((value, { req }) => {
+            try {
+                const parsed = JSON.parse(value);
+                if (!Array.isArray(parsed)) {
+                    throw new Error('Variants must be a JSON array.');
+                }
+                return true;
+            } catch (e) {
+                throw new Error('Invalid variants format: Must be a valid JSON array string.');
             }
-            for (const variant of variantsArray) {
-                if (typeof variant !== 'object' || variant === null) {
-                    throw new Error('Each variant must be an object.');
-                }
-                // Ensure _id exists for existing variants, or is not present for new ones
-                if (variant._id && !mongoose.Types.ObjectId.isValid(variant._id)) {
-                    throw new Error('Invalid variant ID format.');
-                }
-                // Check for required fields within each variant, e.g., colors and sizes arrays
-                if (!Array.isArray(variant.colors)) {
-                    throw new Error('Variant colors must be an array.');
-                }
-                if (!Array.isArray(variant.sizes)) {
-                    throw new Error('Variant sizes must be an array.');
-                }
-                // If you have quantity per variant, validate it here:
-                // if (typeof variant.quantity !== 'number' || variant.quantity < 0) {
-                //     throw new Error('Variant quantity must be a non-negative number.');
-                // }
-            }
-            return true;
         }),
     async (req, res, next) => {
         const errors = validationResult(req);
@@ -341,19 +318,13 @@ exports.updateProduct = [
             if (quantity !== undefined) updatedFields.quantity = quantity;
             if (price !== undefined) updatedFields.price = price;
             if (images !== undefined) updatedFields.images = images; // Assumes client sends full array of image URLs
-            if (variants !== undefined) updatedFields.variants = variants; // Variants are now directly an array, no need to parse
+            if (variants !== undefined) updatedFields.variants = JSON.parse(variants); // Already validated
 
             if (Object.keys(updatedFields).length === 0) {
                 return res.status(400).json({ message: 'No fields provided for update.' });
             }
 
-            // Use findByIdAndUpdate with $set for specific fields
-            // For variants, we are replacing the entire array if it's provided.
-            const product = await Product.findByIdAndUpdate(
-                req.params.id,
-                { $set: updatedFields }, // Use $set to update only provided fields
-                { new: true, runValidators: true }
-            ).lean(); // Keep .lean() for consistency if you don't need Mongoose document methods after update.
+            const product = await Product.findByIdAndUpdate(req.params.id, updatedFields, { new: true, runValidators: true }).lean();
 
             if (!product) {
                 return res.status(404).json({ error: 'Product not found.' });
@@ -650,3 +621,4 @@ exports.deleteCollection = [
         }
     }
 ];
+
