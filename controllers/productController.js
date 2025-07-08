@@ -172,7 +172,7 @@ exports.deletePromoImage = [
  * @desc Add a new product
  * @route POST /api/products
  * @access Private (e.g., Admin)
- * @validation Validates name, description, quantity, price, and variants.
+ * @validation Validates name, description, quantity, price, and variants
  */
 exports.addProduct = [
     body('name').trim().notEmpty().withMessage('Product name is required.'),
