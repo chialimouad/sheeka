@@ -32,7 +32,7 @@ exports.uploadPromo = upload;
 // =========================
 // 📸 Promo Image Handlers
 // =========================
-// (This section is unchanged as it was not related to the error)
+// This section is unchanged
 exports.getProductImagesOnly = async (req, res, next) => {
     try {
         const promos = await PromoImage.find({}, 'images').lean();
@@ -100,11 +100,6 @@ exports.deletePromoImage = [
 // 🏢 Product Handlers
 // =========================
 
-/**
- * @desc Add a new product
- * @route POST /api/products
- * @access Private (e.g., Admin)
- */
 exports.addProduct = [
     body('name').trim().notEmpty().withMessage('Product name is required.'),
     body('description').trim().notEmpty().withMessage('Product description is required.'),
@@ -142,11 +137,6 @@ exports.addProduct = [
     }
 ];
 
-/**
- * @desc Get all products
- * @route GET /api/products
- * @access Public
- */
 exports.getProducts = async (req, res, next) => {
     try {
         const products = await Product.find().sort({ createdAt: -1 }).lean();
@@ -157,11 +147,6 @@ exports.getProducts = async (req, res, next) => {
     }
 };
 
-/**
- * @desc Get product by ID
- * @route GET /api/products/:id
- * @access Public
- */
 exports.getProductById = [
     param('id').isMongoId().withMessage('Invalid Product ID format.'),
     async (req, res, next) => {
@@ -186,20 +171,18 @@ exports.getProductById = [
  * @desc Update a product
  * @route PUT /api/products/:id
  * @access Private (e.g., Admin)
- * @note This handler now correctly processes both multipart/form-data (for image uploads) and regular field updates.
+ * @note This handler is now fixed to correctly handle multipart/form-data and application/json content types.
  */
 exports.updateProduct = [
     // This middleware will handle the 'images' field if it's part of a multipart/form-data request
     upload.array('images'),
 
-    // Validation for other fields
+    // Basic validation for other fields. Complex validation is moved inside the handler.
     param('id').isMongoId().withMessage('Invalid Product ID format.'),
     body('name').optional().trim().notEmpty().withMessage('Product name cannot be empty.'),
     body('description').optional().trim().notEmpty().withMessage('Product description cannot be empty.'),
     body('quantity').optional().isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
     body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
-    body('variants').optional().isJSON().withMessage('Variants must be a valid JSON array string.'),
-    body('imagesToKeep').optional().isJSON().withMessage('imagesToKeep must be a valid JSON string.'),
 
     async (req, res, next) => {
         const errors = validationResult(req);
@@ -212,21 +195,23 @@ exports.updateProduct = [
             if (!product) {
                 return res.status(404).json({ message: 'Product not found.' });
             }
-
+            
             // --- Handle Image Updates ---
-            let imagesToKeep = product.images; // Default to keeping all existing images
+            let imagesToKeep = product.images;
             if (req.body.imagesToKeep) {
                 try {
-                    imagesToKeep = JSON.parse(req.body.imagesToKeep);
+                    // Handle both stringified JSON (from FormData) and direct array (from JSON body)
+                    imagesToKeep = (typeof req.body.imagesToKeep === 'string') 
+                        ? JSON.parse(req.body.imagesToKeep) 
+                        : req.body.imagesToKeep;
                 } catch (e) {
                     return res.status(400).json({ message: 'Invalid format for imagesToKeep.' });
                 }
             }
             
             const newImageUrls = req.files ? req.files.map(file => file.path) : [];
-
-            // Determine which images to delete from Cloudinary
             const imagesToDelete = product.images.filter(url => !imagesToKeep.includes(url));
+
             for (const imageUrl of imagesToDelete) {
                 const publicIdMatch = imageUrl.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
                 if (publicIdMatch && publicIdMatch[1]) {
@@ -249,7 +234,15 @@ exports.updateProduct = [
 
             if (variants !== undefined) {
                 try {
-                    const parsedVariants = JSON.parse(variants);
+                    // Handle both stringified JSON (from FormData) and direct array (from JSON body)
+                    const parsedVariants = (typeof variants === 'string') 
+                        ? JSON.parse(variants) 
+                        : variants;
+
+                    if (!Array.isArray(parsedVariants)) {
+                        throw new Error('Variants data is not an array.');
+                    }
+
                     // **FIX**: Clean the _id from variants before assigning to prevent validation issues
                     const cleanedVariants = parsedVariants.map(v => {
                         const { _id, ...rest } = v; // Destructure to remove _id
@@ -257,7 +250,7 @@ exports.updateProduct = [
                     });
                     product.variants = cleanedVariants;
                 } catch (e) {
-                    return res.status(400).json({ message: 'Invalid variants JSON format.' });
+                    return res.status(400).json({ message: `Invalid variants format: ${e.message}` });
                 }
             }
 
@@ -271,12 +264,6 @@ exports.updateProduct = [
     }
 ];
 
-
-/**
- * @desc Delete a product
- * @route DELETE /api/products/:id
- * @access Private (e.g., Admin)
- */
 exports.deleteProduct = [
     param('id').isMongoId().withMessage('Invalid Product ID format.'),
     async (req, res, next) => {
@@ -313,7 +300,7 @@ exports.deleteProduct = [
 // =========================
 // 🛒 Collection Handlers
 // =========================
-// (This section is unchanged)
+// This section is unchanged
 exports.getCollections = async (req, res, next) => {
     try {
         const collections = await Collection.find().populate({ path: 'productIds', select: 'name images price' }).lean();
