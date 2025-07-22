@@ -18,6 +18,11 @@ const orderSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // NEW: Added address field
+  address: {
+    type: String,
+    required: true
+  },
   products: [
     {
       productId: {
@@ -43,9 +48,10 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // UPDATED: Added new status options
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'cancelled', 'tentative'],
+    enum: ['pending', 'confirmed', 'cancelled', 'tentative', 'dispatched', 'delivered', 'returned'],
     default: 'pending'
   },
   confirmedBy: {
