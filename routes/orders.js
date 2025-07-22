@@ -33,10 +33,11 @@ const authenticateClient = (req, res, next) => {
 // POST: Create a new order
 router.post('/', async (req, res) => {
     try {
-        const { fullName, phoneNumber, wilaya, commune, products, status, notes } = req.body;
+        // UPDATED: Added 'address' to destructuring
+        const { fullName, phoneNumber, wilaya, commune, address, products, status, notes } = req.body;
 
-        // Basic validation for required fields
-        if (!fullName || !phoneNumber || !wilaya || !commune || !products || products.length === 0) {
+        // Basic validation for required fields, including 'address'
+        if (!fullName || !phoneNumber || !wilaya || !commune || !address || !products || products.length === 0) {
             return res.status(400).json({ message: 'Missing required fields.' });
         }
 
@@ -69,20 +70,19 @@ router.post('/', async (req, res) => {
         }
 
         // Calculate totalOrdersCount based on the number of distinct products in the order
-        // If totalOrdersCount should be the sum of all product quantities, change products.length to
-        // products.reduce((sum, item) => sum + item.quantity, 0)
         const totalOrdersCount = products.length;
 
-        // Create a new Order instance
+        // Create a new Order instance, including the 'address' field
         const newOrder = new Order({
             fullName,
             phoneNumber,
             wilaya,
             commune,
+            address, // NEW: Added address field
             products,
-            totalOrdersCount, // Assign the calculated count
-            status: status || 'pending', // Default status to 'pending' if not provided
-            notes: notes || '' // Default notes to empty string if not provided
+            totalOrdersCount,
+            status: status || 'pending',
+            notes: notes || ''
         });
 
         await newOrder.save(); // Save the new order to the database
@@ -98,31 +98,30 @@ router.get('/', async (req, res) => {
     try {
         // Find all orders and populate product details, confirmedBy, and assignedTo user details
         const orders = await Order.find()
-            .populate('products.productId') // Populate details of products in the order
-            .populate('confirmedBy', 'name email') // Populate name and email of the user who confirmed it
-            .populate('assignedTo', 'name email'); // Populate name and email of the user it's assigned to
+            .populate('products.productId')
+            .populate('confirmedBy', 'name email')
+            .populate('assignedTo', 'name email');
 
         if (!orders.length) return res.status(404).json({ message: 'No orders found.' });
 
         // Format the output to include full image URLs and specific user fields
         const formattedOrders = orders.map(order => ({
-            ...order._doc, // Spread existing order document fields, which will now include totalOrdersCount
-            products: order.products.map(p => p.productId ? { // Map products to include necessary details
+            ...order._doc,
+            products: order.products.map(p => p.productId ? {
                 _id: p.productId._id,
                 name: p.productId.name,
                 price: p.productId.price,
-                // Construct full image URLs, handle cases where images might be missing
                 images: (p.productId.images || []).map(img => `https://sheeka.onrender.com${img}`),
                 quantity: p.quantity,
                 color: p.color,
                 size: p.size
-            } : null), // Return null or handle if productId somehow isn't populated
-            confirmedBy: order.confirmedBy ? { // Format confirmedBy user details
+            } : null),
+            confirmedBy: order.confirmedBy ? {
                 _id: order.confirmedBy._id,
                 name: order.confirmedBy.name,
                 email: order.confirmedBy.email
             } : null,
-            assignedTo: order.assignedTo ? { // Format assignedTo user details
+            assignedTo: order.assignedTo ? {
                 _id: order.assignedTo._id,
                 name: order.assignedTo.name,
                 email: order.assignedTo.email
@@ -149,7 +148,7 @@ router.get('/:orderId', async (req, res) => {
 
         // Format the output similar to the GET all orders route
         const formattedOrder = {
-            ...order._doc, // Spread existing order document fields, which will now include totalOrdersCount
+            ...order._doc,
             products: order.products.map(p => ({
                 _id: p.productId._id,
                 name: p.productId.name,
@@ -188,7 +187,8 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
 
         // If status is provided, validate it
         if (status) {
-            const allowedStatuses = ['pending', 'confirmed', 'tentative', 'cancelled'];
+            // UPDATED: Added new statuses to the allowed list
+            const allowedStatuses = ['pending', 'confirmed', 'tentative', 'cancelled', 'dispatched', 'delivered', 'returned'];
             if (!allowedStatuses.includes(status)) {
                 return res.status(400).json({ message: 'Invalid status. Allowed: ' + allowedStatuses.join(', ') });
             }
@@ -235,11 +235,12 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
     }
 });
 
-// PATCH: General order update for other fields (fullName, phoneNumber, wilaya, commune, notes, assignedTo)
+// PATCH: General order update for other fields (fullName, phoneNumber, wilaya, commune, address, notes, assignedTo)
 router.patch('/:orderId', async (req, res) => {
     try {
         const { orderId } = req.params;
-        const { fullName, phoneNumber, wilaya, commune, notes, assignedTo } = req.body;
+        // UPDATED: Added 'address' to destructuring
+        const { fullName, phoneNumber, wilaya, commune, address, notes, assignedTo } = req.body;
         const updateFields = {};
 
         // Conditionally add fields to updateFields if they are provided in the request body
@@ -253,18 +254,13 @@ router.patch('/:orderId', async (req, res) => {
         }
         if (wilaya !== undefined) updateFields.wilaya = wilaya;
         if (commune !== undefined) updateFields.commune = commune;
+        if (address !== undefined) updateFields.address = address; // NEW: Handle address update
         if (notes !== undefined) updateFields.notes = notes;
-
-        // Note: totalOrdersCount is generally not updated via a general PATCH,
-        // as it's typically derived from the products array. If you need to
-        // update it, you would need to adjust the products array directly.
 
         if (assignedTo !== undefined) {
             if (assignedTo === null || assignedTo === '') {
-                // If assignedTo is explicitly set to null or empty, clear the assignment
                 updateFields.assignedTo = null;
             } else {
-                // Validate if the assigned user exists
                 const user = await User.findById(assignedTo);
                 if (!user) {
                     return res.status(400).json({ message: 'Assigned user not found.' });
@@ -273,16 +269,14 @@ router.patch('/:orderId', async (req, res) => {
             }
         }
 
-        // If no valid fields are provided for update
         if (!Object.keys(updateFields).length) {
             return res.status(400).json({ message: 'No valid fields provided for update.' });
         }
 
-        // Find and update the order with the provided fields
         const updatedOrder = await Order.findByIdAndUpdate(
             orderId,
             { $set: updateFields },
-            { new: true, runValidators: true } // Return the updated document and run schema validators
+            { new: true, runValidators: true }
         )
             .populate('products.productId')
             .populate('confirmedBy', 'name email')
