@@ -1,3 +1,4 @@
+// models/Order.js
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
@@ -18,7 +19,7 @@ const orderSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  // NEW: Added address field
+  // Address field is optional
   address: {
     type: String,
     required: false
@@ -48,7 +49,6 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  // UPDATED: Added new status options
   status: {
     type: String,
     enum: ['pending', 'confirmed', 'cancelled', 'tentative', 'dispatched', 'delivered', 'returned'],
@@ -76,4 +76,4 @@ const orderSchema = new mongoose.Schema({
 
 const Order = mongoose.model('Order', orderSchema);
 
-module.exports = Order; // Export the updated Order model
+module.exports = Order;
