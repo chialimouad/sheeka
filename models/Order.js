@@ -21,7 +21,7 @@ const orderSchema = new mongoose.Schema({
   // NEW: Added address field
   address: {
     type: String,
-    required: true
+    required: false
   },
   products: [
     {
