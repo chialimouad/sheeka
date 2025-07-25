@@ -139,7 +139,6 @@ exports.addProduct = [
                 variants: parsedVariants,
                 product_type,
                 custom_option
-                // The 'reviews', 'rating', and 'numReviews' fields will have their default values
             });
             
             await newProduct.save();
@@ -169,7 +168,6 @@ exports.getProductById = [
             return res.status(400).json({ errors: errors.array() });
         }
         try {
-            // Also populate reviews when fetching a single product
             const product = await Product.findById(req.params.id).populate('reviews.user', 'name').lean();
             if (!product) {
                 return res.status(404).json({ error: 'Product not found.' });
@@ -183,10 +181,7 @@ exports.getProductById = [
 ];
 
 exports.updateProduct = [
-    // Middleware to handle multipart/form-data image uploads
     upload.array('images'),
-
-    // Validation for all fields
     param('id').isMongoId().withMessage('Invalid Product ID format.'),
     body('name').optional().trim().notEmpty().withMessage('Product name cannot be empty.'),
     body('description').optional().trim().notEmpty().withMessage('Product description cannot be empty.'),
@@ -207,7 +202,6 @@ exports.updateProduct = [
                 return res.status(404).json({ message: 'Product not found.' });
             }
             
-            // --- Handle Image Updates ---
             let imagesToKeep = product.images;
             if (req.body.imagesToKeep) {
                 try {
@@ -235,7 +229,6 @@ exports.updateProduct = [
             }
             product.images = [...imagesToKeep, ...newImageUrls];
 
-            // --- Handle Other Field Updates ---
             const { name, description, quantity, price, olprice, promocode, variants } = req.body;
             if (name !== undefined) product.name = name;
             if (description !== undefined) product.description = description;
@@ -307,9 +300,8 @@ exports.deleteProduct = [
     }
 ];
 
-// ** NEW ** Handler for creating a product review
 exports.createProductReview = [
-    // protect, // Assuming you have an authentication middleware to get req.user
+    // protect, 
     param('id').isMongoId().withMessage('Invalid Product ID format.'),
     body('rating').isFloat({ min: 1, max: 5 }).withMessage('Rating must be a number between 1 and 5.'),
     body('comment').trim().notEmpty().withMessage('Comment cannot be empty.'),
@@ -327,8 +319,6 @@ exports.createProductReview = [
                 return res.status(404).json({ message: 'Product not found' });
             }
 
-            // Check if the user has already reviewed this product
-            // This assumes req.user is populated by your authentication middleware
             if (!req.user) {
                  return res.status(401).json({ message: 'Not authorized, no token' });
             }
@@ -341,7 +331,7 @@ exports.createProductReview = [
             }
 
             const review = {
-                name: req.user.name, // Assumes user object has a 'name' property
+                name: req.user.name,
                 rating: Number(rating),
                 comment,
                 user: req.user._id,
@@ -362,11 +352,35 @@ exports.createProductReview = [
     }
 ];
 
+// ** NEW ** Handler for fetching product reviews
+exports.getProductReviews = [
+    param('id').isMongoId().withMessage('Invalid Product ID format.'),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        try {
+            const product = await Product.findById(req.params.id).select('reviews').populate('reviews.user', 'name');
+            
+            if (!product) {
+                return res.status(404).json({ message: 'Product not found' });
+            }
+
+            res.json(product.reviews);
+
+        } catch (error) {
+            console.error('Error fetching product reviews:', error);
+            next(error);
+        }
+    }
+];
+
 
 // =========================
 // 🛒 Collection Handlers
 // =========================
-// This section is unchanged
 exports.getCollections = async (req, res, next) => {
     try {
         const collections = await Collection.find().populate({ path: 'productIds', select: 'name images price' }).lean();
