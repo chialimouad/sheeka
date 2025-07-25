@@ -1,5 +1,31 @@
 const mongoose = require('mongoose');
 
+// Sub-schema for individual reviews
+const reviewSchema = new mongoose.Schema({
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+        ref: 'User' // Reference to the User model
+    },
+    name: {
+        type: String,
+        required: true
+    },
+    rating: {
+        type: Number,
+        required: true,
+        min: 1,
+        max: 5
+    },
+    comment: {
+        type: String,
+        required: true
+    }
+}, {
+    timestamps: true
+});
+
+
 const productSchema = new mongoose.Schema({
   name: { 
     type: String, 
@@ -18,15 +44,15 @@ const productSchema = new mongoose.Schema({
     type: Number, 
     required: true 
   },
-  // Added field for the original price (optional)
+  // Field for the original price (optional)
   olprice: {
     type: Number,
-    required: false // This is optional, as not all products may have a sale price
+    required: false // Optional, as not all products may have a sale price
   },
-  // Added field for a promotional code (optional)
+  // Field for a promotional code (optional)
   promocode: {
     type: String,
-    required: false // This is optional, as a promo code may not always apply
+    required: false // Optional, as a promo code may not always apply
   },
   // An array of URLs for the main product images
   images: { 
@@ -43,6 +69,20 @@ const productSchema = new mongoose.Schema({
       required: true 
     }
   }],
+  // ** NEW ** Array of review sub-documents
+  reviews: [reviewSchema],
+  // ** NEW ** Field to store the average rating
+  rating: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  // ** NEW ** Field to store the number of reviews
+  numReviews: {
+    type: Number,
+    required: true,
+    default: 0
+  }
 }, { 
   // Adds createdAt & updatedAt fields automatically
   timestamps: true 
