@@ -6,6 +6,8 @@ const mongoose = require('mongoose');
 const { v2: cloudinary } = require('cloudinary');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const { body, param, query, validationResult } = require('express-validator');
+// NOTE: You would typically have an authentication middleware to protect routes.
+// const { protect } = require('../middleware/authMiddleware'); 
 
 // =========================
 // 📦 Multer & Cloudinary Setup
@@ -131,12 +133,13 @@ exports.addProduct = [
                 description,
                 quantity,
                 price,
-                olprice, // Add olprice to the new product
-                promocode, // Add promocode to the new product
+                olprice,
+                promocode,
                 images,
                 variants: parsedVariants,
                 product_type,
                 custom_option
+                // The 'reviews', 'rating', and 'numReviews' fields will have their default values
             });
             
             await newProduct.save();
@@ -166,7 +169,8 @@ exports.getProductById = [
             return res.status(400).json({ errors: errors.array() });
         }
         try {
-            const product = await Product.findById(req.params.id).lean();
+            // Also populate reviews when fetching a single product
+            const product = await Product.findById(req.params.id).populate('reviews.user', 'name').lean();
             if (!product) {
                 return res.status(404).json({ error: 'Product not found.' });
             }
@@ -237,8 +241,8 @@ exports.updateProduct = [
             if (description !== undefined) product.description = description;
             if (quantity !== undefined) product.quantity = quantity;
             if (price !== undefined) product.price = price;
-            if (olprice !== undefined) product.olprice = olprice; // Update olprice
-            if (promocode !== undefined) product.promocode = promocode; // Update promocode
+            if (olprice !== undefined) product.olprice = olprice;
+            if (promocode !== undefined) product.promocode = promocode;
 
             if (variants !== undefined) {
                 try {
@@ -302,6 +306,62 @@ exports.deleteProduct = [
         }
     }
 ];
+
+// ** NEW ** Handler for creating a product review
+exports.createProductReview = [
+    // protect, // Assuming you have an authentication middleware to get req.user
+    param('id').isMongoId().withMessage('Invalid Product ID format.'),
+    body('rating').isFloat({ min: 1, max: 5 }).withMessage('Rating must be a number between 1 and 5.'),
+    body('comment').trim().notEmpty().withMessage('Comment cannot be empty.'),
+    async (req, res, next) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        try {
+            const { rating, comment } = req.body;
+            const product = await Product.findById(req.params.id);
+
+            if (!product) {
+                return res.status(404).json({ message: 'Product not found' });
+            }
+
+            // Check if the user has already reviewed this product
+            // This assumes req.user is populated by your authentication middleware
+            if (!req.user) {
+                 return res.status(401).json({ message: 'Not authorized, no token' });
+            }
+            const alreadyReviewed = product.reviews.find(
+                (r) => r.user.toString() === req.user._id.toString()
+            );
+
+            if (alreadyReviewed) {
+                return res.status(400).json({ message: 'Product already reviewed' });
+            }
+
+            const review = {
+                name: req.user.name, // Assumes user object has a 'name' property
+                rating: Number(rating),
+                comment,
+                user: req.user._id,
+            };
+
+            product.reviews.push(review);
+
+            product.numReviews = product.reviews.length;
+            product.rating = product.reviews.reduce((acc, item) => item.rating + acc, 0) / product.reviews.length;
+
+            await product.save();
+            res.status(201).json({ message: 'Review added successfully' });
+
+        } catch (error) {
+            console.error('Error creating product review:', error);
+            next(error);
+        }
+    }
+];
+
 
 // =========================
 // 🛒 Collection Handlers
