@@ -18,6 +18,16 @@ const productSchema = new mongoose.Schema({
     type: Number, 
     required: true 
   },
+  // Added field for the original price (optional)
+  olprice: {
+    type: Number,
+    required: false // This is optional, as not all products may have a sale price
+  },
+  // Added field for a promotional code (optional)
+  promocode: {
+    type: String,
+    required: false // This is optional, as a promo code may not always apply
+  },
   // An array of URLs for the main product images
   images: { 
     type: [String], 
