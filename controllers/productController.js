@@ -8,7 +8,7 @@ const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const { body, param, query, validationResult } = require('express-validator');
 
 // =========================
-// 📦 Multer Setup
+// 📦 Multer & Cloudinary Setup
 // =========================
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'di1u2ssnm',
@@ -101,33 +101,44 @@ exports.deletePromoImage = [
 // =========================
 
 exports.addProduct = [
+    // Validation middleware
     body('name').trim().notEmpty().withMessage('Product name is required.'),
     body('description').trim().notEmpty().withMessage('Product description is required.'),
     body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
     body('price').isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
+    body('olprice').optional().isFloat({ min: 0 }).withMessage('Original price must be a non-negative number.'),
+    body('promocode').optional().trim().escape(),
     body('variants').optional().isJSON().withMessage('Variants must be a valid JSON array string.'),
+    
     async (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
         try {
-            const { name, description, quantity, price, variants, product_type, custom_option } = req.body;
+            // Destructure all expected fields from the request body
+            const { name, description, quantity, price, olprice, promocode, variants, product_type, custom_option } = req.body;
+            
             if (!req.files || req.files.length === 0) {
                 return res.status(400).json({ error: 'At least one image is required for a product.' });
             }
+            
             const images = req.files.map(file => file.path);
             const parsedVariants = variants ? JSON.parse(variants) : [];
+            
             const newProduct = new Product({
                 name,
                 description,
                 quantity,
                 price,
+                olprice, // Add olprice to the new product
+                promocode, // Add promocode to the new product
                 images,
                 variants: parsedVariants,
                 product_type,
                 custom_option
             });
+            
             await newProduct.save();
             res.status(201).json(newProduct);
         } catch (error) {
@@ -167,22 +178,18 @@ exports.getProductById = [
     }
 ];
 
-/**
- * @desc Update a product
- * @route PUT /api/products/:id
- * @access Private (e.g., Admin)
- * @note This handler is now fixed to correctly handle multipart/form-data and application/json content types.
- */
 exports.updateProduct = [
-    // This middleware will handle the 'images' field if it's part of a multipart/form-data request
+    // Middleware to handle multipart/form-data image uploads
     upload.array('images'),
 
-    // Basic validation for other fields. Complex validation is moved inside the handler.
+    // Validation for all fields
     param('id').isMongoId().withMessage('Invalid Product ID format.'),
     body('name').optional().trim().notEmpty().withMessage('Product name cannot be empty.'),
     body('description').optional().trim().notEmpty().withMessage('Product description cannot be empty.'),
     body('quantity').optional().isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
     body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
+    body('olprice').optional().isFloat({ min: 0 }).withMessage('Original price must be a non-negative number.'),
+    body('promocode').optional().trim().escape(),
 
     async (req, res, next) => {
         const errors = validationResult(req);
@@ -200,7 +207,6 @@ exports.updateProduct = [
             let imagesToKeep = product.images;
             if (req.body.imagesToKeep) {
                 try {
-                    // Handle both stringified JSON (from FormData) and direct array (from JSON body)
                     imagesToKeep = (typeof req.body.imagesToKeep === 'string') 
                         ? JSON.parse(req.body.imagesToKeep) 
                         : req.body.imagesToKeep;
@@ -226,15 +232,16 @@ exports.updateProduct = [
             product.images = [...imagesToKeep, ...newImageUrls];
 
             // --- Handle Other Field Updates ---
-            const { name, description, quantity, price, variants } = req.body;
+            const { name, description, quantity, price, olprice, promocode, variants } = req.body;
             if (name !== undefined) product.name = name;
             if (description !== undefined) product.description = description;
             if (quantity !== undefined) product.quantity = quantity;
             if (price !== undefined) product.price = price;
+            if (olprice !== undefined) product.olprice = olprice; // Update olprice
+            if (promocode !== undefined) product.promocode = promocode; // Update promocode
 
             if (variants !== undefined) {
                 try {
-                    // Handle both stringified JSON (from FormData) and direct array (from JSON body)
                     const parsedVariants = (typeof variants === 'string') 
                         ? JSON.parse(variants) 
                         : variants;
@@ -242,10 +249,9 @@ exports.updateProduct = [
                     if (!Array.isArray(parsedVariants)) {
                         throw new Error('Variants data is not an array.');
                     }
-
-                    // **FIX**: Clean the _id from variants before assigning to prevent validation issues
+                    
                     const cleanedVariants = parsedVariants.map(v => {
-                        const { _id, ...rest } = v; // Destructure to remove _id
+                        const { _id, ...rest } = v;
                         return rest;
                     });
                     product.variants = cleanedVariants;
