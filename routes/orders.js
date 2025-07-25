@@ -20,7 +20,8 @@ const authenticateClient = (req, res, next) => {
             const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mouadsecret');
             req.client = { clientId: decoded.id };
         } catch (err) {
-            return res.status(401).json({ message: 'Invalid or expired token' });
+            // If the token is invalid, we don't block the request,
+            // but subsequent logic will handle the lack of a client ID.
         }
     }
     next();
@@ -31,19 +32,15 @@ router.post('/', async (req, res) => {
     try {
         const { fullName, phoneNumber, wilaya, commune, address, products, status, notes } = req.body;
 
-        // *** FIX: Removed '!address' from the validation check to align with the optional schema field. ***
-        // This allows orders to be created without an address.
         if (!fullName || !phoneNumber || !wilaya || !commune || !products || products.length === 0) {
             return res.status(400).json({ message: 'Missing required fields.' });
         }
 
-        // Validate Algerian phone number format
         const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
         if (!phoneRegex.test(phoneNumber)) {
             return res.status(400).json({ message: 'Invalid Algerian phone number format.' });
         }
 
-        // Iterate through products to validate and update stock
         for (const item of products) {
             const { productId, quantity, color, size } = item;
             if (!productId || !quantity || !color || !size) {
@@ -58,33 +55,29 @@ router.post('/', async (req, res) => {
                 return res.status(400).json({ message: `Insufficient stock for product: ${product.name}. Available: ${product.quantity}, Requested: ${quantity}` });
             }
 
-            // Decrease product quantity in stock
             product.quantity -= quantity;
             await product.save();
         }
 
-        // Calculate totalOrdersCount based on the number of distinct products
         const totalOrdersCount = products.length;
 
-        // Create a new Order instance
         const newOrder = new Order({
             fullName,
             phoneNumber,
             wilaya,
             commune,
-            address, // Address is now correctly handled as optional
+            address,
             products,
             totalOrdersCount,
             status: status || 'pending',
             notes: notes || ''
         });
 
+        // The pre-save hook in Order.js will automatically set the 'pending' timestamp
         await newOrder.save();
         res.status(201).json({ message: 'Order created successfully', order: newOrder });
     } catch (error) {
         console.error('Create order error:', error);
-        // IMPORTANT: If an order fails after stock is reduced, the stock will not be returned.
-        // Consider implementing database transactions for this operation to ensure atomicity.
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
@@ -97,9 +90,8 @@ router.get('/', async (req, res) => {
             .populate('confirmedBy', 'name email')
             .populate('assignedTo', 'name email');
 
-        if (!orders.length) return res.status(404).json({ message: 'No orders found.' });
+        if (!orders.length) return res.status(200).json([]); // Return empty array instead of 404
 
-        // Format the output to include full image URLs
         const formattedOrders = orders.map(order => ({
             ...order._doc,
             products: order.products.map(p => p.productId ? {
@@ -110,7 +102,7 @@ router.get('/', async (req, res) => {
                 quantity: p.quantity,
                 color: p.color,
                 size: p.size
-            } : null).filter(p => p !== null), // Filter out null products if a product was deleted
+            } : null).filter(p => p !== null),
             confirmedBy: order.confirmedBy,
             assignedTo: order.assignedTo
         }));
@@ -132,7 +124,6 @@ router.get('/:orderId', async (req, res) => {
 
         if (!order) return res.status(404).json({ message: 'Order not found.' });
 
-        // Format the output
         const formattedOrder = {
             ...order._doc,
             products: order.products.map(p => p.productId ? {
@@ -161,50 +152,56 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
         const { orderId } = req.params;
         const { status, notes } = req.body;
 
-        const updateFields = {};
+        const order = await Order.findById(orderId);
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found.' });
+        }
+
+        let hasUpdate = false;
 
         if (status) {
             const allowedStatuses = ['pending', 'confirmed', 'tentative', 'cancelled', 'dispatched', 'delivered', 'returned'];
             if (!allowedStatuses.includes(status)) {
                 return res.status(400).json({ message: 'Invalid status. Allowed: ' + allowedStatuses.join(', ') });
             }
-            updateFields.status = status;
+            order.status = status;
+            // *** FIX: Set the timestamp for the new status in the Map ***
+            order.statusTimestamps.set(status, new Date());
+            hasUpdate = true;
 
             if (status === 'confirmed') {
                 if (!req.client || !req.client.clientId) {
                     return res.status(401).json({ message: 'Unauthorized. Agent must be logged in to confirm order.' });
                 }
-                updateFields.confirmedBy = req.client.clientId;
-            } else {
-                updateFields.confirmedBy = null;
+                order.confirmedBy = req.client.clientId;
             }
         }
 
-        if (notes !== undefined) updateFields.notes = notes;
+        if (notes !== undefined) {
+            order.notes = notes;
+            hasUpdate = true;
+        }
 
-        if (Object.keys(updateFields).length === 0) {
+        if (!hasUpdate) {
             return res.status(400).json({ message: 'No fields provided to update status or notes.' });
         }
 
-        const updatedOrder = await Order.findByIdAndUpdate(
-            orderId,
-            { $set: updateFields },
-            { new: true, runValidators: true }
-        )
-        .populate('products.productId')
-        .populate('confirmedBy', 'name email')
-        .populate('assignedTo', 'name email');
+        const savedOrder = await order.save();
 
-        if (!updatedOrder) {
-            return res.status(404).json({ message: 'Order not found.' });
-        }
+        // Populate the fields for the response
+        const populatedOrder = await savedOrder.populate([
+            { path: 'products.productId' },
+            { path: 'confirmedBy', select: 'name email' },
+            { path: 'assignedTo', select: 'name email' }
+        ]);
 
-        res.status(200).json({ message: 'Order status updated successfully', order: updatedOrder });
+        res.status(200).json({ message: 'Order status updated successfully', order: populatedOrder });
     } catch (error) {
         console.error('Error updating order status:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
+
 
 // PATCH: General order update
 router.patch('/:orderId', async (req, res) => {
