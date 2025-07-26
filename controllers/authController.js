@@ -1,5 +1,5 @@
 // Import necessary models from your models file
-const { Employee, Department, EmploymentVerification, StockGrant } = require('../models/hrm_models'); // Adjust the path as needed
+const { Employee, Department, EmploymentVerification, StockGrant } = require('../models/User'); // Adjust the path as needed
 const { validationResult } = require('express-validator');
 
 // --- Employee Controller Functions ---
