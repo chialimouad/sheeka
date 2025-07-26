@@ -15,9 +15,6 @@ const DepartmentSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-const Department = mongoose.model('Department', DepartmentSchema);
-
-
 // --- Document Schema (for User) ---
 const DocumentSchema = new mongoose.Schema({
   documentName: { 
@@ -34,8 +31,7 @@ const DocumentSchema = new mongoose.Schema({
   }
 });
 
-
-// --- Main User Schema (replaces Employee) ---
+// --- Main User Schema ---
 const UserSchema = new mongoose.Schema({
   name: { 
     type: String, 
@@ -60,11 +56,11 @@ const UserSchema = new mongoose.Schema({
   department: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Department',
-    required: false // Make it optional for flexibility
+    required: false
   },
   manager: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Self-referencing to another User
+    ref: 'User',
     default: null
   },
   employmentStatus: {
@@ -102,7 +98,10 @@ UserSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-const User = mongoose.model('User', UserSchema);
+// --- Model Creation (with overwrite check) ---
+// This pattern prevents the OverwriteModelError
+const Department = mongoose.models.Department || mongoose.model('Department', DepartmentSchema);
+const User = mongoose.models.User || mongoose.model('User', UserSchema);
 
 // Export the necessary models
 module.exports = { User, Department };
