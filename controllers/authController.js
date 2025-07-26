@@ -1,259 +1,289 @@
-// Import necessary modules
-const User = require('../models/User'); // Ensure your User model has an 'index' field and bcrypt methods
-const jwt = require('jsonwebtoken');
-const dotenv = require('dotenv');
-const bcrypt = require('bcryptjs'); // For password hashing
-const { validationResult } = require('express-validator'); // For robust input validation
+// Import necessary models from your models file
+const { Employee, Department, EmploymentVerification, StockGrant } = require('../models/hrm_models'); // Adjust the path as needed
+const { validationResult } = require('express-validator');
 
-// Load environment variables from .env file
-dotenv.config();
-
-// --- Helper Functions ---
+// --- Employee Controller Functions ---
 
 /**
- * @function generateToken
- * @description Generates a JSON Web Token (JWT) for a user.
- * @param {string} id - The user's unique ID.
- * @param {string} role - The user's role (e.g., 'user', 'admin').
- * @param {number} index - The user's custom index (0 or 1).
- * @returns {string} The generated JWT.
+ * @controller createEmployee
+ * @description Creates a new employee.
+ * @route POST /api/employees
+ * @access Private (Admin/HR)
  */
-const generateToken = (id, role, index) => {
-    // IMPORTANT: Use a strong, truly secret key from environment variables.
-    // The fallback "mouadsecret_fallback" is for development only and should NEVER be used in production.
-    if (!process.env.JWT_SECRET) {
-        console.warn('WARNING: JWT_SECRET is not set in environment variables. Using a fallback secret. THIS IS INSECURE FOR PRODUCTION!');
-    }
-    return jwt.sign({ id, role, index }, process.env.JWT_SECRET || "mouadsecret_fallback", { expiresIn: '28d' });
-};
-
-// --- Controller Functions ---
-
-/**
- * @function getUsers
- * @description Fetches a list of all users.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {Promise<void>}
- * @security This endpoint should typically be protected by authentication and authorization middleware
- * to ensure only authorized users (e.g., admins) can access all user data.
- */
-exports.getUsers = async (req, res) => {
-    try {
-        // Fetch users, explicitly selecting only necessary fields to avoid sending sensitive data.
-        // The 'index' field is included as per your original requirement.
-        const users = await User.find({}, 'name email role index');
-        res.status(200).json(users);
-    } catch (error) {
-        // Log the full error for debugging but send a generic message to the client.
-        console.error('Error fetching users:', error);
-        res.status(500).json({ message: 'Server error: Could not retrieve users.' });
-    }
-};
-
-/**
- * @function register
- * @description Handles user registration, including input validation and password hashing.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {Promise<void>}
- */
-exports.register = async (req, res) => {
-    // Validate request body using express-validator results
+const createEmployee = async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
     }
 
     try {
-        const { name, email, password, role, index } = req.body;
+        const {
+            firstName,
+            lastName,
+            email,
+            jobTitle,
+            hireDate,
+            employmentStatus,
+            department, // Expecting a Department ObjectId
+            manager, // Expecting an Employee ObjectId
+            documents
+        } = req.body;
 
-        // Check if user already exists (case-insensitive email)
-        const existingUser = await User.findOne({ email: email.toLowerCase() });
-        if (existingUser) {
-            return res.status(409).json({ message: 'User with this email already exists.' }); // 409 Conflict is more appropriate
+        // 1. Check if an employee with the same email already exists
+        const existingEmployee = await Employee.findOne({ email: email.toLowerCase() });
+        if (existingEmployee) {
+            return res.status(409).json({ message: 'An employee with this email already exists.' });
         }
 
-        // Hash the password before saving. This should ideally be done in a pre-save hook in your Mongoose User model.
-        // For demonstration, I'm showing it here, but the model hook is preferred.
-        const salt = await bcrypt.genSalt(10); // Generate a salt
-        const hashedPassword = await bcrypt.hash(password, salt); // Hash the password
+        // 2. (Optional but recommended) Check if the provided department exists
+        const departmentExists = await Department.findById(department);
+        if (!departmentExists) {
+            return res.status(400).json({ message: 'Invalid Department ID.' });
+        }
 
-        // Assign a default index of 0 if not provided during registration.
-        // Ensure 'index' is explicitly cast to a number if it comes from the body as a string.
-        const newUser = await User.create({
-            name,
-            email: email.toLowerCase(),
-            password: hashedPassword, // Store the hashed password
-            role,
-            index: typeof index === 'number' ? index : 0 // Default to 0 if not provided or invalid type
+        // 3. Create the new employee
+        const newEmployee = await Employee.create({
+            firstName,
+            lastName,
+            email,
+            jobTitle,
+            hireDate,
+            employmentStatus,
+            department,
+            manager,
+            documents
         });
-
-        // Generate JWT Token, now including the user's index
-        const token = generateToken(newUser._id, newUser.role, newUser.index);
 
         res.status(201).json({
-            message: "Registration successful",
-            user: {
-                id: newUser._id,
-                name: newUser.name,
-                email: newUser.email,
-                role: newUser.role,
-                index: newUser.index // Include index in response
-            },
-            token
+            message: 'Employee created successfully',
+            employee: newEmployee
         });
 
     } catch (error) {
-        console.error('Registration Error:', error);
-        // Provide a more generic error message to prevent leaking internal details
-        res.status(500).json({ message: 'Server error during registration. Please try again later.' });
+        console.error('Create Employee Error:', error);
+        res.status(500).json({ message: 'Server error during employee creation.' });
     }
 };
 
 /**
- * @function login
- * @description Handles user login, including password comparison and JWT generation.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {Promise<void>}
+ * @controller getAllEmployees
+ * @description Fetches a list of all employees.
+ * @route GET /api/employees
+ * @access Private
  */
-exports.login = async (req, res) => {
-    // Validate request body using express-validator results
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
-
+const getAllEmployees = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        // Populate 'department' to show department name, and 'manager' to show manager's name
+        const employees = await Employee.find({})
+            .populate('department', 'name') // Select only the 'name' field from the Department
+            .populate('manager', 'firstName lastName'); // Select name fields from the Employee (manager)
 
-        // Find user with case-insensitive email
-        const user = await User.findOne({ email: email.toLowerCase() });
-
-        // If user not found or password does not match, return generic 'Invalid credentials'
-        if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials' });
-        }
-
-        // Compare provided password with hashed password using bcrypt
-        // This assumes your User model has a method like `comparePassword` or you hash here.
-        // If your User model has a `comparePassword` method (recommended):
-        // const isMatch = await user.comparePassword(password);
-        // Otherwise, compare using bcrypt directly:
-        const isMatch = await bcrypt.compare(password, user.password);
-
-        if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid credentials' });
-        }
-
-        // Generate JWT Token, now including the user's index
-        const token = generateToken(user._id, user.role, user.index);
-
-        // Send successful login response
-        res.status(200).json({
-            message: "Login successful",
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                index: user.index // Include index in response
-            },
-            token
-        });
-
+        res.status(200).json(employees);
     } catch (error) {
-        console.error('Login Error:', error);
-        res.status(500).json({ message: 'Server error during login. Please try again later.' });
+        console.error('Get All Employees Error:', error);
+        res.status(500).json({ message: 'Server error while retrieving employees.' });
     }
 };
 
 /**
- * @function updateindex
- * @description Updates a user's 'index' field by ID.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {Promise<void>}
- * @security This endpoint should be protected by authentication and authorization middleware.
- * Only the user themselves or an admin should be able to update their index.
+ * @controller getEmployeeById
+ * @description Fetches a single employee by their ID.
+ * @route GET /api/employees/:id
+ * @access Private
  */
-exports.updateindex = async (req, res) => {
-    // Validate request body using express-validator results
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
-
+const getEmployeeById = async (req, res) => {
     try {
-        const userId = req.params.id; // Get user ID from URL parameter
-        const { newIndexValue } = req.body; // Get new index value (0 or 1) from the request body
+        const employee = await Employee.findById(req.params.id)
+            .populate('department', 'name')
+            .populate('manager', 'firstName lastName');
 
-        // Optional: Add authorization check here.
-        // Example: if (req.user.id !== userId && req.user.role !== 'admin') { return res.status(403).json({ message: 'Forbidden' }); }
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee not found.' });
+        }
 
-        // Find the User by ID and update their 'index' field
-        const updatedUser = await User.findByIdAndUpdate(
-            userId,
-            { index: newIndexValue },
-            { new: true, runValidators: true } // Return the updated document and run schema validators
+        res.status(200).json(employee);
+    } catch (error) {
+        console.error('Get Employee By ID Error:', error);
+        res.status(500).json({ message: 'Server error while retrieving employee.' });
+    }
+};
+
+/**
+ * @controller updateEmployee
+ * @description Updates an employee's details.
+ * @route PUT /api/employees/:id
+ * @access Private (Admin/HR)
+ */
+const updateEmployee = async (req, res) => {
+    try {
+        const {
+            firstName,
+            lastName,
+            email,
+            jobTitle,
+            employmentStatus,
+            department,
+            manager
+        } = req.body;
+
+        const updateData = {};
+        if (firstName) updateData.firstName = firstName;
+        if (lastName) updateData.lastName = lastName;
+        if (email) updateData.email = email.toLowerCase();
+        if (jobTitle) updateData.jobTitle = jobTitle;
+        if (employmentStatus) updateData.employmentStatus = employmentStatus;
+        if (department) updateData.department = department;
+        if (manager) updateData.manager = manager;
+
+        const updatedEmployee = await Employee.findByIdAndUpdate(
+            req.params.id,
+            { $set: updateData },
+            { new: true, runValidators: true }
         );
 
-        // If user not found
-        if (!updatedUser) {
-            return res.status(404).json({ message: 'User not found.' });
+        if (!updatedEmployee) {
+            return res.status(404).json({ message: 'Employee not found.' });
         }
 
-        res.status(200).json({
-            message: 'User index updated successfully',
-            user: {
-                id: updatedUser._id,
-                index: updatedUser.index,
-                role: updatedUser.role // Include role for consistency
-            }
-        });
+        res.status(200).json({ message: 'Employee updated successfully', employee: updatedEmployee });
 
     } catch (error) {
-        console.error('Update Index Error:', error);
-        res.status(500).json({ message: 'Server error during index update. Please try again later.' });
+        console.error('Update Employee Error:', error);
+        res.status(500).json({ message: 'Server error during employee update.' });
     }
 };
 
 /**
- * @function getUserIndex
- * @description Fetches a specific user's 'index' field by ID.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {Promise<void>}
- * @security This endpoint should be protected by authentication and authorization middleware.
- * Consider if any authenticated user can view any other user's index, or if it's restricted.
+ * @controller deleteEmployee
+ * @description Deletes an employee by their ID.
+ * @route DELETE /api/employees/:id
+ * @access Private (Admin/HR)
  */
-exports.getUserIndex = async (req, res) => {
+const deleteEmployee = async (req, res) => {
     try {
-        const userId = req.params.id; // Get user ID from URL parameter
+        const employee = await Employee.findByIdAndDelete(req.params.id);
 
-        // Find the user by ID and select only the 'index' field
-        const user = await User.findById(userId, 'index');
-
-        // If user not found
-        if (!user) {
-            return res.status(404).json({ message: 'User not found.' });
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee not found.' });
         }
 
-        // If user is found, but for some reason index is missing (should not happen with a proper schema)
-        if (user.index === undefined || user.index === null) {
-            // This case indicates a data integrity issue if 'index' is mandatory.
-            return res.status(404).json({ message: 'User index not found for this user.' });
+        // Optional: Add logic here to handle cascading deletes, e.g., reassigning their direct reports.
+
+        res.status(200).json({ message: 'Employee deleted successfully' });
+
+    } catch (error) {
+        console.error('Delete Employee Error:', error);
+        res.status(500).json({ message: 'Server error during employee deletion.' });
+    }
+};
+
+/**
+ * @controller addDocumentToEmployee
+ * @description Adds a document to an employee's profile.
+ * @route POST /api/employees/:id/documents
+ * @access Private (Admin/HR)
+ */
+const addDocumentToEmployee = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const { name, url } = req.body; // Document name and URL (e.g., from a file upload service)
+        const employee = await Employee.findById(req.params.id);
+
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee not found.' });
         }
+
+        employee.documents.push({ name, url });
+        await employee.save();
 
         res.status(200).json({
-            message: 'User index fetched successfully',
-            userId: user._id,
-            index: user.index
+            message: 'Document added successfully',
+            employee
         });
 
     } catch (error) {
-        console.error('Get User Index Error:', error);
-        res.status(500).json({ message: 'Server error during fetching user index. Please try again later.' });
+        console.error('Add Document Error:', error);
+        res.status(500).json({ message: 'Server error while adding document.' });
     }
+};
+
+/**
+ * @controller assignConfirmationHandler
+ * @description Assigns an employee to handle a confirmation service request.
+ * @route PUT /api/verifications/:verificationId/assign
+ * @access Private (Admin/HR)
+ */
+const assignConfirmationHandler = async (req, res) => {
+    try {
+        const { verificationId } = req.params;
+        const { employeeId } = req.body;
+
+        const verificationRequest = await EmploymentVerification.findById(verificationId);
+        if (!verificationRequest) {
+            return res.status(404).json({ message: 'Employment verification request not found.' });
+        }
+
+        const employee = await Employee.findById(employeeId);
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee to assign not found.' });
+        }
+
+        verificationRequest.processedBy = employeeId;
+        await verificationRequest.save();
+
+        res.status(200).json({ message: 'Employee assigned to confirmation request successfully.', verificationRequest });
+
+    } catch (error) {
+        console.error('Assign Confirmation Handler Error:', error);
+        res.status(500).json({ message: 'Server error while assigning employee.' });
+    }
+};
+
+/**
+ * @controller assignStockAdmin
+ * @description Assigns an employee to manage a stock grant.
+ * @route PUT /api/stock-grants/:grantId/assign
+ * @access Private (Admin/HR)
+ */
+const assignStockAdmin = async (req, res) => {
+    try {
+        const { grantId } = req.params;
+        const { employeeId } = req.body;
+
+        const stockGrant = await StockGrant.findById(grantId);
+        if (!stockGrant) {
+            return res.status(404).json({ message: 'Stock grant not found.' });
+        }
+        
+        const employee = await Employee.findById(employeeId);
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee to assign not found.' });
+        }
+
+        stockGrant.administeredBy = employeeId;
+        await stockGrant.save();
+
+        res.status(200).json({ message: 'Employee assigned to stock grant successfully.', stockGrant });
+
+    } catch (error) {
+        console.error('Assign Stock Admin Error:', error);
+        res.status(500).json({ message: 'Server error while assigning employee.' });
+    }
+};
+
+
+// Export all controller functions
+module.exports = {
+    createEmployee,
+    getAllEmployees,
+    getEmployeeById,
+    updateEmployee,
+    deleteEmployee,
+    addDocumentToEmployee,
+    assignConfirmationHandler, // NEW
+    assignStockAdmin // NEW
 };
