@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 
-// Import all the controller functions, including the new attendance functions
+// Import all the controller functions, excluding the attendance functions
 const {
     login,
     createUser,
@@ -12,10 +12,7 @@ const {
     createDepartment,
     getAllDepartments,
     updateDepartment,
-    deleteDepartment,
-    checkIn,
-    checkOut,
-    getAttendanceRecords
+    deleteDepartment
 } = require('../controllers/authController');
 
 // You will need an authentication middleware to protect routes
@@ -85,24 +82,6 @@ router.put('/departments/:id', [
 
 // @route    DELETE /auth/departments/:id
 router.delete('/departments/:id', deleteDepartment);
-
-
-// --- Attendance Routes ---
-
-// @route   POST /auth/attendance/check-in
-// @desc    Record user check-in time (Protected Route)
-// NOTE: You need to implement and apply authMiddleware for this to work correctly.
-router.post('/attendance/check-in', /* authMiddleware, */ checkIn);
-
-// @route   POST /auth/attendance/check-out
-// @desc    Record user check-out time (Protected Route)
-// NOTE: You need to implement and apply authMiddleware for this to work correctly.
-router.post('/attendance/check-out', /* authMiddleware, */ checkOut);
-
-// @route   GET /auth/attendance
-// @desc    Get attendance records with filters (Protected Route)
-// NOTE: You need to implement and apply authMiddleware for this to work correctly.
-router.get('/attendance', /* authMiddleware, */ getAttendanceRecords);
 
 
 module.exports = router;
