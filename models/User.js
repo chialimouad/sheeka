@@ -1,20 +1,5 @@
 const mongoose = require('mongoose');
-
-// --- Document Schema (for Employee) ---
-const DocumentSchema = new mongoose.Schema({
-  name: { 
-    type: String, 
-    required: true 
-  },
-  url: { 
-    type: String, 
-    required: true 
-  },
-  uploadDate: { 
-    type: Date, 
-    default: Date.now 
-  }
-});
+const bcrypt = require('bcryptjs');
 
 // --- Department Schema ---
 const DepartmentSchema = new mongoose.Schema({
@@ -33,15 +18,28 @@ const DepartmentSchema = new mongoose.Schema({
 const Department = mongoose.model('Department', DepartmentSchema);
 
 
-// --- Employee Schema ---
-const EmployeeSchema = new mongoose.Schema({
-  firstName: { 
+// --- Document Schema (for User) ---
+const DocumentSchema = new mongoose.Schema({
+  documentName: { 
     type: String, 
-    required: [true, 'First name is required'] 
+    required: true 
   },
-  lastName: { 
+  documentUrl: { 
     type: String, 
-    required: [true, 'Last name is required'] 
+    required: true 
+  },
+  uploadDate: { 
+    type: Date, 
+    default: Date.now 
+  }
+});
+
+
+// --- Main User Schema (replaces Employee) ---
+const UserSchema = new mongoose.Schema({
+  name: { 
+    type: String, 
+    required: [true, 'Name is required'] 
   },
   email: { 
     type: String, 
@@ -49,98 +47,62 @@ const EmployeeSchema = new mongoose.Schema({
     unique: true,
     match: [/.+\@.+\..+/, 'Please fill a valid email address']
   },
+  password: { 
+    type: String, 
+    required: [true, 'Password is required'],
+    select: false // Hide password by default
+  },
   jobTitle: {
     type: String,
     trim: true,
     default: 'Not Assigned'
   },
-  hireDate: {
-    type: Date,
-    default: Date.now
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department',
+    required: false // Make it optional for flexibility
+  },
+  manager: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User', // Self-referencing to another User
+    default: null
   },
   employmentStatus: {
     type: String,
     enum: ['active', 'on_leave', 'resigned', 'terminated'],
     default: 'active'
   },
-  department: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Department',
-    required: true
+  contractType: {
+    type: String,
+    enum: ['Full-time', 'Part-time', 'Contractor', 'Intern', 'Not Applicable'],
+    default: 'Not Applicable'
   },
-  manager: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Employee', // Self-referencing to another Employee
-    default: null
+  role: { 
+    type: String, 
+    enum: ['admin', 'confirmation', 'stockagent', 'employee'],
+    default: 'employee'
   },
-  documents: [DocumentSchema]
-
+  documents: [DocumentSchema],
+  hireDate: {
+    type: Date,
+    default: Date.now
+  },
 }, { timestamps: true });
 
-const Employee = mongoose.model('Employee', EmployeeSchema);
+// Password Hashing Middleware
+UserSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+  next();
+});
 
-
-// --- EmploymentVerification Schema ---
-const EmploymentVerificationSchema = new mongoose.Schema({
-    employee: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Employee',
-        required: true
-    },
-    requestingOrganization: {
-        type: String,
-        required: true
-    },
-    status: {
-        type: String,
-        enum: ['pending', 'processed', 'denied'],
-        default: 'pending'
-    },
-    processedBy: { // The employee who handled the request
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Employee',
-        default: null
-    },
-    processedDate: {
-        type: Date
-    }
-}, { timestamps: true });
-
-const EmploymentVerification = mongoose.model('EmploymentVerification', EmploymentVerificationSchema);
-
-// --- StockGrant Schema ---
-const StockGrantSchema = new mongoose.Schema({
-    employee: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Employee',
-        required: true
-    },
-    grantDate: {
-        type: Date,
-        default: Date.now
-    },
-    vestingSchedule: {
-        type: String,
-        default: 'Standard 4-year with 1-year cliff'
-    },
-    numberOfShares: {
-        type: Number,
-        required: true
-    },
-    administeredBy: { // The employee who administers the grant
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Employee',
-        default: null
-    }
-}, { timestamps: true });
-
-const StockGrant = mongoose.model('StockGrant', StockGrantSchema);
-
-
-// Export all models
-module.exports = {
-    Employee,
-    Department,
-    EmploymentVerification,
-    StockGrant
+// Password Comparison Method
+UserSchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
 };
+
+const User = mongoose.model('User', UserSchema);
+
+// Export the necessary models
+module.exports = { User, Department };
