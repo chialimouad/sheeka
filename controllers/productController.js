@@ -34,7 +34,6 @@ exports.uploadPromo = upload;
 // =========================
 // 📸 Promo Image Handlers
 // =========================
-// This section is unchanged
 exports.getProductImagesOnly = async (req, res, next) => {
     try {
         const promos = await PromoImage.find({}, 'images').lean();
@@ -103,14 +102,14 @@ exports.deletePromoImage = [
 // =========================
 
 exports.addProduct = [
-    // Validation middleware
+    upload.array('images', 5),
     body('name').trim().notEmpty().withMessage('Product name is required.'),
     body('description').trim().notEmpty().withMessage('Product description is required.'),
     body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
     body('price').isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
     body('olprice').optional().isFloat({ min: 0 }).withMessage('Original price must be a non-negative number.'),
     body('promocode').optional().trim().escape(),
-    body('textpromo').optional().trim().escape(), // Validation for textpromo
+    body('textpromo').optional().trim().escape(),
     body('variants').optional().isJSON().withMessage('Variants must be a valid JSON array string.'),
     
     async (req, res, next) => {
@@ -119,7 +118,6 @@ exports.addProduct = [
             return res.status(400).json({ errors: errors.array() });
         }
         try {
-            // Destructure all expected fields from the request body, including textpromo
             const { name, description, quantity, price, olprice, promocode, textpromo, variants, product_type, custom_option } = req.body;
             
             if (!req.files || req.files.length === 0) {
@@ -136,7 +134,7 @@ exports.addProduct = [
                 price,
                 olprice,
                 promocode,
-                textpromo, // Add textpromo to the new product
+                textpromo,
                 images,
                 variants: parsedVariants,
                 product_type,
@@ -170,7 +168,6 @@ exports.getProductById = [
             return res.status(400).json({ errors: errors.array() });
         }
         try {
-            // Populating reviews with user's name
             const product = await Product.findById(req.params.id).populate('reviews.user', 'name').lean();
             if (!product) {
                 return res.status(404).json({ error: 'Product not found.' });
@@ -192,7 +189,7 @@ exports.updateProduct = [
     body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
     body('olprice').optional().isFloat({ min: 0 }).withMessage('Original price must be a non-negative number.'),
     body('promocode').optional().trim().escape(),
-    body('textpromo').optional().trim().escape(), // Validation for textpromo
+    body('textpromo').optional().trim().escape(),
 
     async (req, res, next) => {
         const errors = validationResult(req);
@@ -206,7 +203,6 @@ exports.updateProduct = [
                 return res.status(404).json({ message: 'Product not found.' });
             }
             
-            // Handle image updates
             let imagesToKeep = product.images;
             if (req.body.imagesToKeep) {
                 try {
@@ -234,7 +230,6 @@ exports.updateProduct = [
             }
             product.images = [...imagesToKeep, ...newImageUrls];
 
-            // Update text fields
             const { name, description, quantity, price, olprice, promocode, textpromo, variants } = req.body;
             if (name !== undefined) product.name = name;
             if (description !== undefined) product.description = description;
@@ -242,9 +237,8 @@ exports.updateProduct = [
             if (price !== undefined) product.price = price;
             if (olprice !== undefined) product.olprice = olprice;
             if (promocode !== undefined) product.promocode = promocode;
-            if (textpromo !== undefined) product.textpromo = textpromo; // Update textpromo
+            if (textpromo !== undefined) product.textpromo = textpromo;
 
-            // Update variants
             if (variants !== undefined) {
                 try {
                     const parsedVariants = (typeof variants === 'string') 
@@ -327,10 +321,9 @@ exports.createProductReview = [
                 return res.status(404).json({ message: 'Product not found' });
             }
 
-            // Mock user for testing without auth middleware. Replace with real user from `protect` middleware.
             if (!req.user) {
-                 // return res.status(401).json({ message: 'Not authorized, no token' });
-                 req.user = { _id: new mongoose.Types.ObjectId(), name: 'Anonymous User' }; // MOCK USER
+                 // For testing without auth; replace with actual user from `protect` middleware
+                 req.user = { _id: new mongoose.Types.ObjectId(), name: 'Anonymous User' };
             }
             const alreadyReviewed = product.reviews.find(
                 (r) => r.user.toString() === req.user._id.toString()
@@ -362,7 +355,6 @@ exports.createProductReview = [
     }
 ];
 
-// Handler for fetching only product reviews with names and comments
 exports.getProductReviews = [
     param('id').isMongoId().withMessage('Invalid Product ID format.'),
     async (req, res, next) => {
@@ -374,13 +366,12 @@ exports.getProductReviews = [
         try {
             const product = await Product.findById(req.params.id)
                                          .select('reviews')
-                                         .populate('reviews.user', 'name'); // Select only reviews and populate user's name
+                                         .populate('reviews.user', 'name');
             
             if (!product) {
                 return res.status(404).json({ message: 'Product not found' });
             }
 
-            // The response will contain only the reviews array, with each review having the user's name.
             res.json(product.reviews);
 
         } catch (error) {
