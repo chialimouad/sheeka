@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 const { Schema } = mongoose;
 
 // -----------------------------
@@ -7,7 +8,6 @@ const { Schema } = mongoose;
 
 /**
  * @description Admin credentials for logging into the system's backend/admin panel.
- * As per your original schema.
  */
 const adminCredentialSchema = new Schema({
   email: {
@@ -18,27 +18,25 @@ const adminCredentialSchema = new Schema({
     lowercase: true,
     match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, 'Please fill a valid email address']
   },
-  // WARNING: Storing passwords directly in the database is a severe security risk.
-  // In a production environment, you should ALWAYS hash and salt passwords using a library like bcryptjs.
   password: {
     type: String,
     required: true
   },
-  // This field was in your original model. Its purpose can be defined by your application logic.
   index: {
     type: Number,
-    enum: [0, 1], // Restricts the value to be either 0 or 1
+    enum: [0, 1],
     default: 0
   }
 }, { timestamps: true });
 
 /**
  * @description A generic user model with roles for different system access levels.
+ * Includes password hashing and comparison methods.
  */
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true }, // Password stored as plain text (not recommended)
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  password: { type: String, required: true },
   role: {
     type: String,
     enum: ['admin', 'confirmation', 'stockagent'],
@@ -46,8 +44,8 @@ const UserSchema = new mongoose.Schema({
   },
   index: {
     type: Number,
-    enum: [0, 1], // Ensures the 'index' field can only be 0 or 1
-    default: 0 // Sets a default value of 0, aligning with "0 for on server"
+    enum: [0, 1],
+    default: 0
   },
   orders: [
     {
@@ -57,10 +55,31 @@ const UserSchema = new mongoose.Schema({
   ]
 });
 
+// --- Mongoose Middleware (Pre-save Hook) ---
+// Hashes the user's password automatically before saving it to the database.
+UserSchema.pre('save', async function(next) {
+    // Only hash the password if it has been modified (or is new)
+    if (!this.isModified('password')) {
+        return next();
+    }
+    try {
+        const salt = await bcrypt.genSalt(10);
+        this.password = await bcrypt.hash(this.password, salt);
+        next();
+    } catch (error) {
+        next(error);
+    }
+});
+
+// --- Mongoose Instance Method ---
+// Compares a candidate password with the user's hashed password.
+UserSchema.methods.comparePassword = async function(candidatePassword) {
+    return bcrypt.compare(candidatePassword, this.password);
+};
+
 
 /**
  * @description Represents a department within the company.
- * Employees will be assigned to a department.
  */
 const departmentSchema = new Schema({
     name: {
