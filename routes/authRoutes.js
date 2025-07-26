@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 
-// Import all the controller functions, including the new login function
+// Import all the controller functions, including the new attendance functions
 const {
     login,
     createUser,
@@ -12,8 +12,31 @@ const {
     createDepartment,
     getAllDepartments,
     updateDepartment,
-    deleteDepartment
+    deleteDepartment,
+    checkIn,
+    checkOut,
+    getAttendanceRecords
 } = require('../controllers/authController');
+
+// You will need an authentication middleware to protect routes
+// and to get the user ID from the token.
+// Example middleware file (e.g., /middleware/authMiddleware.js)
+/*
+const jwt = require('jsonwebtoken');
+module.exports = function(req, res, next) {
+    const token = req.header('Authorization')?.split(' ')[1];
+    if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_default_jwt_secret');
+        req.user = decoded.user;
+        next();
+    } catch (e) {
+        res.status(401).json({ message: 'Token is not valid' });
+    }
+}
+*/
+// Assuming the middleware is in a file like the example above:
+// const authMiddleware = require('../middleware/authMiddleware');
 
 
 // --- Auth Route ---
@@ -62,6 +85,21 @@ router.put('/departments/:id', [
 
 // @route    DELETE /auth/departments/:id
 router.delete('/departments/:id', deleteDepartment);
+
+
+// --- Attendance Routes ---
+
+// @route   POST /auth/attendance/check-in
+// @desc    Record user check-in time (Protected Route)
+router.post('/attendance/check-in', /* authMiddleware, */ checkIn);
+
+// @route   POST /auth/attendance/check-out
+// @desc    Record user check-out time (Protected Route)
+router.post('/attendance/check-out', /* authMiddleware, */ checkOut);
+
+// @route   GET /auth/attendance
+// @desc    Get attendance records with filters (Protected Route)
+router.get('/attendance', /* authMiddleware, */ getAttendanceRecords);
 
 
 module.exports = router;
