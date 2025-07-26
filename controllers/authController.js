@@ -1,8 +1,69 @@
-// Note: The path now points to the new unified model file
 const { User, Department } = require('../models/User');
 const { validationResult } = require('express-validator');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // --- User Controllers ---
+
+/**
+ * @controller login
+ * @description Authenticates a user and returns a JWT token.
+ */
+const login = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email, password } = req.body;
+
+    try {
+        // Find user by email, and explicitly select the password field which is hidden by default
+        const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+        }
+
+        // Check if the provided password matches the stored hashed password
+        const isMatch = await user.comparePassword(password);
+
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+        }
+
+        // Create JWT Payload
+        const payload = {
+            user: {
+                id: user.id,
+                role: user.role
+            }
+        };
+
+        // Sign the token
+        jwt.sign(
+            payload,
+            process.env.JWT_SECRET || 'your_default_jwt_secret', // Use an environment variable for your secret in production
+            { expiresIn: '5h' }, // Token expires in 5 hours
+            (err, token) => {
+                if (err) throw err;
+                // Return the token and user info (without password) to the client
+                const userResponse = user.toObject();
+                delete userResponse.password;
+
+                res.json({
+                    token,
+                    user: userResponse
+                });
+            }
+        );
+
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).send('Server error');
+    }
+};
+
 
 /**
  * @controller createUser
@@ -53,7 +114,7 @@ const createUser = async (req, res) => {
 const getAllUsers = async (req, res) => {
     try {
         const users = await User.find({})
-            .populate('department', 'name description') // Added description
+            .populate('department', 'name description')
             .populate('manager', 'name email');
 
         res.status(200).json(users);
@@ -70,7 +131,7 @@ const getAllUsers = async (req, res) => {
 const updateUser = async (req, res) => {
     try {
         const updateData = { ...req.body };
-        delete updateData.password; // Prevent password updates through this route
+        delete updateData.password;
 
         const updatedUser = await User.findByIdAndUpdate(
             req.params.id,
@@ -110,51 +171,33 @@ const deleteUser = async (req, res) => {
 
 // --- Department Controllers ---
 
-/**
- * @controller createDepartment
- * @description Creates a new department.
- */
 const createDepartment = async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
     }
-
     try {
         const { name, description } = req.body;
-
         const existingDepartment = await Department.findOne({ name });
         if (existingDepartment) {
             return res.status(409).json({ message: 'A department with this name already exists.' });
         }
-
         const newDepartment = await Department.create({ name, description });
         res.status(201).json(newDepartment);
-
     } catch (error) {
-        console.error('Create Department Error:', error);
         res.status(500).json({ message: 'Server error during department creation.' });
     }
 };
 
-/**
- * @controller getAllDepartments
- * @description Fetches all departments.
- */
 const getAllDepartments = async (req, res) => {
     try {
         const departments = await Department.find({});
         res.status(200).json(departments);
     } catch (error) {
-        console.error('Get All Departments Error:', error);
         res.status(500).json({ message: 'Server error while retrieving departments.' });
     }
 };
 
-/**
- * @controller updateDepartment
- * @description Updates a department's details by ID.
- */
 const updateDepartment = async (req, res) => {
     try {
         const { name, description } = req.body;
@@ -163,48 +206,36 @@ const updateDepartment = async (req, res) => {
             { name, description },
             { new: true, runValidators: true }
         );
-
         if (!updatedDepartment) {
             return res.status(404).json({ message: 'Department not found.' });
         }
-
         res.status(200).json({ message: 'Department updated successfully', department: updatedDepartment });
-
     } catch (error) {
-        console.error('Update Department Error:', error);
         res.status(500).json({ message: 'Server error during department update.' });
     }
 };
 
-/**
- * @controller deleteDepartment
- * @description Deletes a department by its ID.
- */
 const deleteDepartment = async (req, res) => {
     try {
         const department = await Department.findByIdAndDelete(req.params.id);
         if (!department) {
             return res.status(404).json({ message: 'Department not found.' });
         }
-        // Optional: You might want to handle users associated with this department.
-        // For example, set their department to null.
-        // await User.updateMany({ department: req.params.id }, { $set: { department: null } });
-
         res.status(200).json({ message: 'Department deleted successfully' });
     } catch (error) {
-        console.error('Delete Department Error:', error);
         res.status(500).json({ message: 'Server error during department deletion.' });
     }
 };
 
 
 module.exports = {
+    login, // Export the new login function
     createUser,
     getAllUsers,
     updateUser,
     deleteUser,
-    createDepartment, // Export new function
+    createDepartment,
     getAllDepartments,
-    updateDepartment, // Export new function
-    deleteDepartment  // Export new function
+    updateDepartment,
+    deleteDepartment
 };
