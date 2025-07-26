@@ -1,16 +1,16 @@
-// Import necessary models from your models file
-const { Employee, Department, EmploymentVerification, StockGrant } = require('../models/User'); // Adjust the path as needed
+// Import the User model and validation tools
+const User = require('../models/User'); // Adjust the path to your User model
 const { validationResult } = require('express-validator');
 
-// --- Employee Controller Functions ---
+// --- User/Employee Controller Functions ---
 
 /**
- * @controller createEmployee
- * @description Creates a new employee.
- * @route POST /api/employees
- * @access Private (Admin/HR)
+ * @controller createUser
+ * @description Creates a new user/employee.
+ * @route POST /api/users
+ * @access Private (Admin)
  */
-const createEmployee = async (req, res) => {
+const createUser = async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -18,191 +18,204 @@ const createEmployee = async (req, res) => {
 
     try {
         const {
-            firstName,
-            lastName,
+            name,
             email,
+            password, // Password will be hashed by the pre-save middleware in the model
             jobTitle,
-            hireDate,
+            department,
+            manager, // Expecting a User ObjectId for the manager
             employmentStatus,
-            department, // Expecting a Department ObjectId
-            manager, // Expecting an Employee ObjectId
-            documents
+            contractType,
+            role,
+            documents // Optional: array of document objects
         } = req.body;
 
-        // 1. Check if an employee with the same email already exists
-        const existingEmployee = await Employee.findOne({ email: email.toLowerCase() });
-        if (existingEmployee) {
-            return res.status(409).json({ message: 'An employee with this email already exists.' });
+        // 1. Check if a user with the same email already exists
+        const existingUser = await User.findOne({ email: email.toLowerCase() });
+        if (existingUser) {
+            return res.status(409).json({ message: 'A user with this email already exists.' });
         }
 
-        // 2. (Optional but recommended) Check if the provided department exists
-        const departmentExists = await Department.findById(department);
-        if (!departmentExists) {
-            return res.status(400).json({ message: 'Invalid Department ID.' });
+        // 2. (Optional but recommended) If a manager is provided, check if they exist
+        if (manager) {
+            const managerExists = await User.findById(manager);
+            if (!managerExists) {
+                return res.status(400).json({ message: 'Invalid Manager ID.' });
+            }
         }
 
-        // 3. Create the new employee
-        const newEmployee = await Employee.create({
-            firstName,
-            lastName,
+        // 3. Create the new user
+        const newUser = await User.create({
+            name,
             email,
+            password,
             jobTitle,
-            hireDate,
-            employmentStatus,
             department,
             manager,
+            employmentStatus,
+            contractType,
+            role,
             documents
         });
+        
+        // Exclude password from the response object
+        const userResponse = newUser.toObject();
+        delete userResponse.password;
+
 
         res.status(201).json({
-            message: 'Employee created successfully',
-            employee: newEmployee
+            message: 'User created successfully',
+            user: userResponse
         });
 
     } catch (error) {
-        console.error('Create Employee Error:', error);
-        res.status(500).json({ message: 'Server error during employee creation.' });
+        console.error('Create User Error:', error);
+        res.status(500).json({ message: 'Server error during user creation.' });
     }
 };
 
 /**
- * @controller getAllEmployees
- * @description Fetches a list of all employees.
- * @route GET /api/employees
+ * @controller getAllUsers
+ * @description Fetches a list of all users/employees.
+ * @route GET /api/users
  * @access Private
  */
-const getAllEmployees = async (req, res) => {
+const getAllUsers = async (req, res) => {
     try {
-        // Populate 'department' to show department name, and 'manager' to show manager's name
-        const employees = await Employee.find({})
-            .populate('department', 'name') // Select only the 'name' field from the Department
-            .populate('manager', 'firstName lastName'); // Select name fields from the Employee (manager)
+        // Populate 'manager' to show the manager's name
+        const users = await User.find({})
+            .populate('manager', 'name email'); // Select name and email from the User (manager)
 
-        res.status(200).json(employees);
+        res.status(200).json(users);
     } catch (error) {
-        console.error('Get All Employees Error:', error);
-        res.status(500).json({ message: 'Server error while retrieving employees.' });
+        console.error('Get All Users Error:', error);
+        res.status(500).json({ message: 'Server error while retrieving users.' });
     }
 };
 
 /**
- * @controller getEmployeeById
- * @description Fetches a single employee by their ID.
- * @route GET /api/employees/:id
+ * @controller getUserById
+ * @description Fetches a single user by their ID.
+ * @route GET /api/users/:id
  * @access Private
  */
-const getEmployeeById = async (req, res) => {
+const getUserById = async (req, res) => {
     try {
-        const employee = await Employee.findById(req.params.id)
-            .populate('department', 'name')
-            .populate('manager', 'firstName lastName');
+        const user = await User.findById(req.params.id)
+            .populate('manager', 'name email');
 
-        if (!employee) {
-            return res.status(404).json({ message: 'Employee not found.' });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
         }
 
-        res.status(200).json(employee);
+        res.status(200).json(user);
     } catch (error) {
-        console.error('Get Employee By ID Error:', error);
-        res.status(500).json({ message: 'Server error while retrieving employee.' });
+        console.error('Get User By ID Error:', error);
+        res.status(500).json({ message: 'Server error while retrieving user.' });
     }
 };
 
 /**
- * @controller updateEmployee
- * @description Updates an employee's details.
- * @route PUT /api/employees/:id
- * @access Private (Admin/HR)
+ * @controller updateUser
+ * @description Updates a user's details.
+ * @route PUT /api/users/:id
+ * @access Private (Admin)
  */
-const updateEmployee = async (req, res) => {
+const updateUser = async (req, res) => {
     try {
         const {
-            firstName,
-            lastName,
+            name,
             email,
             jobTitle,
-            employmentStatus,
             department,
-            manager
+            manager,
+            employmentStatus,
+            contractType,
+            role
         } = req.body;
 
+        // Construct the update object dynamically
         const updateData = {};
-        if (firstName) updateData.firstName = firstName;
-        if (lastName) updateData.lastName = lastName;
+        if (name) updateData.name = name;
         if (email) updateData.email = email.toLowerCase();
         if (jobTitle) updateData.jobTitle = jobTitle;
-        if (employmentStatus) updateData.employmentStatus = employmentStatus;
         if (department) updateData.department = department;
         if (manager) updateData.manager = manager;
+        if (employmentStatus) updateData.employmentStatus = employmentStatus;
+        if (contractType) updateData.contractType = contractType;
+        if (role) updateData.role = role;
 
-        const updatedEmployee = await Employee.findByIdAndUpdate(
+
+        const updatedUser = await User.findByIdAndUpdate(
             req.params.id,
             { $set: updateData },
             { new: true, runValidators: true }
-        );
+        ).populate('manager', 'name email');
 
-        if (!updatedEmployee) {
-            return res.status(404).json({ message: 'Employee not found.' });
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'User not found.' });
         }
 
-        res.status(200).json({ message: 'Employee updated successfully', employee: updatedEmployee });
+        res.status(200).json({ message: 'User updated successfully', user: updatedUser });
 
     } catch (error) {
-        console.error('Update Employee Error:', error);
-        res.status(500).json({ message: 'Server error during employee update.' });
+        console.error('Update User Error:', error);
+        res.status(500).json({ message: 'Server error during user update.' });
     }
 };
 
 /**
- * @controller deleteEmployee
- * @description Deletes an employee by their ID.
- * @route DELETE /api/employees/:id
- * @access Private (Admin/HR)
+ * @controller deleteUser
+ * @description Deletes a user by their ID.
+ * @route DELETE /api/users/:id
+ * @access Private (Admin)
  */
-const deleteEmployee = async (req, res) => {
+const deleteUser = async (req, res) => {
     try {
-        const employee = await Employee.findByIdAndDelete(req.params.id);
+        const user = await User.findByIdAndDelete(req.params.id);
 
-        if (!employee) {
-            return res.status(404).json({ message: 'Employee not found.' });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
         }
 
-        // Optional: Add logic here to handle cascading deletes, e.g., reassigning their direct reports.
+        // Optional: Add logic here to handle cascading actions, 
+        // e.g., reassigning their direct reports who had this user as a manager.
 
-        res.status(200).json({ message: 'Employee deleted successfully' });
+        res.status(200).json({ message: 'User deleted successfully' });
 
     } catch (error) {
-        console.error('Delete Employee Error:', error);
-        res.status(500).json({ message: 'Server error during employee deletion.' });
+        console.error('Delete User Error:', error);
+        res.status(500).json({ message: 'Server error during user deletion.' });
     }
 };
 
 /**
- * @controller addDocumentToEmployee
- * @description Adds a document to an employee's profile.
- * @route POST /api/employees/:id/documents
- * @access Private (Admin/HR)
+ * @controller addDocumentToUser
+ * @description Adds a document to a user's profile.
+ * @route POST /api/users/:id/documents
+ * @access Private (Admin)
  */
-const addDocumentToEmployee = async (req, res) => {
+const addDocumentToUser = async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
     }
 
     try {
-        const { name, url } = req.body; // Document name and URL (e.g., from a file upload service)
-        const employee = await Employee.findById(req.params.id);
+        // Matches the DocumentSchema: documentName and documentUrl
+        const { documentName, documentUrl } = req.body; 
+        const user = await User.findById(req.params.id);
 
-        if (!employee) {
-            return res.status(404).json({ message: 'Employee not found.' });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
         }
 
-        employee.documents.push({ name, url });
-        await employee.save();
+        user.documents.push({ documentName, documentUrl });
+        await user.save();
 
         res.status(200).json({
             message: 'Document added successfully',
-            employee
+            user
         });
 
     } catch (error) {
@@ -211,79 +224,13 @@ const addDocumentToEmployee = async (req, res) => {
     }
 };
 
-/**
- * @controller assignConfirmationHandler
- * @description Assigns an employee to handle a confirmation service request.
- * @route PUT /api/verifications/:verificationId/assign
- * @access Private (Admin/HR)
- */
-const assignConfirmationHandler = async (req, res) => {
-    try {
-        const { verificationId } = req.params;
-        const { employeeId } = req.body;
-
-        const verificationRequest = await EmploymentVerification.findById(verificationId);
-        if (!verificationRequest) {
-            return res.status(404).json({ message: 'Employment verification request not found.' });
-        }
-
-        const employee = await Employee.findById(employeeId);
-        if (!employee) {
-            return res.status(404).json({ message: 'Employee to assign not found.' });
-        }
-
-        verificationRequest.processedBy = employeeId;
-        await verificationRequest.save();
-
-        res.status(200).json({ message: 'Employee assigned to confirmation request successfully.', verificationRequest });
-
-    } catch (error) {
-        console.error('Assign Confirmation Handler Error:', error);
-        res.status(500).json({ message: 'Server error while assigning employee.' });
-    }
-};
-
-/**
- * @controller assignStockAdmin
- * @description Assigns an employee to manage a stock grant.
- * @route PUT /api/stock-grants/:grantId/assign
- * @access Private (Admin/HR)
- */
-const assignStockAdmin = async (req, res) => {
-    try {
-        const { grantId } = req.params;
-        const { employeeId } = req.body;
-
-        const stockGrant = await StockGrant.findById(grantId);
-        if (!stockGrant) {
-            return res.status(404).json({ message: 'Stock grant not found.' });
-        }
-        
-        const employee = await Employee.findById(employeeId);
-        if (!employee) {
-            return res.status(404).json({ message: 'Employee to assign not found.' });
-        }
-
-        stockGrant.administeredBy = employeeId;
-        await stockGrant.save();
-
-        res.status(200).json({ message: 'Employee assigned to stock grant successfully.', stockGrant });
-
-    } catch (error) {
-        console.error('Assign Stock Admin Error:', error);
-        res.status(500).json({ message: 'Server error while assigning employee.' });
-    }
-};
-
 
 // Export all controller functions
 module.exports = {
-    createEmployee,
-    getAllEmployees,
-    getEmployeeById,
-    updateEmployee,
-    deleteEmployee,
-    addDocumentToEmployee,
-    assignConfirmationHandler, // NEW
-    assignStockAdmin // NEW
+    createUser,
+    getAllUsers,
+    getUserById,
+    updateUser,
+    deleteUser,
+    addDocumentToUser
 };
