@@ -85,6 +85,27 @@ const UserSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
+// --- Attendance Schema ---
+const AttendanceSchema = new mongoose.Schema({
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    checkIn: {
+        type: Date,
+        required: true
+    },
+    checkOut: {
+        type: Date
+    },
+    workDate: {
+        type: Date,
+        required: true
+    }
+}, { timestamps: true });
+
+
 // Password Hashing Middleware
 UserSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
@@ -102,6 +123,7 @@ UserSchema.methods.comparePassword = async function(candidatePassword) {
 // This pattern prevents the OverwriteModelError
 const Department = mongoose.models.Department || mongoose.model('Department', DepartmentSchema);
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
+const Attendance = mongoose.models.Attendance || mongoose.model('Attendance', AttendanceSchema);
 
 // Export the necessary models
-module.exports = { User, Department };
+module.exports = { User, Department, Attendance };
