@@ -1,5 +1,5 @@
 // Note: The path now points to the new unified model file
-const { User, Department } = require('../models/userModel'); 
+const { User, Department } = require('../models/User'); 
 const { validationResult } = require('express-validator');
 
 /**
