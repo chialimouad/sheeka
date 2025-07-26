@@ -1,9 +1,12 @@
-const { User, Department } = require('../models/User');
+const { User, Department, Attendance } = require('../models/User'); // Ensure Attendance is imported
 const { validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { Parser } = require('json2csv');
+const PDFDocument = require('pdfkit');
 
-// --- User Controllers ---
+
+// --- Authentication Controller ---
 
 /**
  * @controller login
@@ -18,21 +21,16 @@ const login = async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        // Find user by email, and explicitly select the password field which is hidden by default
         const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-
         if (!user) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        // Check if the provided password matches the stored hashed password
         const isMatch = await user.comparePassword(password);
-
         if (!isMatch) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        // Create JWT Payload
         const payload = {
             user: {
                 id: user.id,
@@ -40,30 +38,27 @@ const login = async (req, res) => {
             }
         };
 
-        // Sign the token
         jwt.sign(
             payload,
-            process.env.JWT_SECRET || 'your_default_jwt_secret', // Use an environment variable for your secret in production
-            { expiresIn: '5h' }, // Token expires in 5 hours
+            process.env.JWT_SECRET || 'your_default_jwt_secret',
+            { expiresIn: '5h' },
             (err, token) => {
                 if (err) throw err;
-                // Return the token and user info (without password) to the client
                 const userResponse = user.toObject();
                 delete userResponse.password;
-
                 res.json({
                     token,
                     user: userResponse
                 });
             }
         );
-
     } catch (error) {
         console.error(error.message);
         res.status(500).send('Server error');
     }
 };
 
+// --- User Controllers ---
 
 /**
  * @controller createUser
@@ -77,30 +72,14 @@ const createUser = async (req, res) => {
 
     try {
         const { name, email, password, jobTitle, department, manager, employmentStatus } = req.body;
-
         const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
             return res.status(409).json({ message: 'A user with this email already exists.' });
         }
-
-        const newUser = await User.create({
-            name,
-            email,
-            password,
-            jobTitle,
-            department,
-            manager,
-            employmentStatus
-        });
-        
+        const newUser = await User.create({ name, email, password, jobTitle, department, manager, employmentStatus });
         const userResponse = newUser.toObject();
         delete userResponse.password;
-
-        res.status(201).json({
-            message: 'User created successfully',
-            user: userResponse
-        });
-
+        res.status(201).json({ message: 'User created successfully', user: userResponse });
     } catch (error) {
         console.error('Create User Error:', error);
         res.status(500).json({ message: 'Server error during user creation.' });
@@ -113,10 +92,7 @@ const createUser = async (req, res) => {
  */
 const getAllUsers = async (req, res) => {
     try {
-        const users = await User.find({})
-            .populate('department', 'name description')
-            .populate('manager', 'name email');
-
+        const users = await User.find({}).populate('department', 'name description').populate('manager', 'name email');
         res.status(200).json(users);
     } catch (error) {
         console.error('Get All Users Error:', error);
@@ -132,19 +108,12 @@ const updateUser = async (req, res) => {
     try {
         const updateData = { ...req.body };
         delete updateData.password;
-
-        const updatedUser = await User.findByIdAndUpdate(
-            req.params.id,
-            { $set: updateData },
-            { new: true, runValidators: true }
-        ).populate('department', 'name description').populate('manager', 'name email');
-
+        const updatedUser = await User.findByIdAndUpdate(req.params.id, { $set: updateData }, { new: true, runValidators: true })
+            .populate('department', 'name description').populate('manager', 'name email');
         if (!updatedUser) {
             return res.status(404).json({ message: 'User not found.' });
         }
-
         res.status(200).json({ message: 'User updated successfully', user: updatedUser });
-
     } catch (error) {
         console.error('Update User Error:', error);
         res.status(500).json({ message: 'Server error during user update.' });
@@ -167,7 +136,6 @@ const deleteUser = async (req, res) => {
         res.status(500).json({ message: 'Server error during user deletion.' });
     }
 };
-
 
 // --- Department Controllers ---
 
@@ -201,11 +169,7 @@ const getAllDepartments = async (req, res) => {
 const updateDepartment = async (req, res) => {
     try {
         const { name, description } = req.body;
-        const updatedDepartment = await Department.findByIdAndUpdate(
-            req.params.id,
-            { name, description },
-            { new: true, runValidators: true }
-        );
+        const updatedDepartment = await Department.findByIdAndUpdate(req.params.id, { name, description }, { new: true, runValidators: true });
         if (!updatedDepartment) {
             return res.status(404).json({ message: 'Department not found.' });
         }
@@ -228,8 +192,109 @@ const deleteDepartment = async (req, res) => {
 };
 
 
+// --- Attendance Controllers ---
+
+/**
+ * @controller checkIn
+ * @description Records a user's check-in time for the current day.
+ */
+const checkIn = async (req, res) => {
+    try {
+        const userId = req.user.id; // Assumes auth middleware adds user to req
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const existingAttendance = await Attendance.findOne({ user: userId, workDate: today });
+        if (existingAttendance) {
+            return res.status(400).json({ message: 'You have already checked in today.' });
+        }
+
+        const newAttendance = new Attendance({
+            user: userId,
+            checkIn: new Date(),
+            workDate: today
+        });
+
+        await newAttendance.save();
+        res.status(201).json({ message: 'Checked in successfully.', attendance: newAttendance });
+    } catch (error) {
+        console.error('Check-in Error:', error);
+        res.status(500).json({ message: 'Server error during check-in.' });
+    }
+};
+
+/**
+ * @controller checkOut
+ * @description Records a user's check-out time.
+ */
+const checkOut = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const attendance = await Attendance.findOne({ user: userId, workDate: today });
+        if (!attendance) {
+            return res.status(404).json({ message: 'No check-in record found for today.' });
+        }
+        if (attendance.checkOut) {
+            return res.status(400).json({ message: 'You have already checked out today.' });
+        }
+
+        attendance.checkOut = new Date();
+        await attendance.save();
+        res.status(200).json({ message: 'Checked out successfully.', attendance });
+    } catch (error) {
+        console.error('Check-out Error:', error);
+        res.status(500).json({ message: 'Server error during check-out.' });
+    }
+};
+
+/**
+ * @controller getAttendanceRecords
+ * @description Fetches attendance records with filtering.
+ */
+const getAttendanceRecords = async (req, res) => {
+    try {
+        const { startDate, endDate, employeeId, departmentId } = req.query;
+        let query = {};
+        
+        if (startDate || endDate) {
+            query.workDate = {};
+            if (startDate) query.workDate.$gte = new Date(startDate);
+            if (endDate) {
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999); // Include the whole end day
+                query.workDate.$lte = end;
+            }
+        }
+
+        if (employeeId) {
+            query.user = employeeId;
+        }
+
+        let attendanceRecords = await Attendance.find(query).populate({
+            path: 'user',
+            select: 'name email department',
+            populate: {
+                path: 'department',
+                select: 'name'
+            }
+        }).sort({ workDate: -1 });
+
+        if (departmentId) {
+            attendanceRecords = attendanceRecords.filter(rec => rec.user.department && rec.user.department._id.toString() === departmentId);
+        }
+
+        res.status(200).json(attendanceRecords);
+    } catch (error) {
+        console.error('Get Attendance Error:', error);
+        res.status(500).json({ message: 'Server error while retrieving attendance records.' });
+    }
+};
+
 module.exports = {
-    login, // Export the new login function
+    login,
     createUser,
     getAllUsers,
     updateUser,
@@ -237,5 +302,8 @@ module.exports = {
     createDepartment,
     getAllDepartments,
     updateDepartment,
-    deleteDepartment
+    deleteDepartment,
+    checkIn,
+    checkOut,
+    getAttendanceRecords
 };
