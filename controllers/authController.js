@@ -1,6 +1,8 @@
 // Note: The path now points to the new unified model file
-const { User, Department } = require('../models/User'); 
+const { User, Department } = require('../models/User');
 const { validationResult } = require('express-validator');
+
+// --- User Controllers ---
 
 /**
  * @controller createUser
@@ -51,7 +53,7 @@ const createUser = async (req, res) => {
 const getAllUsers = async (req, res) => {
     try {
         const users = await User.find({})
-            .populate('department', 'name')
+            .populate('department', 'name description') // Added description
             .populate('manager', 'name email');
 
         res.status(200).json(users);
@@ -68,14 +70,13 @@ const getAllUsers = async (req, res) => {
 const updateUser = async (req, res) => {
     try {
         const updateData = { ...req.body };
-        // Remove password from body to prevent accidental update this way
-        delete updateData.password; 
+        delete updateData.password; // Prevent password updates through this route
 
         const updatedUser = await User.findByIdAndUpdate(
             req.params.id,
             { $set: updateData },
             { new: true, runValidators: true }
-        ).populate('department', 'name').populate('manager', 'name email');
+        ).populate('department', 'name description').populate('manager', 'name email');
 
         if (!updatedUser) {
             return res.status(404).json({ message: 'User not found.' });
@@ -106,6 +107,36 @@ const deleteUser = async (req, res) => {
     }
 };
 
+
+// --- Department Controllers ---
+
+/**
+ * @controller createDepartment
+ * @description Creates a new department.
+ */
+const createDepartment = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const { name, description } = req.body;
+
+        const existingDepartment = await Department.findOne({ name });
+        if (existingDepartment) {
+            return res.status(409).json({ message: 'A department with this name already exists.' });
+        }
+
+        const newDepartment = await Department.create({ name, description });
+        res.status(201).json(newDepartment);
+
+    } catch (error) {
+        console.error('Create Department Error:', error);
+        res.status(500).json({ message: 'Server error during department creation.' });
+    }
+};
+
 /**
  * @controller getAllDepartments
  * @description Fetches all departments.
@@ -120,11 +151,60 @@ const getAllDepartments = async (req, res) => {
     }
 };
 
+/**
+ * @controller updateDepartment
+ * @description Updates a department's details by ID.
+ */
+const updateDepartment = async (req, res) => {
+    try {
+        const { name, description } = req.body;
+        const updatedDepartment = await Department.findByIdAndUpdate(
+            req.params.id,
+            { name, description },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedDepartment) {
+            return res.status(404).json({ message: 'Department not found.' });
+        }
+
+        res.status(200).json({ message: 'Department updated successfully', department: updatedDepartment });
+
+    } catch (error) {
+        console.error('Update Department Error:', error);
+        res.status(500).json({ message: 'Server error during department update.' });
+    }
+};
+
+/**
+ * @controller deleteDepartment
+ * @description Deletes a department by its ID.
+ */
+const deleteDepartment = async (req, res) => {
+    try {
+        const department = await Department.findByIdAndDelete(req.params.id);
+        if (!department) {
+            return res.status(404).json({ message: 'Department not found.' });
+        }
+        // Optional: You might want to handle users associated with this department.
+        // For example, set their department to null.
+        // await User.updateMany({ department: req.params.id }, { $set: { department: null } });
+
+        res.status(200).json({ message: 'Department deleted successfully' });
+    } catch (error) {
+        console.error('Delete Department Error:', error);
+        res.status(500).json({ message: 'Server error during department deletion.' });
+    }
+};
+
 
 module.exports = {
     createUser,
     getAllUsers,
     updateUser,
     deleteUser,
-    getAllDepartments
+    createDepartment, // Export new function
+    getAllDepartments,
+    updateDepartment, // Export new function
+    deleteDepartment  // Export new function
 };
