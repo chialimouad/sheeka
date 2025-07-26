@@ -9,7 +9,7 @@ const {
     updateUser,
     deleteUser,
     getAllDepartments
-} = require('../controllers/userController');
+} = require('../controllers/authController');
 
 
 // --- User Routes (replaces /api/employees) ---
