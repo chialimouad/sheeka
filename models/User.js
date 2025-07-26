@@ -1,19 +1,12 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 
-/**
- * @typedef {object} Document
- * @property {string} documentName - The name of the document (e.g., "ID Card", "Employment Contract").
- * @property {string} documentUrl - The URL or path where the document is stored.
- * @property {Date} uploadDate - The date the document was uploaded.
- */
-
+// --- Document Schema (for Employee) ---
 const DocumentSchema = new mongoose.Schema({
-  documentName: { 
+  name: { 
     type: String, 
     required: true 
   },
-  documentUrl: { 
+  url: { 
     type: String, 
     required: true 
   },
@@ -23,110 +16,131 @@ const DocumentSchema = new mongoose.Schema({
   }
 });
 
+// --- Department Schema ---
+const DepartmentSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: [true, 'Department name is required'],
+        unique: true,
+        trim: true
+    },
+    description: {
+        type: String,
+        trim: true
+    }
+}, { timestamps: true });
 
-const UserSchema = new mongoose.Schema({
-  // --- Basic Information ---
-  name: { 
+const Department = mongoose.model('Department', DepartmentSchema);
+
+
+// --- Employee Schema ---
+const EmployeeSchema = new mongoose.Schema({
+  firstName: { 
     type: String, 
-    required: [true, 'Name is required'] 
+    required: [true, 'First name is required'] 
+  },
+  lastName: { 
+    type: String, 
+    required: [true, 'Last name is required'] 
   },
   email: { 
     type: String, 
     required: [true, 'Email is required'], 
     unique: true,
-    // Basic email format validation
     match: [/.+\@.+\..+/, 'Please fill a valid email address']
   },
-  password: { 
-    type: String, 
-    required: [true, 'Password is required'],
-    select: false // Prevents password from being returned in queries by default
-  },
-
-  // --- Employment Details (New Features) ---
   jobTitle: {
     type: String,
     trim: true,
     default: 'Not Assigned'
   },
-  department: {
-    type: String,
-    trim: true,
-    default: 'Not Assigned'
-  },
-  manager: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Self-referencing relationship to another user
-    default: null
+  hireDate: {
+    type: Date,
+    default: Date.now
   },
   employmentStatus: {
     type: String,
     enum: ['active', 'on_leave', 'resigned', 'terminated'],
     default: 'active'
   },
-  startDate: {
-    type: Date,
-    default: Date.now
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department',
+    required: true
   },
-  endDate: {
-    type: Date,
+  manager: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Employee', // Self-referencing to another Employee
     default: null
   },
-  contractType: {
-    type: String,
-    enum: ['Full-time', 'Part-time', 'Contractor', 'Intern', 'Not Applicable'],
-    default: 'Not Applicable'
-  },
+  documents: [DocumentSchema]
 
-  // --- System & App-Specific Fields ---
-  role: { 
-    type: String, 
-    enum: ['admin', 'confirmation', 'stockagent', 'employee'], // Added 'employee' as a general role
-    default: 'employee'
-  },
-  index: {
-    type: Number,
-    enum: [0, 1], // Ensures the 'index' field can only be 0 or 1
-    default: 0   // Sets a default value of 0, aligning with "0 for on server"
-  },
+}, { timestamps: true });
 
-  // --- Linked Data ---
-  orders: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Order'
-  }],
-  documents: [DocumentSchema] // Array for storing employee documents
+const Employee = mongoose.model('Employee', EmployeeSchema);
 
-}, {
-  // Adds createdAt and updatedAt timestamps automatically
-  timestamps: true 
-});
 
-// --- PASSWORD HASHING MIDDLEWARE ---
-// Using a pre-save hook to hash the password before it's saved to the database.
-UserSchema.pre('save', async function(next) {
-  // Only hash the password if it has been modified (or is new)
-  if (!this.isModified('password')) {
-    return next();
-  }
+// --- EmploymentVerification Schema ---
+const EmploymentVerificationSchema = new mongoose.Schema({
+    employee: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee',
+        required: true
+    },
+    requestingOrganization: {
+        type: String,
+        required: true
+    },
+    status: {
+        type: String,
+        enum: ['pending', 'processed', 'denied'],
+        default: 'pending'
+    },
+    processedBy: { // The employee who handled the request
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee',
+        default: null
+    },
+    processedDate: {
+        type: Date
+    }
+}, { timestamps: true });
 
-  try {
-    // Generate a salt
-    const salt = await bcrypt.genSalt(10);
-    // Hash the password with the salt
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
+const EmploymentVerification = mongoose.model('EmploymentVerification', EmploymentVerificationSchema);
 
-// --- PASSWORD COMPARISON METHOD ---
-// Instance method to compare a candidate password with the stored hashed password
-UserSchema.methods.comparePassword = async function(candidatePassword) {
-  // this.password will be available here despite `select: false` because we are in a method of the document
-  return await bcrypt.compare(candidatePassword, this.password);
+// --- StockGrant Schema ---
+const StockGrantSchema = new mongoose.Schema({
+    employee: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee',
+        required: true
+    },
+    grantDate: {
+        type: Date,
+        default: Date.now
+    },
+    vestingSchedule: {
+        type: String,
+        default: 'Standard 4-year with 1-year cliff'
+    },
+    numberOfShares: {
+        type: Number,
+        required: true
+    },
+    administeredBy: { // The employee who administers the grant
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee',
+        default: null
+    }
+}, { timestamps: true });
+
+const StockGrant = mongoose.model('StockGrant', StockGrantSchema);
+
+
+// Export all models
+module.exports = {
+    Employee,
+    Department,
+    EmploymentVerification,
+    StockGrant
 };
-
-
-module.exports = mongoose.model('User', UserSchema);
