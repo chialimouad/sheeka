@@ -27,6 +27,7 @@ const storage = new CloudinaryStorage({
     },
 });
 
+// Export the upload middleware to be used in the router
 const upload = multer({ storage });
 exports.upload = upload;
 exports.uploadPromo = upload;
@@ -102,7 +103,7 @@ exports.deletePromoImage = [
 // =========================
 
 exports.addProduct = [
-    upload.array('images', 5),
+    // ** FIX **: Removed upload.array() from here. It will be applied in the router.
     body('name').trim().notEmpty().withMessage('Product name is required.'),
     body('description').trim().notEmpty().withMessage('Product description is required.'),
     body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
@@ -181,7 +182,7 @@ exports.getProductById = [
 ];
 
 exports.updateProduct = [
-    upload.array('images'),
+    // ** FIX **: Removed upload.array() from here. It will be applied in the router.
     param('id').isMongoId().withMessage('Invalid Product ID format.'),
     body('name').optional().trim().notEmpty().withMessage('Product name cannot be empty.'),
     body('description').optional().trim().notEmpty().withMessage('Product description cannot be empty.'),
