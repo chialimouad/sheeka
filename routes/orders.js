@@ -6,7 +6,7 @@ dotenv.config(); // Load environment variables from .env file
 
 const router = express.Router();
 
-// Import Mongoose Models
+// Import Mongoose Mode
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const User = require('../models/User');
