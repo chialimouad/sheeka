@@ -1,5 +1,5 @@
-// IMPORTANT: Save this file as 'routes/orders.js' to match your server.js configuration.
-// routes/orders.js
+// CRITICAL: Your server.js requires this file to be named exactly 'orders.js'.
+// Please save this file as 'routes/orders.js' to fix the 500 error.
 
 // Required Modules
 const express = require('express');
