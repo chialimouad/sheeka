@@ -77,7 +77,11 @@ router.post('/', async (req, res) => {
             const messages = Object.values(error.errors).map(err => err.message);
             return res.status(400).json({ message: 'Order validation failed.', errors: messages });
         }
-        res.status(500).json({ message: 'An unexpected server error occurred.', error: error.message });
+        // Enhanced debugging response
+        res.status(500).json({
+            message: 'An unexpected server error occurred. Please check the error details.',
+            error: { name: error.name, message: error.message, stack: error.stack }
+        });
     }
 });
 
@@ -109,7 +113,11 @@ router.get('/', async (req, res) => {
         res.status(200).json(formattedOrders);
     } catch (error) {
         console.error('Fetch orders error:', error);
-        res.status(500).json({ message: 'An unexpected server error occurred.', error: error.message });
+        // Enhanced debugging response
+        res.status(500).json({
+            message: 'An unexpected server error occurred. Please check the error details.',
+            error: { name: error.name, message: error.message, stack: error.stack }
+        });
     }
 });
 
@@ -124,7 +132,6 @@ router.get('/:orderId', async (req, res) => {
 
         if (!order) return res.status(404).json({ message: 'Order not found.' });
         
-        // (Formatting logic as before)
         const formattedOrder = {
             ...order._doc,
             products: order.products.map(p => p.productId ? {
@@ -140,14 +147,17 @@ router.get('/:orderId', async (req, res) => {
             assignedTo: order.assignedTo ? { _id: order.assignedTo._id, name: order.assignedTo.name, email: order.assignedTo.email } : null
         };
 
-
         res.status(200).json(formattedOrder);
     } catch (error) {
         console.error('Fetch order error:', error);
         if (error.name === 'CastError' && error.path === '_id') {
             return res.status(400).json({ message: `Invalid order ID format: ${req.params.orderId}` });
         }
-        res.status(500).json({ message: 'An unexpected server error occurred.', error: error.message });
+        // Enhanced debugging response
+        res.status(500).json({
+            message: 'An unexpected server error occurred. Please check the error details.',
+            error: { name: error.name, message: error.message, stack: error.stack }
+        });
     }
 });
 
@@ -217,7 +227,6 @@ router.patch('/:orderId', authenticateClient, async (req, res) => {
     } catch (error) {
         console.error('Update order error:', error);
 
-        // **IMPROVED ERROR HANDLING**
         // Handle Mongoose CastError for invalid ObjectId formats
         if (error.name === 'CastError') {
             const errorMessage = `Invalid ID format for field '${error.path}'. Received value: '${error.value}'`;
@@ -230,8 +239,16 @@ router.patch('/:orderId', authenticateClient, async (req, res) => {
             return res.status(400).json({ message: 'Order validation failed.', errors: messages });
         }
 
-        // Generic server error for all other cases
-        res.status(500).json({ message: 'An unexpected server error occurred.', error: error.message });
+        // **ENHANCED DEBUGGING RESPONSE**
+        // For any other error, send back more details to help diagnose the problem.
+        res.status(500).json({
+            message: 'An unexpected server error occurred. Please check the error details.',
+            error: {
+                name: error.name,
+                message: error.message,
+                stack: error.stack // For debugging purposes
+            }
+        });
     }
 });
 
@@ -255,7 +272,11 @@ router.delete('/:orderId', async (req, res) => {
         if (error.name === 'CastError' && error.path === '_id') {
             return res.status(400).json({ message: `Invalid order ID format: ${req.params.orderId}` });
         }
-        res.status(500).json({ message: 'An unexpected server error occurred.', error: error.message });
+        // Enhanced debugging response
+        res.status(500).json({
+            message: 'An unexpected server error occurred. Please check the error details.',
+            error: { name: error.name, message: error.message, stack: error.stack }
+        });
     }
 });
 
