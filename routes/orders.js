@@ -239,95 +239,107 @@ router.get('/:orderId', async (req, res) => {
 
 
 // PATCH: Update order status and notes
-router.patch('/:orderId/status', authenticateClient, async (req, res) => {
+router.patch('/:orderId', async (req, res) => {
     try {
+        const { orderId } = req.params;
         const {
-            orderId
-        } = req.params;
-        const {
-            status,
-            notes
+            fullName,
+            phoneNumber,
+            wilaya,
+            commune,
+            address,
+            notes,
+            assignedTo,
+            barcodeId
         } = req.body;
 
-        // --- ADDED VALIDATION ---
+        // Validate orderId
         if (!mongoose.Types.ObjectId.isValid(orderId)) {
             return res.status(400).json({
                 message: 'Invalid order ID format.'
             });
         }
 
-        const order = await Order.findById(orderId);
-        if (!order) {
+        // Build update fields
+        const updateFields = {};
+        if (fullName !== undefined) updateFields.fullName = fullName;
+        if (wilaya !== undefined) updateFields.wilaya = wilaya;
+        if (commune !== undefined) updateFields.commune = commune;
+        if (address !== undefined) updateFields.address = address;
+        if (notes !== undefined) updateFields.notes = notes;
+        if (barcodeId !== undefined) updateFields.barcodeId = barcodeId;
+
+        if (phoneNumber !== undefined) {
+            const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
+            if (!phoneRegex.test(phoneNumber)) {
+                return res.status(400).json({
+                    message: 'Invalid phone number format.'
+                });
+            }
+            updateFields.phoneNumber = phoneNumber;
+        }
+
+        if (assignedTo !== undefined) {
+            if (assignedTo === null || assignedTo === '') {
+                updateFields.assignedTo = null;
+            } else {
+                if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
+                    return res.status(400).json({
+                        message: 'Invalid assigned user ID format.'
+                    });
+                }
+
+                const user = await User.findById(assignedTo);
+                if (!user) {
+                    return res.status(400).json({
+                        message: 'Assigned user not found.'
+                    });
+                }
+
+                updateFields.assignedTo = assignedTo;
+            }
+        }
+
+        if (Object.keys(updateFields).length === 0) {
+            console.warn('⚠️ PATCH request received with no valid fields:', req.body);
+            return res.status(400).json({
+                message: 'No valid fields provided for update.'
+            });
+        }
+
+        // ✅ Perform the update
+        const updatedOrder = await Order.findByIdAndUpdate(
+            orderId,
+            { $set: updateFields },
+            { new: true, runValidators: true }
+        )
+        .populate('confirmedBy', 'name email')
+        .populate('assignedTo', 'name email');
+
+        if (!updatedOrder) {
             return res.status(404).json({
                 message: 'Order not found.'
             });
         }
 
-        const oldStatus = order.status;
-        let hasUpdate = false;
-
-        if (status && status !== oldStatus) {
-            const allowedStatuses = ['pending', 'confirmed', 'tentative', 'cancelled', 'dispatched', 'delivered', 'returned'];
-            if (!allowedStatuses.includes(status)) {
-                return res.status(400).json({
-                    message: 'Invalid status.'
-                });
-            }
-
-            // --- STOCK MANAGEMENT ON STATUS CHANGE ---
-            const isNowCancelledOrReturned = status === 'cancelled' || status === 'returned';
-            const wasPreviouslyCancelledOrReturned = oldStatus === 'cancelled' || oldStatus === 'returned';
-
-            // Restore stock if status changes to cancelled/returned from another state
-            if (isNowCancelledOrReturned && !wasPreviouslyCancelledOrReturned) {
-                await restoreStock(order);
-            }
-            // Note: This logic does not re-decrement stock if an order is un-cancelled.
-            // That would require more complex state management.
-
-            order.status = status;
-            if (!order.statusTimestamps) {
-                order.statusTimestamps = new Map();
-            }
-            order.statusTimestamps.set(status, new Date());
-            hasUpdate = true;
-
-            if (status === 'confirmed') {
-                if (!req.client || !req.client.clientId) {
-                    return res.status(401).json({
-                        message: 'Unauthorized. Agent must be logged in to confirm order.'
-                    });
-                }
-                order.confirmedBy = req.client.clientId;
-            }
-        }
-
-        if (notes !== undefined) {
-            order.notes = notes;
-            hasUpdate = true;
-        }
-
-        if (!hasUpdate) {
-            return res.status(400).json({
-                message: 'No fields provided to update.'
-            });
-        }
-
-        const savedOrder = await order.save();
-        const populatedOrder = await savedOrder.populate(['confirmedBy', 'assignedTo'], 'name email');
-
         res.status(200).json({
-            message: 'Order status updated successfully',
-            order: populatedOrder
+            message: 'Order updated successfully',
+            order: updatedOrder
         });
+
     } catch (error) {
-        console.error('Error updating order status:', error);
+        console.error('🔥 Error in PATCH /orders/:orderId');
+        console.error('Order ID:', req.params.orderId);
+        console.error('Body:', req.body);
+        console.error('Full error:', error);
+
         res.status(500).json({
             message: 'Server error',
             error: error.message
         });
     }
 });
+
 
 
 // PATCH: General order update (customer details, assignment, etc.)
