@@ -41,8 +41,7 @@ router.post('/', async (req, res) => {
             products,
             status,
             notes,
-            barcodeId,
-            deliveryFee // Added deliveryFee
+            barcodeId
         } = req.body;
 
         if (!fullName || !phoneNumber || !wilaya || !commune || !products || products.length === 0) {
@@ -99,8 +98,7 @@ router.post('/', async (req, res) => {
             totalOrdersCount,
             status: status || 'pending',
             notes: notes || '',
-            barcodeId: barcodeId || null, // Save the barcodeId if provided
-            deliveryFee: deliveryFee || 0 // Save the deliveryFee
+            barcodeId: barcodeId || null // Save the barcodeId if provided
         });
 
         // The pre-save hook in Order.js will automatically set the 'pending' timestamp
@@ -291,93 +289,87 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
 });
 
 
-// PATCH: General order update (Refactored for consistency and hook execution)
-router.patch('/:orderId', authenticateClient, async (req, res) => {
+// PATCH: General order update
+router.patch('/:orderId', async (req, res) => {
     try {
-        const { orderId } = req.params;
-        const updates = req.body;
+        const {
+            orderId
+        } = req.params;
+        const {
+            fullName,
+            phoneNumber,
+            wilaya,
+            commune,
+            address,
+            notes,
+            assignedTo,
+            barcodeId
+        } = req.body;
+        const updateFields = {};
 
-        // Find the order first
-        const order = await Order.findById(orderId);
-        if (!order) {
-            return res.status(404).json({ message: 'Order not found.' });
+        if (fullName !== undefined) updateFields.fullName = fullName;
+        if (phoneNumber !== undefined) {
+            const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
+            if (!phoneRegex.test(phoneNumber)) {
+                return res.status(400).json({
+                    message: 'Invalid phone number format.'
+                });
+            }
+            updateFields.phoneNumber = phoneNumber;
         }
+        if (wilaya !== undefined) updateFields.wilaya = wilaya;
+        if (commune !== undefined) updateFields.commune = commune;
+        if (address !== undefined) updateFields.address = address;
+        if (notes !== undefined) updateFields.notes = notes;
+        if (barcodeId !== undefined) updateFields.barcodeId = barcodeId; // Handle barcodeId update
 
-        // List of fields that can be updated through this endpoint
-        const allowedUpdates = ['fullName', 'phoneNumber', 'wilaya', 'commune', 'address', 'notes', 'assignedTo', 'barcodeId', 'deliveryFee'];
-
-        let isUpdated = false;
-        // Iterate over allowed fields and update the order object
-        for (const key of allowedUpdates) {
-            if (updates[key] !== undefined) {
-                // Handle unsetting the 'assignedTo' field
-                if (key === 'assignedTo' && (updates[key] === '' || updates[key] === null)) {
-                    order.assignedTo = null;
-                    isUpdated = true;
-                    continue; // Move to the next key
+        if (assignedTo !== undefined) {
+            if (assignedTo === null || assignedTo === '') {
+                updateFields.assignedTo = null;
+            } else {
+                const user = await User.findById(assignedTo);
+                if (!user) {
+                    return res.status(400).json({
+                        message: 'Assigned user not found.'
+                    });
                 }
-
-                // Handle unsetting the 'barcodeId' field
-                if (key === 'barcodeId' && updates[key].trim() === '') {
-                    order.barcodeId = null;
-                    isUpdated = true;
-                    continue; // Move to the next key
-                }
-                
-                // Validate phone number format
-                if (key === 'phoneNumber') {
-                    const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
-                    if (!phoneRegex.test(updates[key])) {
-                        return res.status(400).json({ message: 'Invalid phone number format.' });
-                    }
-                }
-                
-                // Validate that the assigned user exists
-                if (key === 'assignedTo' && updates[key]) {
-                     const user = await User.findById(updates[key]);
-                     if (!user) {
-                         return res.status(400).json({ message: 'Assigned user not found.' });
-                     }
-                }
-
-                // Apply the update to the order object
-                order[key] = updates[key];
-                isUpdated = true;
+                updateFields.assignedTo = assignedTo;
             }
         }
 
-        if (!isUpdated) {
-            return res.status(400).json({ message: 'No valid fields provided for update.' });
+        if (Object.keys(updateFields).length === 0) {
+            return res.status(400).json({
+                message: 'No valid fields provided for update.'
+            });
         }
 
-        // Save the modified order, which triggers 'save' hooks
-        const savedOrder = await order.save();
+        const updatedOrder = await Order.findByIdAndUpdate(
+                orderId, {
+                    $set: updateFields
+                }, {
+                    new: true,
+                    runValidators: true
+                }
+            )
+            .populate('products.productId')
+            .populate('confirmedBy', 'name email')
+            .populate('assignedTo', 'name email');
 
-        // Populate the necessary fields for the response
-        const populatedOrder = await savedOrder.populate([
-            { path: 'products.productId' },
-            { path: 'confirmedBy', select: 'name email' },
-            { path: 'assignedTo', select: 'name email' }
-        ]);
-
+        if (!updatedOrder) return res.status(404).json({
+            message: 'Order not found.'
+        });
         res.status(200).json({
             message: 'Order updated successfully',
-            order: populatedOrder
+            order: updatedOrder
         });
-
     } catch (error) {
-        console.error('--- CRITICAL UPDATE ORDER ERROR ---:', error);
-        // Handle potential validation errors from Mongoose
-        if (error.name === 'ValidationError') {
-            return res.status(400).json({ message: 'Validation Error', error: error.message });
-        }
+        console.error('Update order error:', error);
         res.status(500).json({
             message: 'Server error',
             error: error.message
         });
     }
 });
-
 
 // DELETE: Remove order
 router.delete('/:orderId', async (req, res) => {
