@@ -24,7 +24,9 @@ const authenticateClient = (req, res, next) => {
             const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mouadsecret');
             req.client = { clientId: decoded.id };
         } catch (err) {
-            return res.status(401).json({ message: 'Invalid or expired token' });
+            // If token is invalid, we don't block the request but clear the client info
+            // The route itself will decide if authentication is mandatory for a specific action
+            req.client = null;
         }
     }
     next();
@@ -33,10 +35,8 @@ const authenticateClient = (req, res, next) => {
 // POST: Create a new order
 router.post('/', async (req, res) => {
     try {
-        // CORRECTED: Added 'address' to the destructuring
         const { fullName, phoneNumber, wilaya, commune, address, products, status, notes } = req.body;
 
-        // CORRECTED: Added 'address' to the validation check
         if (!fullName || !phoneNumber || !wilaya || !commune || !address || !products || products.length === 0) {
             return res.status(400).json({ message: 'Missing required fields, including address.' });
         }
@@ -66,7 +66,6 @@ router.post('/', async (req, res) => {
 
         const totalOrdersCount = products.length;
 
-        // CORRECTED: Added 'address' to the new Order object
         const newOrder = new Order({
             fullName, phoneNumber, wilaya, commune, address, products, totalOrdersCount,
             status: status || 'pending',
@@ -89,12 +88,13 @@ router.post('/', async (req, res) => {
 });
 
 // GET: All orders
-router.get('/', async (req, res) => {
+router.get('/', authenticateClient, async (req, res) => {
     try {
         const orders = await Order.find()
             .populate('products.productId')
             .populate('confirmedBy', 'name email')
-            .populate('assignedTo', 'name email');
+            .populate('assignedTo', 'name email')
+            .sort({ createdAt: -1 }); // Sort by creation date descending
 
         if (!orders.length) return res.status(200).json([]);
 
@@ -124,9 +124,12 @@ router.get('/', async (req, res) => {
 });
 
 // GET: Single order by ID
-router.get('/:orderId', async (req, res) => {
+router.get('/:orderId', authenticateClient, async (req, res) => {
     try {
         const { orderId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res.status(400).json({ message: 'Invalid Order ID format.' });
+        }
         const order = await Order.findById(orderId)
             .populate('products.productId')
             .populate('confirmedBy', 'name email')
@@ -152,9 +155,6 @@ router.get('/:orderId', async (req, res) => {
         res.status(200).json(formattedOrder);
     } catch (error) {
         console.error('Fetch order error:', error);
-        if (error.name === 'CastError' && error.path === '_id') {
-            return res.status(400).json({ message: `Invalid order ID format: ${req.params.orderId}` });
-        }
         res.status(500).json({
             message: 'An unexpected server error occurred. Please check the error details.',
             error: { name: error.name, message: error.message, stack: error.stack }
@@ -166,7 +166,10 @@ router.get('/:orderId', async (req, res) => {
 router.patch('/:orderId', authenticateClient, async (req, res) => {
     try {
         const { orderId } = req.params;
-        // CORRECTED: Added 'address' to the destructuring
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res.status(400).json({ message: 'Invalid Order ID format.' });
+        }
+
         const { fullName, phoneNumber, wilaya, commune, address, notes, assignedTo, status } = req.body;
         const updateFields = {};
 
@@ -174,23 +177,31 @@ router.patch('/:orderId', authenticateClient, async (req, res) => {
         if (fullName !== undefined) updateFields.fullName = fullName;
         if (wilaya !== undefined) updateFields.wilaya = wilaya;
         if (commune !== undefined) updateFields.commune = commune;
-        // CORRECTED: Added 'address' to the update logic
         if (address !== undefined) updateFields.address = address;
         if (notes !== undefined) updateFields.notes = notes;
 
+        // **FIX 1: Add phone number validation on update**
         if (phoneNumber !== undefined) {
-            updateFields.phoneNumber = phoneNumber; // Validator will run on update
+            const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
+            if (!phoneRegex.test(phoneNumber)) {
+                return res.status(400).json({ message: 'Invalid Algerian phone number format.' });
+            }
+            updateFields.phoneNumber = phoneNumber;
         }
         
         if (status) {
             updateFields.status = status;
+            
+            // **FIX 2: Update the status timestamp map**
+            // This uses dot notation to set a key in the Map.
+            // Your Order schema must have `statusTimestamps: { type: Map, of: Date, default: {} }`
+            updateFields[`statusTimestamps.${status}`] = new Date();
+
             if (status === 'confirmed') {
                 if (!req.client || !req.client.clientId) {
                     return res.status(401).json({ message: 'Authentication required to confirm an order.' });
                 }
                 updateFields.confirmedBy = req.client.clientId;
-            } else {
-                updateFields.confirmedBy = null;
             }
         }
 
@@ -243,20 +254,19 @@ router.patch('/:orderId', authenticateClient, async (req, res) => {
 
         res.status(500).json({
             message: 'An unexpected server error occurred. Please check the error details.',
-            error: {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            }
+            error: { name: error.name, message: error.message, stack: error.stack }
         });
     }
 });
 
 
 // DELETE: Remove order and restore stock
-router.delete('/:orderId', async (req, res) => {
+router.delete('/:orderId', authenticateClient, async (req, res) => {
     try {
         const { orderId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res.status(400).json({ message: 'Invalid Order ID format.' });
+        }
         const order = await Order.findById(orderId);
 
         if (!order) return res.status(404).json({ message: 'Order not found.' });
@@ -264,7 +274,10 @@ router.delete('/:orderId', async (req, res) => {
         // Defensive check for products array
         if (order.products && Array.isArray(order.products)) {
             for (const item of order.products) {
-                await Product.findByIdAndUpdate(item.productId, { $inc: { quantity: item.quantity } });
+                // Ensure product ID exists before trying to update
+                if (item.productId) {
+                    await Product.findByIdAndUpdate(item.productId, { $inc: { quantity: item.quantity } });
+                }
             }
         }
 
@@ -272,9 +285,6 @@ router.delete('/:orderId', async (req, res) => {
         res.status(200).json({ message: 'Order deleted successfully and stock restored.' });
     } catch (error) {
         console.error('Delete order error:', error);
-        if (error.name === 'CastError' && error.path === '_id') {
-            return res.status(400).json({ message: `Invalid order ID format: ${req.params.orderId}` });
-        }
         res.status(500).json({
             message: 'An unexpected server error occurred. Please check the error details.',
             error: { name: error.name, message: error.message, stack: error.stack }
