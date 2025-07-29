@@ -82,6 +82,18 @@ router.post('/', async (req, res) => {
     }
 });
 
+// GET: Count of all orders
+router.get('/count', async (req, res) => {
+    try {
+        // Efficiently count the documents without fetching them all
+        const count = await Order.countDocuments();
+        res.status(200).json({ count });
+    } catch (error) {
+        console.error('Count orders error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
 // GET: All orders
 router.get('/', async (req, res) => {
     try {
@@ -165,8 +177,10 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
                 return res.status(400).json({ message: 'Invalid status. Allowed: ' + allowedStatuses.join(', ') });
             }
             order.status = status;
-            // *** FIX: Set the timestamp for the new status in the Map ***
-            order.statusTimestamps.set(status, new Date());
+            // NOTE: Ensure your Order model schema has a 'statusTimestamps' field of type Map.
+            if (order.statusTimestamps) {
+                order.statusTimestamps.set(status, new Date());
+            }
             hasUpdate = true;
 
             if (status === 'confirmed') {
