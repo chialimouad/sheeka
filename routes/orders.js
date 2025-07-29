@@ -1,7 +1,7 @@
-// routes/orderRoutes.js
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
+const mongoose = require('mongoose'); // FIX: Import mongoose
 dotenv.config(); // Load environment variables from .env file
 
 const router = express.Router();
@@ -327,6 +327,10 @@ router.patch('/:orderId', async (req, res) => {
             if (assignedTo === null || assignedTo === '') {
                 updateFields.assignedTo = null;
             } else {
+                // FIX: Validate the assignedTo ID before using it
+                if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
+                    return res.status(400).json({ message: 'Invalid assigned user ID format.' });
+                }
                 const user = await User.findById(assignedTo);
                 if (!user) {
                     return res.status(400).json({
@@ -343,21 +347,29 @@ router.patch('/:orderId', async (req, res) => {
             });
         }
 
+        // FIX: Update first, then find and populate for better stability.
         const updatedOrder = await Order.findByIdAndUpdate(
-                orderId, {
-                    $set: updateFields
-                }, {
-                    new: true,
-                    runValidators: true
-                }
-            )
-            .populate('products.productId')
-            .populate('confirmedBy', 'name email')
-            .populate('assignedTo', 'name email');
+            orderId, {
+                $set: updateFields
+            }, {
+                new: true,
+                runValidators: true
+            }
+        );
+        
+        if (!updatedOrder) {
+            return res.status(404).json({
+                message: 'Order not found.'
+            });
+        }
 
-        if (!updatedOrder) return res.status(404).json({
-            message: 'Order not found.'
-        });
+        // Now populate the successfully updated document
+        await updatedOrder.populate([
+            { path: 'products.productId' },
+            { path: 'confirmedBy', select: 'name email' },
+            { path: 'assignedTo', select: 'name email' }
+        ]);
+
         res.status(200).json({
             message: 'Order updated successfully',
             order: updatedOrder
