@@ -47,15 +47,17 @@ connectDB();
 // ========================
 // 🧩 Import Route Modules
 // ========================
+// Note: Ensure the file paths in require() match your actual file names.
 const authRoutes = require('./routes/authRoutes');
-const orderRoutes = require('./routes/orders');
+// CORRECTED: The path now correctly points to 'orderRoutes.js'
+const orderRoutes = require('./routes/orderRoutes'); 
 const authroutesuser = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emails');
-const pixelRoutes = require('./routes/pixel'); // ✅ Pixel routes
-const ordercount = require('./routes/ordecount'); // ✅ Pixel route
-const visitor = require('./routes/visit'); // ✅ Pixel route
+const pixelRoutes = require('./routes/pixel'); 
+const ordercount = require('./routes/ordecount'); 
+const visitor = require('./routes/visit'); 
 
 // ========================
 // 🚏 Mount Routes
@@ -63,12 +65,13 @@ const visitor = require('./routes/visit'); // ✅ Pixel route
 app.use('/auth', authRoutes);
 app.use('/authuser', authroutesuser);
 app.use('/products', productRoutes);
-app.use('/orders', orderRoutes);
-app.use('/api/site-config', siteConfigRoutes); // This correctly mounts all routes from routes/site.js
+// This will now work correctly because orderRoutes is loaded properly.
+app.use('/orders', orderRoutes); 
+app.use('/api/site-config', siteConfigRoutes);
 app.use('/api/emails', emailRoutes);
-app.use('/site', pixelRoutes); // ✅ Mount pixel endpoints at /api/pixels
-app.use('/countorder', ordercount); // ✅ Mount pixel endpoints at /api/pixels
-app.use('/visitors', visitor); // ✅ Mount pixel endpoints at /api/pixels
+app.use('/site', pixelRoutes); 
+app.use('/countorder', ordercount); 
+app.use('/visitors', visitor); 
 
 // ========================
 // ❌ 404 Not Found Handler
