@@ -50,7 +50,7 @@ connectDB();
 // Note: Ensure the file paths in require() match your actual file names.
 const authRoutes = require('./routes/authRoutes');
 // CORRECTED: The path now correctly points to 'orderRoutes.js'
-const orderRoutes = require('./routes/orderRoutes'); 
+const orderRoutes = require('./routes/orders'); 
 const authroutesuser = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const siteConfigRoutes = require('./routes/site');
