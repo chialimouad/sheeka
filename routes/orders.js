@@ -1,4 +1,5 @@
-// routes/orderRoutes.js
+// IMPORTANT: Save this file as 'routes/orders.js' to match your server.js configuration.
+// routes/orders.js
 
 // Required Modules
 const express = require('express');
@@ -32,10 +33,12 @@ const authenticateClient = (req, res, next) => {
 // POST: Create a new order
 router.post('/', async (req, res) => {
     try {
-        const { fullName, phoneNumber, wilaya, commune, products, status, notes } = req.body;
+        // CORRECTED: Added 'address' to the destructuring
+        const { fullName, phoneNumber, wilaya, commune, address, products, status, notes } = req.body;
 
-        if (!fullName || !phoneNumber || !wilaya || !commune || !products || products.length === 0) {
-            return res.status(400).json({ message: 'Missing required fields.' });
+        // CORRECTED: Added 'address' to the validation check
+        if (!fullName || !phoneNumber || !wilaya || !commune || !address || !products || products.length === 0) {
+            return res.status(400).json({ message: 'Missing required fields, including address.' });
         }
 
         const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
@@ -63,8 +66,9 @@ router.post('/', async (req, res) => {
 
         const totalOrdersCount = products.length;
 
+        // CORRECTED: Added 'address' to the new Order object
         const newOrder = new Order({
-            fullName, phoneNumber, wilaya, commune, products, totalOrdersCount,
+            fullName, phoneNumber, wilaya, commune, address, products, totalOrdersCount,
             status: status || 'pending',
             notes: notes || ''
         });
@@ -77,7 +81,6 @@ router.post('/', async (req, res) => {
             const messages = Object.values(error.errors).map(err => err.message);
             return res.status(400).json({ message: 'Order validation failed.', errors: messages });
         }
-        // Enhanced debugging response
         res.status(500).json({
             message: 'An unexpected server error occurred. Please check the error details.',
             error: { name: error.name, message: error.message, stack: error.stack }
@@ -93,11 +96,11 @@ router.get('/', async (req, res) => {
             .populate('confirmedBy', 'name email')
             .populate('assignedTo', 'name email');
 
-        if (!orders.length) return res.status(200).json([]); // Return empty array instead of 404
+        if (!orders.length) return res.status(200).json([]);
 
         const formattedOrders = orders.map(order => ({
             ...order._doc,
-            products: order.products.map(p => p.productId ? {
+            products: order.products && Array.isArray(order.products) ? order.products.map(p => p.productId ? {
                 _id: p.productId._id,
                 name: p.productId.name,
                 price: p.productId.price,
@@ -105,7 +108,7 @@ router.get('/', async (req, res) => {
                 quantity: p.quantity,
                 color: p.color,
                 size: p.size
-            } : null).filter(p => p !== null),
+            } : null).filter(p => p !== null) : [],
             confirmedBy: order.confirmedBy ? { _id: order.confirmedBy._id, name: order.confirmedBy.name, email: order.confirmedBy.email } : null,
             assignedTo: order.assignedTo ? { _id: order.assignedTo._id, name: order.assignedTo.name, email: order.assignedTo.email } : null
         }));
@@ -113,7 +116,6 @@ router.get('/', async (req, res) => {
         res.status(200).json(formattedOrders);
     } catch (error) {
         console.error('Fetch orders error:', error);
-        // Enhanced debugging response
         res.status(500).json({
             message: 'An unexpected server error occurred. Please check the error details.',
             error: { name: error.name, message: error.message, stack: error.stack }
@@ -134,7 +136,7 @@ router.get('/:orderId', async (req, res) => {
         
         const formattedOrder = {
             ...order._doc,
-            products: order.products.map(p => p.productId ? {
+            products: order.products && Array.isArray(order.products) ? order.products.map(p => p.productId ? {
                 _id: p.productId._id,
                 name: p.productId.name,
                 price: p.productId.price,
@@ -142,7 +144,7 @@ router.get('/:orderId', async (req, res) => {
                 quantity: p.quantity,
                 color: p.color,
                 size: p.size
-            } : null).filter(p => p !== null),
+            } : null).filter(p => p !== null) : [],
             confirmedBy: order.confirmedBy ? { _id: order.confirmedBy._id, name: order.confirmedBy.name, email: order.confirmedBy.email } : null,
             assignedTo: order.assignedTo ? { _id: order.assignedTo._id, name: order.assignedTo.name, email: order.assignedTo.email } : null
         };
@@ -153,7 +155,6 @@ router.get('/:orderId', async (req, res) => {
         if (error.name === 'CastError' && error.path === '_id') {
             return res.status(400).json({ message: `Invalid order ID format: ${req.params.orderId}` });
         }
-        // Enhanced debugging response
         res.status(500).json({
             message: 'An unexpected server error occurred. Please check the error details.',
             error: { name: error.name, message: error.message, stack: error.stack }
@@ -165,13 +166,16 @@ router.get('/:orderId', async (req, res) => {
 router.patch('/:orderId', authenticateClient, async (req, res) => {
     try {
         const { orderId } = req.params;
-        const { fullName, phoneNumber, wilaya, commune, notes, assignedTo, status } = req.body;
+        // CORRECTED: Added 'address' to the destructuring
+        const { fullName, phoneNumber, wilaya, commune, address, notes, assignedTo, status } = req.body;
         const updateFields = {};
 
         // Conditionally add fields to updateFields if they are provided
         if (fullName !== undefined) updateFields.fullName = fullName;
         if (wilaya !== undefined) updateFields.wilaya = wilaya;
         if (commune !== undefined) updateFields.commune = commune;
+        // CORRECTED: Added 'address' to the update logic
+        if (address !== undefined) updateFields.address = address;
         if (notes !== undefined) updateFields.notes = notes;
 
         if (phoneNumber !== undefined) {
@@ -227,26 +231,22 @@ router.patch('/:orderId', authenticateClient, async (req, res) => {
     } catch (error) {
         console.error('Update order error:', error);
 
-        // Handle Mongoose CastError for invalid ObjectId formats
         if (error.name === 'CastError') {
             const errorMessage = `Invalid ID format for field '${error.path}'. Received value: '${error.value}'`;
             return res.status(400).json({ message: errorMessage });
         }
 
-        // Handle Mongoose ValidationError for schema violations
         if (error.name === 'ValidationError') {
             const messages = Object.values(error.errors).map(err => err.message);
             return res.status(400).json({ message: 'Order validation failed.', errors: messages });
         }
 
-        // **ENHANCED DEBUGGING RESPONSE**
-        // For any other error, send back more details to help diagnose the problem.
         res.status(500).json({
             message: 'An unexpected server error occurred. Please check the error details.',
             error: {
                 name: error.name,
                 message: error.message,
-                stack: error.stack // For debugging purposes
+                stack: error.stack
             }
         });
     }
@@ -261,8 +261,11 @@ router.delete('/:orderId', async (req, res) => {
 
         if (!order) return res.status(404).json({ message: 'Order not found.' });
 
-        for (const item of order.products) {
-            await Product.findByIdAndUpdate(item.productId, { $inc: { quantity: item.quantity } });
+        // Defensive check for products array
+        if (order.products && Array.isArray(order.products)) {
+            for (const item of order.products) {
+                await Product.findByIdAndUpdate(item.productId, { $inc: { quantity: item.quantity } });
+            }
         }
 
         await Order.findByIdAndDelete(orderId);
@@ -272,7 +275,6 @@ router.delete('/:orderId', async (req, res) => {
         if (error.name === 'CastError' && error.path === '_id') {
             return res.status(400).json({ message: `Invalid order ID format: ${req.params.orderId}` });
         }
-        // Enhanced debugging response
         res.status(500).json({
             message: 'An unexpected server error occurred. Please check the error details.',
             error: { name: error.name, message: error.message, stack: error.stack }
