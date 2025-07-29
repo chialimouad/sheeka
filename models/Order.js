@@ -19,28 +19,26 @@ const orderSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    // Address field is optional
     address: {
         type: String,
         required: false
     },
-    // This is the field for the custom barcode ID.
     barcodeId: {
         type: String,
         trim: true,
         default: null
     },
     products: [{
-        // Note: For simplicity on the frontend, you might send populated product names.
-        // If not, you'll need to adjust the frontend to handle just the ID.
         productId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Product',
             required: true
         },
+        // Denormalizing name for easier display and historical record
         name: {
-            type: String
-        }, // Denormalizing name for easier display
+            type: String,
+            required: true
+        },
         quantity: {
             type: Number,
             required: true
@@ -54,7 +52,8 @@ const orderSchema = new mongoose.Schema({
             required: true
         }
     }],
-    totalOrdersCount: {
+    // RENAMED for clarity: This now correctly represents the total number of items.
+    totalItemsCount: {
         type: Number,
         default: 0
     },
@@ -63,7 +62,6 @@ const orderSchema = new mongoose.Schema({
         enum: ['pending', 'confirmed', 'cancelled', 'tentative', 'dispatched', 'delivered', 'returned'],
         default: 'pending'
     },
-    // This field will store the history of status changes.
     statusTimestamps: {
         type: Map,
         of: Date,
@@ -90,12 +88,12 @@ const orderSchema = new mongoose.Schema({
 });
 
 // Mongoose middleware to automatically set the timestamp for the initial 'pending' status.
-// This will run before a new document is saved.
 orderSchema.pre('save', function(next) {
-    // 'this' refers to the document being saved.
-    // isNew is a Mongoose boolean property that is true if the document is new.
+    // If the document is new, set the 'pending' timestamp.
     if (this.isNew) {
-        // Set the timestamp for the 'pending' status to the current time.
+        if (!this.statusTimestamps) {
+            this.statusTimestamps = new Map();
+        }
         this.statusTimestamps.set('pending', new Date());
     }
     next(); // Continue with the save operation.
