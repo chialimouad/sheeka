@@ -380,12 +380,11 @@ router.patch('/:orderId', async (req, res) => {
 
         const savedOrder = await order.save(); // .save() will trigger validation
 
-        // Populate the fields for the response
-        const populatedOrder = await savedOrder.populate([
-            { path: 'products.productId' },
-            { path: 'confirmedBy', select: 'name email' },
-            { path: 'assignedTo', select: 'name email' }
-        ]);
+        // FIX: Re-fetch and populate the document after saving for better reliability.
+        const populatedOrder = await Order.findById(savedOrder._id)
+            .populate('products.productId')
+            .populate('confirmedBy', 'name email')
+            .populate('assignedTo', 'name email');
 
         res.status(200).json({
             message: 'Order updated successfully',
