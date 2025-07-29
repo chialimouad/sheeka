@@ -177,10 +177,12 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
                 return res.status(400).json({ message: 'Invalid status. Allowed: ' + allowedStatuses.join(', ') });
             }
             order.status = status;
-            // NOTE: Ensure your Order model schema has a 'statusTimestamps' field of type Map.
-            if (order.statusTimestamps) {
-                order.statusTimestamps.set(status, new Date());
+            
+            // FIX: Make timestamp update more robust by initializing the Map if it doesn't exist.
+            if (!order.statusTimestamps) {
+                order.statusTimestamps = new Map();
             }
+            order.statusTimestamps.set(status, new Date());
             hasUpdate = true;
 
             if (status === 'confirmed') {
