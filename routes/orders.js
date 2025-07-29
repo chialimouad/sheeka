@@ -1,18 +1,21 @@
 // routes/orderRoutes.js
+
 // Required Modules
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose'); // Import Mongoose
 const dotenv = require('dotenv');
 dotenv.config(); // Load environment variables from .env file
 
 const router = express.Router();
 
 // Import Mongoose Models (ensure these paths are correct relative to your project structure)
-const Order = require('../models/Order'); // Corrected import path for Order model
+const Order = require('../models/Order');
 const Product = require('../models/Product');
 const User = require('../models/User');
 
 // Middleware to extract client ID from JWT token
+// This middleware is now more robust and handles cases where no token is provided.
 const authenticateClient = (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -23,6 +26,7 @@ const authenticateClient = (req, res, next) => {
             req.client = { clientId: decoded.id }; // Attach client ID to the request object
         } catch (err) {
             // If token is invalid or expired, send 401 Unauthorized
+            // It's important to stop execution here if the token is bad.
             return res.status(401).json({ message: 'Invalid or expired token' });
         }
     }
@@ -49,13 +53,11 @@ router.post('/', async (req, res) => {
         // Iterate through products to validate and update stock
         for (const item of products) {
             const { productId, quantity, color, size } = item;
-            // Validate product item fields
             if (!productId || !quantity || !color || !size) {
                 return res.status(400).json({ message: 'Each product must include ID, quantity, color, and size.' });
             }
 
             const product = await Product.findById(productId);
-            // Check if product exists and if there's sufficient stock
             if (!product) {
                 return res.status(400).json({ message: `Product with ID ${productId} not found.` });
             }
@@ -65,12 +67,10 @@ router.post('/', async (req, res) => {
 
             // Decrease product quantity in stock
             product.quantity -= quantity;
-            await product.save(); // Save updated product quantity
+            await product.save();
         }
 
-        // Calculate totalOrdersCount based on the number of distinct products in the order
-        // If totalOrdersCount should be the sum of all product quantities, change products.length to
-        // products.reduce((sum, item) => sum + item.quantity, 0)
+        // Calculate totalOrdersCount based on the number of distinct products
         const totalOrdersCount = products.length;
 
         // Create a new Order instance
@@ -80,12 +80,12 @@ router.post('/', async (req, res) => {
             wilaya,
             commune,
             products,
-            totalOrdersCount, // Assign the calculated count
-            status: status || 'pending', // Default status to 'pending' if not provided
-            notes: notes || '' // Default notes to empty string if not provided
+            totalOrdersCount,
+            status: status || 'pending',
+            notes: notes || ''
         });
 
-        await newOrder.save(); // Save the new order to the database
+        await newOrder.save();
         res.status(201).json({ message: 'Order created successfully', order: newOrder });
     } catch (error) {
         console.error('Create order error:', error);
@@ -96,33 +96,31 @@ router.post('/', async (req, res) => {
 // GET: All orders
 router.get('/', async (req, res) => {
     try {
-        // Find all orders and populate product details, confirmedBy, and assignedTo user details
         const orders = await Order.find()
-            .populate('products.productId') // Populate details of products in the order
-            .populate('confirmedBy', 'name email') // Populate name and email of the user who confirmed it
-            .populate('assignedTo', 'name email'); // Populate name and email of the user it's assigned to
+            .populate('products.productId')
+            .populate('confirmedBy', 'name email')
+            .populate('assignedTo', 'name email');
 
         if (!orders.length) return res.status(404).json({ message: 'No orders found.' });
 
-        // Format the output to include full image URLs and specific user fields
+        // Format the output to include full image URLs
         const formattedOrders = orders.map(order => ({
-            ...order._doc, // Spread existing order document fields, which will now include totalOrdersCount
-            products: order.products.map(p => p.productId ? { // Map products to include necessary details
+            ...order._doc,
+            products: order.products.map(p => p.productId ? {
                 _id: p.productId._id,
                 name: p.productId.name,
                 price: p.productId.price,
-                // Construct full image URLs, handle cases where images might be missing
                 images: (p.productId.images || []).map(img => `https://sheeka.onrender.com${img}`),
                 quantity: p.quantity,
                 color: p.color,
                 size: p.size
-            } : null), // Return null or handle if productId somehow isn't populated
-            confirmedBy: order.confirmedBy ? { // Format confirmedBy user details
+            } : null).filter(p => p !== null), // Filter out any null products
+            confirmedBy: order.confirmedBy ? {
                 _id: order.confirmedBy._id,
                 name: order.confirmedBy.name,
                 email: order.confirmedBy.email
             } : null,
-            assignedTo: order.assignedTo ? { // Format assignedTo user details
+            assignedTo: order.assignedTo ? {
                 _id: order.assignedTo._id,
                 name: order.assignedTo.name,
                 email: order.assignedTo.email
@@ -139,7 +137,6 @@ router.get('/', async (req, res) => {
 // GET: Single order by ID
 router.get('/:orderId', async (req, res) => {
     try {
-        // Find a single order by ID and populate related fields
         const order = await Order.findById(req.params.orderId)
             .populate('products.productId')
             .populate('confirmedBy', 'name email')
@@ -147,10 +144,9 @@ router.get('/:orderId', async (req, res) => {
 
         if (!order) return res.status(404).json({ message: 'Order not found.' });
 
-        // Format the output similar to the GET all orders route
         const formattedOrder = {
-            ...order._doc, // Spread existing order document fields, which will now include totalOrdersCount
-            products: order.products.map(p => ({
+            ...order._doc,
+            products: order.products.map(p => p.productId ? {
                 _id: p.productId._id,
                 name: p.productId.name,
                 price: p.productId.price,
@@ -158,7 +154,7 @@ router.get('/:orderId', async (req, res) => {
                 quantity: p.quantity,
                 color: p.color,
                 size: p.size
-            })),
+            } : null).filter(p => p !== null),
             confirmedBy: order.confirmedBy ? {
                 _id: order.confirmedBy._id,
                 name: order.confirmedBy.name,
@@ -174,76 +170,29 @@ router.get('/:orderId', async (req, res) => {
         res.status(200).json(formattedOrder);
     } catch (error) {
         console.error('Fetch order error:', error);
+        // Handle CastError specifically for invalid ObjectId formats
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'Invalid order ID format.' });
+        }
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
 
-// PATCH: Update order status and notes
-router.patch('/:orderId/status', authenticateClient, async (req, res) => {
+// PATCH: Unified endpoint to update any part of an order.
+// This single route replaces the two separate PATCH routes.
+router.patch('/:orderId', authenticateClient, async (req, res) => {
     try {
         const { orderId } = req.params;
-        const { status, notes } = req.body;
-
+        const { fullName, phoneNumber, wilaya, commune, notes, assignedTo, status } = req.body;
         const updateFields = {};
 
-        // If status is provided, validate it
-        if (status) {
-            const allowedStatuses = ['pending', 'confirmed', 'tentative', 'cancelled'];
-            if (!allowedStatuses.includes(status)) {
-                return res.status(400).json({ message: 'Invalid status. Allowed: ' + allowedStatuses.join(', ') });
-            }
-            updateFields.status = status;
-
-            // If status is 'confirmed', set confirmedBy to the authenticated client's ID
-            if (status === 'confirmed') {
-                if (!req.client || !req.client.clientId) {
-                    return res.status(401).json({ message: 'Unauthorized. Agent must be logged in to confirm order.' });
-                }
-                updateFields.confirmedBy = req.client.clientId;
-            } else {
-                // If status is not 'confirmed', clear confirmedBy
-                updateFields.confirmedBy = null;
-            }
-        }
-
-        // If notes is provided, update it
+        // Conditionally add fields to updateFields if they are provided
+        if (fullName !== undefined) updateFields.fullName = fullName;
+        if (wilaya !== undefined) updateFields.wilaya = wilaya;
+        if (commune !== undefined) updateFields.commune = commune;
         if (notes !== undefined) updateFields.notes = notes;
 
-        // If no valid fields are provided for update
-        if (!Object.keys(updateFields).length) {
-            return res.status(400).json({ message: 'No fields provided to update status or notes.' });
-        }
-
-        // Find and update the order
-        const updatedOrder = await Order.findByIdAndUpdate(
-            orderId,
-            { $set: updateFields },
-            { new: true, runValidators: true } // Return the updated document and run schema validators
-        )
-            .populate('products.productId')
-            .populate('confirmedBy', 'name email')
-            .populate('assignedTo', 'name email');
-
-        if (!updatedOrder) {
-            return res.status(404).json({ message: 'Order not found.' });
-        }
-
-        res.status(200).json({ message: 'Order status updated successfully', order: updatedOrder });
-    } catch (error) {
-        console.error('Error updating order status:', error);
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-});
-
-// PATCH: General order update for other fields (fullName, phoneNumber, wilaya, commune, notes, assignedTo)
-router.patch('/:orderId', async (req, res) => {
-    try {
-        const { orderId } = req.params;
-        const { fullName, phoneNumber, wilaya, commune, notes, assignedTo } = req.body;
-        const updateFields = {};
-
-        // Conditionally add fields to updateFields if they are provided in the request body
-        if (fullName !== undefined) updateFields.fullName = fullName;
+        // Handle phone number update with validation
         if (phoneNumber !== undefined) {
             const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
             if (!phoneRegex.test(phoneNumber)) {
@@ -251,52 +200,78 @@ router.patch('/:orderId', async (req, res) => {
             }
             updateFields.phoneNumber = phoneNumber;
         }
-        if (wilaya !== undefined) updateFields.wilaya = wilaya;
-        if (commune !== undefined) updateFields.commune = commune;
-        if (notes !== undefined) updateFields.notes = notes;
+        
+        // Handle status update
+        if (status) {
+            const allowedStatuses = ['pending', 'confirmed', 'tentative', 'cancelled'];
+            if (!allowedStatuses.includes(status)) {
+                return res.status(400).json({ message: `Invalid status. Allowed: ${allowedStatuses.join(', ')}` });
+            }
+            updateFields.status = status;
 
-        // Note: totalOrdersCount is generally not updated via a general PATCH,
-        // as it's typically derived from the products array. If you need to
-        // update it, you would need to adjust the products array directly.
+            // If status is 'confirmed', set confirmedBy to the authenticated user.
+            if (status === 'confirmed') {
+                if (!req.client || !req.client.clientId) {
+                    return res.status(401).json({ message: 'Authentication required to confirm an order.' });
+                }
+                updateFields.confirmedBy = req.client.clientId;
+            } else {
+                // If status is changed to anything other than 'confirmed', clear who confirmed it.
+                updateFields.confirmedBy = null;
+            }
+        }
 
+        // Handle user assignment with validation
         if (assignedTo !== undefined) {
+            // If assignedTo is null or an empty string, un-assign the user.
             if (assignedTo === null || assignedTo === '') {
-                // If assignedTo is explicitly set to null or empty, clear the assignment
                 updateFields.assignedTo = null;
             } else {
-                // Validate if the assigned user exists
+                // **FIX**: Check if 'assignedTo' is a valid MongoDB ObjectId before querying.
+                if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
+                    return res.status(400).json({ message: 'Invalid user ID format for assignment.' });
+                }
                 const user = await User.findById(assignedTo);
                 if (!user) {
-                    return res.status(400).json({ message: 'Assigned user not found.' });
+                    return res.status(404).json({ message: 'Assigned user not found.' });
                 }
                 updateFields.assignedTo = assignedTo;
             }
         }
 
-        // If no valid fields are provided for update
-        if (!Object.keys(updateFields).length) {
+        // Check if there's anything to update
+        if (Object.keys(updateFields).length === 0) {
             return res.status(400).json({ message: 'No valid fields provided for update.' });
         }
 
-        // Find and update the order with the provided fields
+        // Find and update the order
         const updatedOrder = await Order.findByIdAndUpdate(
             orderId,
             { $set: updateFields },
-            { new: true, runValidators: true } // Return the updated document and run schema validators
+            { new: true, runValidators: true }
         )
-            .populate('products.productId')
-            .populate('confirmedBy', 'name email')
-            .populate('assignedTo', 'name email');
+        .populate('products.productId')
+        .populate('confirmedBy', 'name email')
+        .populate('assignedTo', 'name email');
 
-        if (!updatedOrder) return res.status(404).json({ message: 'Order not found.' });
+        if (!updatedOrder) {
+            return res.status(404).json({ message: 'Order not found.' });
+        }
+
         res.status(200).json({ message: 'Order updated successfully', order: updatedOrder });
+
     } catch (error) {
         console.error('Update order error:', error);
+        // Handle CastError specifically for invalid ObjectId formats
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'Invalid order ID format.' });
+        }
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
 
-// DELETE: Remove order
+
+// DELETE: Remove order and restore stock
 router.delete('/:orderId', async (req, res) => {
     try {
         const { orderId } = req.params;
@@ -306,20 +281,20 @@ router.delete('/:orderId', async (req, res) => {
 
         // Before deleting, return product quantities to stock
         for (const item of order.products) {
-            const product = await Product.findById(item.productId);
-            if (product) {
-                product.quantity += item.quantity; // Add quantity back to stock
-                await product.save(); // Save updated product quantity
-            }
+            // Use $inc to safely increment the product quantity
+            await Product.findByIdAndUpdate(item.productId, { $inc: { quantity: item.quantity } });
         }
 
-        await Order.findByIdAndDelete(orderId); // Delete the order
+        await Order.findByIdAndDelete(orderId);
         res.status(200).json({ message: 'Order deleted successfully and stock restored.' });
     } catch (error) {
         console.error('Delete order error:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'Invalid order ID format.' });
+        }
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
 
-// Export the router for use in your main Express application
+// Export the router
 module.exports = router;
