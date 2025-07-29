@@ -302,9 +302,13 @@ router.patch('/:orderId', async (req, res) => {
             return res.status(400).json({ message: 'Invalid order ID format.' });
         }
 
-        // FIX: Add check for request body to prevent crash if body is not parsed (e.g., missing Content-Type header)
         if (!req.body) {
             return res.status(400).json({ message: 'Request body is missing or invalid. Ensure `Content-Type` header is set to `application/json`.' });
+        }
+
+        const order = await Order.findById(orderId);
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found.' });
         }
 
         const {
@@ -317,72 +321,79 @@ router.patch('/:orderId', async (req, res) => {
             assignedTo,
             barcodeId
         } = req.body;
-        const updateFields = {};
 
-        if (fullName !== undefined) updateFields.fullName = fullName;
+        let hasUpdate = false;
+
+        // Update fields if they are provided in the request body
+        if (fullName !== undefined) {
+            order.fullName = fullName;
+            hasUpdate = true;
+        }
         if (phoneNumber !== undefined) {
             const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
             if (!phoneRegex.test(phoneNumber)) {
-                return res.status(400).json({
-                    message: 'Invalid phone number format.'
-                });
+                return res.status(400).json({ message: 'Invalid phone number format.' });
             }
-            updateFields.phoneNumber = phoneNumber;
+            order.phoneNumber = phoneNumber;
+            hasUpdate = true;
         }
-        if (wilaya !== undefined) updateFields.wilaya = wilaya;
-        if (commune !== undefined) updateFields.commune = commune;
-        if (address !== undefined) updateFields.address = address;
-        if (notes !== undefined) updateFields.notes = notes;
-        if (barcodeId !== undefined) updateFields.barcodeId = barcodeId; // Handle barcodeId update
+        if (wilaya !== undefined) {
+            order.wilaya = wilaya;
+            hasUpdate = true;
+        }
+        if (commune !== undefined) {
+            order.commune = commune;
+            hasUpdate = true;
+        }
+        if (address !== undefined) {
+            order.address = address;
+            hasUpdate = true;
+        }
+        if (notes !== undefined) {
+            order.notes = notes;
+            hasUpdate = true;
+        }
+        if (barcodeId !== undefined) {
+            order.barcodeId = barcodeId;
+            hasUpdate = true;
+        }
 
         if (assignedTo !== undefined) {
             if (assignedTo === null || assignedTo === '') {
-                updateFields.assignedTo = null;
+                order.assignedTo = null;
             } else {
                 if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
                     return res.status(400).json({ message: 'Invalid assigned user ID format.' });
                 }
                 const user = await User.findById(assignedTo);
                 if (!user) {
-                    return res.status(400).json({
-                        message: 'Assigned user not found.'
-                    });
+                    return res.status(400).json({ message: 'Assigned user not found.' });
                 }
-                updateFields.assignedTo = assignedTo;
+                order.assignedTo = assignedTo;
             }
+            hasUpdate = true;
         }
 
-        if (Object.keys(updateFields).length === 0) {
-            return res.status(400).json({
-                message: 'No valid fields provided for update.'
-            });
+        if (!hasUpdate) {
+            return res.status(400).json({ message: 'No valid fields provided for update.' });
         }
 
-        // FIX: Chained .populate() directly to the findByIdAndUpdate query for better reliability.
-        const updatedOrder = await Order.findByIdAndUpdate(
-            orderId, {
-                $set: updateFields
-            }, {
-                new: true,
-                runValidators: true
-            }
-        ).populate([
+        const savedOrder = await order.save(); // .save() will trigger validation
+
+        // Populate the fields for the response
+        const populatedOrder = await savedOrder.populate([
             { path: 'products.productId' },
             { path: 'confirmedBy', select: 'name email' },
             { path: 'assignedTo', select: 'name email' }
         ]);
-        
-        if (!updatedOrder) {
-            return res.status(404).json({
-                message: 'Order not found.'
-            });
-        }
 
         res.status(200).json({
             message: 'Order updated successfully',
-            order: updatedOrder
+            order: populatedOrder
         });
+
     } catch (error) {
+        // Log the full error for better debugging on the server
         console.error('Update order error:', error);
 
         if (error.name === 'ValidationError') {
@@ -393,6 +404,7 @@ router.patch('/:orderId', async (req, res) => {
             return res.status(400).json({ message: `Invalid ID format for field: ${error.path}` });
         }
 
+        // Generic server error for everything else
         res.status(500).json({
             message: 'Server error',
             error: error.message
