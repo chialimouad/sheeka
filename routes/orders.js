@@ -6,7 +6,7 @@ dotenv.config(); // Load environment variables from .env file
 
 const router = express.Router();
 
-// Import Mongoose Mode
+// Import Mongoose Models
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const User = require('../models/User');
@@ -292,9 +292,13 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
 // PATCH: General order update
 router.patch('/:orderId', async (req, res) => {
     try {
-        const {
-            orderId
-        } = req.params;
+        const { orderId } = req.params;
+
+        // FIX: Add validation for the orderId format to prevent CastError early
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res.status(400).json({ message: 'Invalid order ID format.' });
+        }
+
         const {
             fullName,
             phoneNumber,
@@ -347,7 +351,6 @@ router.patch('/:orderId', async (req, res) => {
             });
         }
 
-        // FIX: Update first, then find and populate for better stability.
         const updatedOrder = await Order.findByIdAndUpdate(
             orderId, {
                 $set: updateFields
@@ -376,6 +379,17 @@ router.patch('/:orderId', async (req, res) => {
         });
     } catch (error) {
         console.error('Update order error:', error);
+
+        // FIX: Add specific error handling for validation and casting errors
+        if (error.name === 'ValidationError') {
+            const messages = Object.values(error.errors).map(val => val.message);
+            return res.status(400).json({ message: `Validation failed: ${messages.join(', ')}` });
+        }
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: `Invalid ID format for field: ${error.path}` });
+        }
+
+        // Generic server error for everything else
         res.status(500).json({
             message: 'Server error',
             error: error.message
