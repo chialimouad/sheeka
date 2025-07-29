@@ -22,7 +22,8 @@ const authenticateClient = (req, res, next) => {
         const token = authHeader.split(' ')[1];
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mouadsecret');
-            req.client = { clientId: decoded.id };
+            // Attach the entire decoded user object to the request
+            req.client = decoded;
         } catch (err) {
             // If token is invalid, we don't block the request but clear the client info
             // The route itself will decide if authentication is mandatory for a specific action
@@ -171,43 +172,49 @@ router.patch('/:orderId', authenticateClient, async (req, res) => {
         }
 
         const { fullName, phoneNumber, wilaya, commune, address, notes, assignedTo, status } = req.body;
-        const updateFields = {};
+        
+        // Separate $set and $unset operations for a more robust update
+        const setUpdates = {};
+        const unsetUpdates = {};
 
-        // Conditionally add fields to updateFields if they are provided
-        if (fullName !== undefined) updateFields.fullName = fullName;
-        if (wilaya !== undefined) updateFields.wilaya = wilaya;
-        if (commune !== undefined) updateFields.commune = commune;
-        if (address !== undefined) updateFields.address = address;
-        if (notes !== undefined) updateFields.notes = notes;
+        // Conditionally add fields to the $set operation
+        if (fullName !== undefined) setUpdates.fullName = fullName;
+        if (wilaya !== undefined) setUpdates.wilaya = wilaya;
+        if (commune !== undefined) setUpdates.commune = commune;
+        if (address !== undefined) setUpdates.address = address;
+        if (notes !== undefined) setUpdates.notes = notes;
 
-        // **FIX 1: Add phone number validation on update**
+        // More robust phone number validation
         if (phoneNumber !== undefined) {
-            const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
-            if (!phoneRegex.test(phoneNumber)) {
-                return res.status(400).json({ message: 'Invalid Algerian phone number format.' });
-            }
-            updateFields.phoneNumber = phoneNumber;
+             if (phoneNumber === null || phoneNumber.toString().trim() === '') {
+                setUpdates.phoneNumber = ''; // Allow setting an empty phone number
+             } else {
+                const sanitizedPhone = phoneNumber.toString().replace(/[\s-()]/g, '');
+                const phoneRegex = /^(\+213|0)(5|6|7)\d{8}$/;
+                if (!phoneRegex.test(sanitizedPhone)) {
+                    return res.status(400).json({ message: `Invalid Algerian phone number format. You provided: "${phoneNumber}"` });
+                }
+                setUpdates.phoneNumber = sanitizedPhone;
+             }
         }
         
         if (status) {
-            updateFields.status = status;
-            
-            // **FIX 2: Update the status timestamp map**
-            // This uses dot notation to set a key in the Map.
-            // Your Order schema must have `statusTimestamps: { type: Map, of: Date, default: {} }`
-            updateFields[`statusTimestamps.${status}`] = new Date();
+            setUpdates.status = status;
+            setUpdates[`statusTimestamps.${status}`] = new Date();
 
             if (status === 'confirmed') {
-                if (!req.client || !req.client.clientId) {
+                if (!req.client || !req.client.id) {
                     return res.status(401).json({ message: 'Authentication required to confirm an order.' });
                 }
-                updateFields.confirmedBy = req.client.clientId;
+                setUpdates.confirmedBy = req.client.id;
             }
         }
 
+        // Handle agent assignment
         if (assignedTo !== undefined) {
             if (assignedTo === null || assignedTo === '') {
-                updateFields.assignedTo = null;
+                // If we want to remove the assignment, we $unset the field
+                unsetUpdates.assignedTo = ""; 
             } else {
                 if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
                     return res.status(400).json({ message: 'Invalid user ID format for assignment.' });
@@ -216,17 +223,27 @@ router.patch('/:orderId', authenticateClient, async (req, res) => {
                 if (!user) {
                     return res.status(404).json({ message: 'Assigned user not found.' });
                 }
-                updateFields.assignedTo = assignedTo;
+                setUpdates.assignedTo = assignedTo;
             }
         }
+        
+        // Construct the final update operation
+        const updateOperation = {};
+        if (Object.keys(setUpdates).length > 0) {
+            updateOperation.$set = setUpdates;
+        }
+        if (Object.keys(unsetUpdates).length > 0) {
+            updateOperation.$unset = unsetUpdates;
+        }
 
-        if (Object.keys(updateFields).length === 0) {
+
+        if (Object.keys(updateOperation).length === 0) {
             return res.status(400).json({ message: 'No valid fields provided for update.' });
         }
 
         const updatedOrder = await Order.findByIdAndUpdate(
             orderId,
-            { $set: updateFields },
+            updateOperation,
             { new: true, runValidators: true }
         )
         .populate('products.productId')
@@ -237,6 +254,7 @@ router.patch('/:orderId', authenticateClient, async (req, res) => {
             return res.status(404).json({ message: 'Order not found.' });
         }
 
+        // The frontend expects the response to be nested under an 'order' key
         res.status(200).json({ message: 'Order updated successfully', order: updatedOrder });
 
     } catch (error) {
