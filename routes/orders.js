@@ -32,6 +32,10 @@ const authenticateClient = (req, res, next) => {
 // POST: Create a new order
 router.post('/', async (req, res) => {
     try {
+        // FIX: Add check for request body to prevent crash if body is not parsed
+        if (!req.body) {
+            return res.status(400).json({ message: 'Request body is missing or invalid. Ensure `Content-Type` header is set to `application/json`.' });
+        }
         const {
             fullName,
             phoneNumber,
@@ -294,9 +298,13 @@ router.patch('/:orderId', async (req, res) => {
     try {
         const { orderId } = req.params;
 
-        // FIX: Add validation for the orderId format to prevent CastError early
         if (!mongoose.Types.ObjectId.isValid(orderId)) {
             return res.status(400).json({ message: 'Invalid order ID format.' });
+        }
+
+        // FIX: Add check for request body to prevent crash if body is not parsed (e.g., missing Content-Type header)
+        if (!req.body) {
+            return res.status(400).json({ message: 'Request body is missing or invalid. Ensure `Content-Type` header is set to `application/json`.' });
         }
 
         const {
@@ -331,7 +339,6 @@ router.patch('/:orderId', async (req, res) => {
             if (assignedTo === null || assignedTo === '') {
                 updateFields.assignedTo = null;
             } else {
-                // FIX: Validate the assignedTo ID before using it
                 if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
                     return res.status(400).json({ message: 'Invalid assigned user ID format.' });
                 }
@@ -351,6 +358,7 @@ router.patch('/:orderId', async (req, res) => {
             });
         }
 
+        // FIX: Chained .populate() directly to the findByIdAndUpdate query for better reliability.
         const updatedOrder = await Order.findByIdAndUpdate(
             orderId, {
                 $set: updateFields
@@ -358,20 +366,17 @@ router.patch('/:orderId', async (req, res) => {
                 new: true,
                 runValidators: true
             }
-        );
+        ).populate([
+            { path: 'products.productId' },
+            { path: 'confirmedBy', select: 'name email' },
+            { path: 'assignedTo', select: 'name email' }
+        ]);
         
         if (!updatedOrder) {
             return res.status(404).json({
                 message: 'Order not found.'
             });
         }
-
-        // Now populate the successfully updated document
-        await updatedOrder.populate([
-            { path: 'products.productId' },
-            { path: 'confirmedBy', select: 'name email' },
-            { path: 'assignedTo', select: 'name email' }
-        ]);
 
         res.status(200).json({
             message: 'Order updated successfully',
@@ -380,7 +385,6 @@ router.patch('/:orderId', async (req, res) => {
     } catch (error) {
         console.error('Update order error:', error);
 
-        // FIX: Add specific error handling for validation and casting errors
         if (error.name === 'ValidationError') {
             const messages = Object.values(error.errors).map(val => val.message);
             return res.status(400).json({ message: `Validation failed: ${messages.join(', ')}` });
@@ -389,7 +393,6 @@ router.patch('/:orderId', async (req, res) => {
             return res.status(400).json({ message: `Invalid ID format for field: ${error.path}` });
         }
 
-        // Generic server error for everything else
         res.status(500).json({
             message: 'Server error',
             error: error.message
