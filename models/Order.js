@@ -18,12 +18,8 @@ const orderSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  address: {
-    type: String,
-    required: [true, 'Address is required.']
-  },
-  products: {
-    type: [{
+  products: [
+    {
       productId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Product',
@@ -41,16 +37,15 @@ const orderSchema = new mongoose.Schema({
         type: String,
         required: true
       }
-    }],
-    default: [] // Ensures products is always an array
-  },
+    }
+  ],
   totalOrdersCount: {
     type: Number,
     default: 0
   },
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'cancelled', 'tentative', 'dispatched', 'delivered', 'returned'],
+    enum: ['pending', 'confirmed', 'cancelled', 'tentative'],
     default: 'pending'
   },
   confirmedBy: {
@@ -67,34 +62,12 @@ const orderSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  // NEW: Field to track when each status was set.
-  statusTimestamps: {
-    type: Map,
-    of: Date,
-    default: {}
-  },
   createdAt: {
     type: Date,
     default: Date.now
   }
-}, { timestamps: true }); // Adds createdAt and updatedAt automatically
-
-// NEW: Mongoose hook to automatically update status timestamps before saving.
-orderSchema.pre('save', function(next) {
-  // If the document is new, set the initial status timestamp.
-  if (this.isNew) {
-    this.statusTimestamps.set(this.status, new Date());
-  }
-  
-  // If the status has been modified, record the timestamp for the new status.
-  if (this.isModified('status')) {
-    this.statusTimestamps.set(this.status, new Date());
-  }
-  
-  next();
 });
-
 
 const Order = mongoose.model('Order', orderSchema);
 
-module.exports = Order;
+module.exports = Order; // Export the updated Order model
