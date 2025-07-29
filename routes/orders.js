@@ -19,11 +19,14 @@ const authenticateClient = (req, res, next) => {
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mouadsecret');
             req.client = {
-                clientId: decoded.id
+                clientId: decoded.id,
+                role: decoded.role // Also include role for more granular checks if needed
             };
         } catch (err) {
-            // If the token is invalid, we don't block the request,
-            // but subsequent logic will handle the lack of a client ID.
+            // If the token is invalid, we can choose to send an error or let it pass
+            // For protected routes, it's better to send an error.
+            // But for now, we'll keep the original logic and let the route handler decide.
+            console.error("JWT Verification Error:", err.message);
         }
     }
     next();
@@ -206,21 +209,20 @@ router.get('/:orderId', async (req, res) => {
 });
 
 // PATCH: Update order status and notes
+// This route is now properly authenticated by the middleware.
 router.patch('/:orderId/status', authenticateClient, async (req, res) => {
     try {
-        const {
-            orderId
-        } = req.params;
-        const {
-            status,
-            notes
-        } = req.body;
+        const { orderId } = req.params;
+        const { status, notes } = req.body;
+
+        // Security check: Ensure a client is authenticated
+        if (!req.client || !req.client.clientId) {
+            return res.status(401).json({ message: 'Unauthorized. You must be logged in to perform this action.' });
+        }
 
         const order = await Order.findById(orderId);
         if (!order) {
-            return res.status(404).json({
-                message: 'Order not found.'
-            });
+            return res.status(404).json({ message: 'Order not found.' });
         }
 
         let hasUpdate = false;
@@ -228,13 +230,10 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
         if (status) {
             const allowedStatuses = ['pending', 'confirmed', 'tentative', 'cancelled', 'dispatched', 'delivered', 'returned'];
             if (!allowedStatuses.includes(status)) {
-                return res.status(400).json({
-                    message: 'Invalid status. Allowed: ' + allowedStatuses.join(', ')
-                });
+                return res.status(400).json({ message: 'Invalid status. Allowed: ' + allowedStatuses.join(', ') });
             }
             order.status = status;
 
-            // FIX: Make timestamp update more robust by initializing the Map if it doesn't exist.
             if (!order.statusTimestamps) {
                 order.statusTimestamps = new Map();
             }
@@ -242,11 +241,6 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
             hasUpdate = true;
 
             if (status === 'confirmed') {
-                if (!req.client || !req.client.clientId) {
-                    return res.status(401).json({
-                        message: 'Unauthorized. Agent must be logged in to confirm order.'
-                    });
-                }
                 order.confirmedBy = req.client.clientId;
             }
         }
@@ -257,23 +251,13 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
         }
 
         if (!hasUpdate) {
-            return res.status(400).json({
-                message: 'No fields provided to update status or notes.'
-            });
+            return res.status(400).json({ message: 'No fields provided to update status or notes.' });
         }
 
         const savedOrder = await order.save();
 
         // Populate the fields for the response
-        const populatedOrder = await savedOrder.populate([{
-            path: 'products.productId'
-        }, {
-            path: 'confirmedBy',
-            select: 'name email'
-        }, {
-            path: 'assignedTo',
-            select: 'name email'
-        }]);
+        const populatedOrder = await savedOrder.populate([{ path: 'products.productId' }, { path: 'confirmedBy', select: 'name email' }, { path: 'assignedTo', select: 'name email' }]);
 
         res.status(200).json({
             message: 'Order status updated successfully',
@@ -290,11 +274,10 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
 
 
 // PATCH: General order update
-router.patch('/:orderId', async (req, res) => {
+// **FIX:** Added authenticateClient middleware for security.
+router.patch('/:orderId', authenticateClient, async (req, res) => {
     try {
-        const {
-            orderId
-        } = req.params;
+        const { orderId } = req.params;
         const {
             fullName,
             phoneNumber,
@@ -307,13 +290,16 @@ router.patch('/:orderId', async (req, res) => {
         } = req.body;
         const updateFields = {};
 
+        // Security check: Ensure a client is authenticated before allowing any update
+        if (!req.client || !req.client.clientId) {
+            return res.status(401).json({ message: 'Unauthorized. You must be logged in to perform this action.' });
+        }
+
         if (fullName !== undefined) updateFields.fullName = fullName;
         if (phoneNumber !== undefined) {
             const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
             if (!phoneRegex.test(phoneNumber)) {
-                return res.status(400).json({
-                    message: 'Invalid phone number format.'
-                });
+                return res.status(400).json({ message: 'Invalid phone number format.' });
             }
             updateFields.phoneNumber = phoneNumber;
         }
@@ -321,7 +307,7 @@ router.patch('/:orderId', async (req, res) => {
         if (commune !== undefined) updateFields.commune = commune;
         if (address !== undefined) updateFields.address = address;
         if (notes !== undefined) updateFields.notes = notes;
-        if (barcodeId !== undefined) updateFields.barcodeId = barcodeId; // Handle barcodeId update
+        if (barcodeId !== undefined) updateFields.barcodeId = barcodeId;
 
         if (assignedTo !== undefined) {
             if (assignedTo === null || assignedTo === '') {
@@ -329,35 +315,24 @@ router.patch('/:orderId', async (req, res) => {
             } else {
                 const user = await User.findById(assignedTo);
                 if (!user) {
-                    return res.status(400).json({
-                        message: 'Assigned user not found.'
-                    });
+                    return res.status(400).json({ message: 'Assigned user not found.' });
                 }
                 updateFields.assignedTo = assignedTo;
             }
         }
 
         if (Object.keys(updateFields).length === 0) {
-            return res.status(400).json({
-                message: 'No valid fields provided for update.'
-            });
+            return res.status(400).json({ message: 'No valid fields provided for update.' });
         }
 
         const updatedOrder = await Order.findByIdAndUpdate(
-                orderId, {
-                    $set: updateFields
-                }, {
-                    new: true,
-                    runValidators: true
-                }
+                orderId, { $set: updateFields }, { new: true, runValidators: true }
             )
             .populate('products.productId')
             .populate('confirmedBy', 'name email')
             .populate('assignedTo', 'name email');
 
-        if (!updatedOrder) return res.status(404).json({
-            message: 'Order not found.'
-        });
+        if (!updatedOrder) return res.status(404).json({ message: 'Order not found.' });
         res.status(200).json({
             message: 'Order updated successfully',
             order: updatedOrder
@@ -372,23 +347,24 @@ router.patch('/:orderId', async (req, res) => {
 });
 
 // DELETE: Remove order
-router.delete('/:orderId', async (req, res) => {
+// **FIX:** Added authenticateClient middleware for security.
+router.delete('/:orderId', authenticateClient, async (req, res) => {
     try {
-        const {
-            orderId
-        } = req.params;
+        const { orderId } = req.params;
+
+        // Security check
+        if (!req.client || !req.client.clientId) {
+            return res.status(401).json({ message: 'Unauthorized. You must be logged in to perform this action.' });
+        }
+
         const order = await Order.findById(orderId);
 
-        if (!order) return res.status(404).json({
-            message: 'Order not found.'
-        });
+        if (!order) return res.status(404).json({ message: 'Order not found.' });
 
         // Return product quantities to stock before deleting
         for (const item of order.products) {
             await Product.findByIdAndUpdate(item.productId, {
-                $inc: {
-                    quantity: item.quantity
-                }
+                $inc: { quantity: item.quantity }
             });
         }
 
