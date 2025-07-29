@@ -3,6 +3,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
+const mongoose = require('mongoose'); // Import Mongoose to use ObjectId validation
 dotenv.config(); // Load environment variables from .env file
 
 const router = express.Router();
@@ -190,7 +191,9 @@ router.get('/', async (req, res) => {
         const orders = await Order.find()
             .populate('confirmedBy', 'name email')
             .populate('assignedTo', 'name email')
-            .sort({ createdAt: -1 }); // Sort by newest first
+            .sort({
+                createdAt: -1
+            }); // Sort by newest first
 
         // No need to manually format here if product name is denormalized
         // The frontend can construct image URLs using an env variable
@@ -208,6 +211,13 @@ router.get('/', async (req, res) => {
 // GET: Single order by ID
 router.get('/:orderId', async (req, res) => {
     try {
+        // --- ADDED VALIDATION ---
+        if (!mongoose.Types.ObjectId.isValid(req.params.orderId)) {
+            return res.status(400).json({
+                message: 'Invalid order ID format.'
+            });
+        }
+
         const order = await Order.findById(req.params.orderId)
             .populate('confirmedBy', 'name email')
             .populate('assignedTo', 'name email');
@@ -231,12 +241,26 @@ router.get('/:orderId', async (req, res) => {
 // PATCH: Update order status and notes
 router.patch('/:orderId/status', authenticateClient, async (req, res) => {
     try {
-        const { orderId } = req.params;
-        const { status, notes } = req.body;
+        const {
+            orderId
+        } = req.params;
+        const {
+            status,
+            notes
+        } = req.body;
+
+        // --- ADDED VALIDATION ---
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res.status(400).json({
+                message: 'Invalid order ID format.'
+            });
+        }
 
         const order = await Order.findById(orderId);
         if (!order) {
-            return res.status(404).json({ message: 'Order not found.' });
+            return res.status(404).json({
+                message: 'Order not found.'
+            });
         }
 
         const oldStatus = order.status;
@@ -245,7 +269,9 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
         if (status && status !== oldStatus) {
             const allowedStatuses = ['pending', 'confirmed', 'tentative', 'cancelled', 'dispatched', 'delivered', 'returned'];
             if (!allowedStatuses.includes(status)) {
-                return res.status(400).json({ message: 'Invalid status.' });
+                return res.status(400).json({
+                    message: 'Invalid status.'
+                });
             }
 
             // --- STOCK MANAGEMENT ON STATUS CHANGE ---
@@ -268,7 +294,9 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
 
             if (status === 'confirmed') {
                 if (!req.client || !req.client.clientId) {
-                    return res.status(401).json({ message: 'Unauthorized. Agent must be logged in to confirm order.' });
+                    return res.status(401).json({
+                        message: 'Unauthorized. Agent must be logged in to confirm order.'
+                    });
                 }
                 order.confirmedBy = req.client.clientId;
             }
@@ -280,7 +308,9 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
         }
 
         if (!hasUpdate) {
-            return res.status(400).json({ message: 'No fields provided to update.' });
+            return res.status(400).json({
+                message: 'No fields provided to update.'
+            });
         }
 
         const savedOrder = await order.save();
@@ -292,7 +322,10 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
         });
     } catch (error) {
         console.error('Error updating order status:', error);
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({
+            message: 'Server error',
+            error: error.message
+        });
     }
 });
 
@@ -300,9 +333,27 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
 // PATCH: General order update (customer details, assignment, etc.)
 router.patch('/:orderId', async (req, res) => {
     try {
-        const { orderId } = req.params;
+        const {
+            orderId
+        } = req.params;
         const updateFields = {};
-        const { fullName, phoneNumber, wilaya, commune, address, notes, assignedTo, barcodeId } = req.body;
+        const {
+            fullName,
+            phoneNumber,
+            wilaya,
+            commune,
+            address,
+            notes,
+            assignedTo,
+            barcodeId
+        } = req.body;
+
+        // --- ADDED VALIDATION ---
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res.status(400).json({
+                message: 'Invalid order ID format.'
+            });
+        }
 
         if (fullName !== undefined) updateFields.fullName = fullName;
         if (wilaya !== undefined) updateFields.wilaya = wilaya;
@@ -314,7 +365,9 @@ router.patch('/:orderId', async (req, res) => {
         if (phoneNumber !== undefined) {
             const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
             if (!phoneRegex.test(phoneNumber)) {
-                return res.status(400).json({ message: 'Invalid phone number format.' });
+                return res.status(400).json({
+                    message: 'Invalid phone number format.'
+                });
             }
             updateFields.phoneNumber = phoneNumber;
         }
@@ -323,28 +376,51 @@ router.patch('/:orderId', async (req, res) => {
             if (assignedTo === null || assignedTo === '') {
                 updateFields.assignedTo = null;
             } else {
+                // --- ADDED VALIDATION ---
+                if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
+                    return res.status(400).json({
+                        message: 'Invalid assigned user ID format.'
+                    });
+                }
                 const user = await User.findById(assignedTo);
                 if (!user) {
-                    return res.status(400).json({ message: 'Assigned user not found.' });
+                    return res.status(400).json({
+                        message: 'Assigned user not found.'
+                    });
                 }
                 updateFields.assignedTo = assignedTo;
             }
         }
 
         if (Object.keys(updateFields).length === 0) {
-            return res.status(400).json({ message: 'No valid fields provided for update.' });
+            return res.status(400).json({
+                message: 'No valid fields provided for update.'
+            });
         }
 
-        const updatedOrder = await Order.findByIdAndUpdate(orderId, { $set: updateFields }, { new: true, runValidators: true })
+        const updatedOrder = await Order.findByIdAndUpdate(orderId, {
+                $set: updateFields
+            }, {
+                new: true,
+                runValidators: true
+            })
             .populate('confirmedBy', 'name email')
             .populate('assignedTo', 'name email');
 
-        if (!updatedOrder) return res.status(404).json({ message: 'Order not found.' });
+        if (!updatedOrder) return res.status(404).json({
+            message: 'Order not found.'
+        });
 
-        res.status(200).json({ message: 'Order updated successfully', order: updatedOrder });
+        res.status(200).json({
+            message: 'Order updated successfully',
+            order: updatedOrder
+        });
     } catch (error) {
         console.error('Update order error:', error);
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({
+            message: 'Server error',
+            error: error.message
+        });
     }
 });
 
@@ -352,11 +428,23 @@ router.patch('/:orderId', async (req, res) => {
 // DELETE: Remove order
 router.delete('/:orderId', async (req, res) => {
     try {
-        const { orderId } = req.params;
+        const {
+            orderId
+        } = req.params;
+
+        // --- ADDED VALIDATION ---
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res.status(400).json({
+                message: 'Invalid order ID format.'
+            });
+        }
+
         const order = await Order.findById(orderId);
 
         if (!order) {
-            return res.status(404).json({ message: 'Order not found.' });
+            return res.status(404).json({
+                message: 'Order not found.'
+            });
         }
 
         // --- STOCK RESTORATION ON DELETE ---
@@ -367,10 +455,15 @@ router.delete('/:orderId', async (req, res) => {
         }
 
         await Order.findByIdAndDelete(orderId);
-        res.status(200).json({ message: 'Order deleted successfully.' });
+        res.status(200).json({
+            message: 'Order deleted successfully.'
+        });
     } catch (error) {
         console.error('Delete order error:', error);
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({
+            message: 'Server error',
+            error: error.message
+        });
     }
 });
 
