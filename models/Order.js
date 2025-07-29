@@ -30,6 +30,11 @@ const orderSchema = new mongoose.Schema({
         trim: true,
         default: null
     },
+    // FIX: Added the missing deliveryFee field to the schema
+    deliveryFee: {
+        type: Number,
+        default: 0
+    },
     products: [{
         // Note: For simplicity on the frontend, you might send populated product names.
         // If not, you'll need to adjust the frontend to handle just the ID.
