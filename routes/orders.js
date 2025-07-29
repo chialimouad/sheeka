@@ -41,7 +41,8 @@ router.post('/', async (req, res) => {
             products,
             status,
             notes,
-            barcodeId
+            barcodeId,
+            deliveryFee // Added deliveryFee
         } = req.body;
 
         if (!fullName || !phoneNumber || !wilaya || !commune || !products || products.length === 0) {
@@ -98,7 +99,8 @@ router.post('/', async (req, res) => {
             totalOrdersCount,
             status: status || 'pending',
             notes: notes || '',
-            barcodeId: barcodeId || null // Save the barcodeId if provided
+            barcodeId: barcodeId || null, // Save the barcodeId if provided
+            deliveryFee: deliveryFee || 0 // Save the deliveryFee
         });
 
         // The pre-save hook in Order.js will automatically set the 'pending' timestamp
@@ -292,9 +294,11 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
 // PATCH: General order update
 router.patch('/:orderId', async (req, res) => {
     try {
-        const {
-            orderId
-        } = req.params;
+        console.log('--- Received Order Update Request ---');
+        console.log('Order ID:', req.params.orderId);
+        console.log('Request Body:', req.body);
+
+        const { orderId } = req.params;
         const {
             fullName,
             phoneNumber,
@@ -303,7 +307,8 @@ router.patch('/:orderId', async (req, res) => {
             address,
             notes,
             assignedTo,
-            barcodeId
+            barcodeId,
+            deliveryFee
         } = req.body;
         const updateFields = {};
 
@@ -321,7 +326,12 @@ router.patch('/:orderId', async (req, res) => {
         if (commune !== undefined) updateFields.commune = commune;
         if (address !== undefined) updateFields.address = address;
         if (notes !== undefined) updateFields.notes = notes;
-        if (barcodeId !== undefined) updateFields.barcodeId = barcodeId; // Handle barcodeId update
+        if (barcodeId !== undefined) {
+            // If barcodeId is an empty string, set it to null to clear it.
+            // Otherwise, use the provided trimmed value.
+            updateFields.barcodeId = barcodeId.trim() === '' ? null : barcodeId.trim();
+        }
+        if (deliveryFee !== undefined) updateFields.deliveryFee = deliveryFee;
 
         if (assignedTo !== undefined) {
             if (assignedTo === null || assignedTo === '') {
@@ -336,6 +346,8 @@ router.patch('/:orderId', async (req, res) => {
                 updateFields.assignedTo = assignedTo;
             }
         }
+
+        console.log('Fields to Update in DB:', updateFields);
 
         if (Object.keys(updateFields).length === 0) {
             return res.status(400).json({
@@ -355,21 +367,27 @@ router.patch('/:orderId', async (req, res) => {
             .populate('confirmedBy', 'name email')
             .populate('assignedTo', 'name email');
 
-        if (!updatedOrder) return res.status(404).json({
-            message: 'Order not found.'
-        });
+        if (!updatedOrder) {
+            console.log('Order not found after update attempt. Sending 404.');
+            return res.status(404).json({
+                message: 'Order not found.'
+            });
+        }
+        
+        console.log('--- Order Updated Successfully ---');
         res.status(200).json({
             message: 'Order updated successfully',
             order: updatedOrder
         });
     } catch (error) {
-        console.error('Update order error:', error);
+        console.error('--- CRITICAL UPDATE ORDER ERROR ---:', error);
         res.status(500).json({
             message: 'Server error',
             error: error.message
         });
     }
 });
+
 
 // DELETE: Remove order
 router.delete('/:orderId', async (req, res) => {
