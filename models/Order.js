@@ -18,6 +18,11 @@ const orderSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // New field for the full address
+  address: {
+    type: String,
+    required: [true, 'Address is required.']
+  },
   products: [
     {
       productId: {
