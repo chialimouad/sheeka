@@ -28,7 +28,7 @@ const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
-app.use('/uploads', express.static(uploadDir)); // Serve static files
+app.use('/uploads', express.static(uploadDir));
 
 // ========================
 // 📡 Connect to MongoDB
@@ -53,20 +53,57 @@ const authroutesuser = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emails');
-const pixelRoutes = require('./routes/pixel'); // ✅ Pixel routes
-const ordercount = require('./routes/ordecount'); // ✅ Pixel route
+const pixelRoutes = require('./routes/pixel');
+const ordercount = require('./routes/ordecount');
+const visitor = require('./routes/visit');
+
+// ========================
+// 🛠️ Route Validation Helper
+// ========================
+/**
+ * Validates that a module is a valid Express router.
+ * Throws a descriptive error if the validation fails.
+ * @param {string} routePath - The path the router will be mounted on (for error logging).
+ * @param {any} routerModule - The imported module to validate.
+ * @returns {Function} The validated router module.
+ */
+const validateRouter = (routePath, routerModule) => {
+    if (typeof routerModule !== 'function') {
+        // This handles the common mistake of exporting { router } instead of router
+        if (typeof routerModule === 'object' && routerModule !== null && typeof routerModule.router === 'function') {
+            throw new Error(
+                `The route module for '${routePath}' is exported incorrectly. ` +
+                `It seems you exported an object like { router }. Please export the router directly with 'module.exports = router'.`
+            );
+        }
+        // Generic error for other invalid types
+        throw new TypeError(
+            `The module for route '${routePath}' did not export a valid Express router. ` +
+            `Expected a function, but got ${typeof routerModule}.`
+        );
+    }
+    return routerModule;
+};
+
 
 // ========================
 // 🚏 Mount Routes
 // ========================
-app.use('/auth', authRoutes);
-app.use('/authuser', authroutesuser);
-app.use('/products', productRoutes);
-app.use('/orders', orderRoutes);
-app.use('/api/site-config', siteConfigRoutes); // This correctly mounts all routes from routes/site.js
-app.use('/api/emails', emailRoutes);
-app.use('/site', pixelRoutes); // ✅ Mount pixel endpoints at /api/pixels
-app.use('/countorder', ordercount); // ✅ Mount pixel endpoints at /api/pixels
+try {
+    app.use('/auth', validateRouter('/auth', authRoutes));
+    app.use('/authuser', validateRouter('/authuser', authroutesuser));
+    app.use('/products', validateRouter('/products', productRoutes));
+    app.use('/orders', validateRouter('/orders', orderRoutes));
+    app.use('/api/site-config', validateRouter('/api/site-config', siteConfigRoutes));
+    app.use('/api/emails', validateRouter('/api/emails', emailRoutes));
+    app.use('/site', validateRouter('/site', pixelRoutes));
+    app.use('/countorder', validateRouter('/countorder', ordercount));
+    app.use('/visitors', validateRouter('/visitors', visitor));
+} catch (error) {
+    console.error('❌ Error mounting routes:', error.message);
+    process.exit(1); // Exit if routes are misconfigured
+}
+
 
 // ========================
 // ❌ 404 Not Found Handler
