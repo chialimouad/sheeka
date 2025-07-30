@@ -51,7 +51,7 @@ const authRoutes = require('./routes/authRoutes');
 const orderRoutes = require('./routes/orders');
 const authroutesuser = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
-const siteConfigRoutes = require('./routes/siteroute');
+const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emails');
 const pixelRoutes = require('./routes/pixel'); // ✅ Pixel routes
 
