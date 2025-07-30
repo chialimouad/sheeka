@@ -2,78 +2,72 @@ const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 
-// Assuming your controller file is named 'employeeController.js'
+// Import controller functions from authController
 const {
-    createEmployee,
-    getAllEmployees,
-    getEmployeeById,
-    updateEmployee,
-    deleteEmployee,
-    addDocumentToEmployee,
-    assignConfirmationHandler,
-    assignStockAdmin
+    register,
+    login,
+    getUsers,
+    updateindex,
+    getUserIndex
 } = require('../controllers/authController');
 
 // You would typically have an auth middleware to protect these routes
-// const { protect, admin } = require('../middleware/authMiddleware');
+// For example: const { protect, admin } = require('../middleware/authMiddleware');
 
 
-// --- Employee Routes ---
+// --- Authentication Routes ---
 
-// @route   POST api/employees
-// @desc    Create a new employee
-// @access  Private/Admin
-router.post('/', [
-    // Validation middleware
-    body('firstName', 'First name is required').not().isEmpty(),
-    body('lastName', 'Last name is required').not().isEmpty(),
+/**
+ * @route   POST api/auth/register
+ * @desc    Register a new user
+ * @access  Public
+ */
+router.post('/register', [
+    // Validation middleware for the registration request
+    body('name', 'Name is required').not().isEmpty(),
     body('email', 'Please include a valid email').isEmail(),
-    body('department', 'Department ID is required').isMongoId(),
-], createEmployee);
+    body('password', 'Please enter a password with 6 or more characters').isLength({ min: 6 }),
+    body('index', 'Index must be a number (0 or 1)').optional().isNumeric().isIn([0, 1]),
+], register);
 
-// @route   GET api/employees
-// @desc    Get all employees
-// @access  Private
-router.get('/', getAllEmployees);
-
-// @route   GET api/employees/:id
-// @desc    Get a single employee by ID
-// @access  Private
-router.get('/:id', getEmployeeById);
-
-// @route   PUT api/employees/:id
-// @desc    Update an employee
-// @access  Private/Admin
-router.put('/:id', updateEmployee);
-
-// @route   DELETE api/employees/:id
-// @desc    Delete an employee
-// @access  Private/Admin
-router.delete('/:id', deleteEmployee);
+/**
+ * @route   POST api/auth/login
+ * @desc    Authenticate user & get token (login)
+ * @access  Public
+ */
+router.post('/login', [
+    // Validation middleware for the login request
+    body('email', 'Please include a valid email').isEmail(),
+    body('password', 'Password is required').exists(),
+], login);
 
 
-// --- Employee Document Routes ---
+// --- User Data Routes ---
 
-// @route   POST api/employees/:id/documents
-// @desc    Add a document to an employee
-// @access  Private/Admin
-router.post('/:id/documents', [
-    body('name', 'Document name is required').not().isEmpty(),
-    body('url', 'Document URL is required').not().isEmpty(),
-], addDocumentToEmployee);
+/**
+ * @route   GET api/auth/users
+ * @desc    Get all users
+ * @access  Private/Admin (should be protected by auth middleware)
+ */
+router.get('/users', /* protect, admin, */ getUsers);
 
+/**
+ * @route   GET api/auth/:id/index
+ * @desc    Get a user's index by their ID
+ * @access  Private (should be protected by auth middleware)
+ */
+router.get('/:id/index', /* protect, */ getUserIndex);
 
-// --- Assignment Routes ---
-
-// @route   PUT api/verifications/:verificationId/assign
-// @desc    Assign an employee to a verification request
-// @access  Private/Admin
-router.put('/verifications/:verificationId/assign', assignConfirmationHandler);
-
-// @route   PUT api/stock-grants/:grantId/assign
-// @desc    Assign an employee to a stock grant
-// @access  Private/Admin
-router.put('/stock-grants/:grantId/assign', assignStockAdmin);
+/**
+ * @route   PUT api/auth/:id/index
+ * @desc    Update a user's index
+ * @access  Private (should be protected by auth middleware)
+ */
+router.put('/:id/index', [
+    // protect, // Example of protecting the route
+    // Validation for the new index value
+    body('newIndexValue', 'A new index value of 0 or 1 is required').isNumeric().isIn([0, 1])
+], updateindex);
 
 
 module.exports = router;
