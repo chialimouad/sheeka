@@ -118,7 +118,43 @@ router.post('/', async (req, res) => {
         });
     }
 });
+// GET: Order by Barcode ID
+router.get('/barcode/:barcodeId', async (req, res) => {
+    try {
+        const { barcodeId } = req.params;
+        const order = await Order.findOne({ barcodeId: barcodeId })
+            .populate('products.productId')
+            .populate('confirmedBy', 'name email')
+            .populate('assignedTo', 'name email');
 
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found with this barcode.' });
+        }
+
+        const formattedOrder = {
+            ...order._doc,
+            products: order.products.map(p => p.productId ? {
+                _id: p.productId._id,
+                name: p.productId.name,
+                price: p.productId.price,
+                images: (p.productId.images || []).map(img => `https://sheeka.onrender.com${img}`),
+                quantity: p.quantity,
+                color: p.color,
+                size: p.size
+            } : null).filter(p => p !== null),
+            confirmedBy: order.confirmedBy,
+            assignedTo: order.assignedTo
+        };
+
+        res.status(200).json(formattedOrder);
+    } catch (error) {
+        console.error('Fetch order by barcode error:', error);
+        res.status(500).json({
+            message: 'Server error',
+            error: error.message
+        });
+    }
+});
 // GET: Count of all orders
 router.get('/count', async (req, res) => {
     try {
