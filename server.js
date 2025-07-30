@@ -64,7 +64,19 @@ app.use('/products', productRoutes);
 app.use('/orders', orderRoutes);
 app.use('/api/site-config', siteConfigRoutes); // This correctly mounts all routes from routes/site.js
 app.use('/api/emails', emailRoutes);
-app.use('/site', pixelRoutes); // ✅ Mount pixel endpoints at /api/pixels
+
+// 🚨 ERROR ANALYSIS: The error "TypeError: Router.use() requires a middleware function but got a Object"
+// originates from the line below. It indicates that the `pixelRoutes` variable holds a standard object,
+// not the Express Router instance that `app.use()` expects.
+//
+// ✅ SOLUTION: The problem is in your `./routes/pixel.js` file.
+// You need to ensure that you are exporting the router instance directly.
+// Open `./routes/pixel.js` and make sure the last line of the file is:
+//
+// module.exports = router;
+//
+// It should NOT be `module.exports = { router }` or any other object structure.
+app.use('/site', pixelRoutes); // ✅ Mount pixel endpoints at /site (Comment corrected)
 
 // ========================
 // ❌ 404 Not Found Handler
