@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
-const mongoose = require('mongoose'); // FIX: Import mongoose
+const mongoose = require('mongoose');
 dotenv.config(); // Load environment variables from .env file
 
 const router = express.Router();
@@ -9,7 +9,8 @@ const router = express.Router();
 // Import Mongoose Models
 const Order = require('../models/Order');
 const Product = require('../models/Product');
-const User = require('../models/User');
+// FIX: Correctly destructure the User model from the export
+const { User } = require('../models/User');
 
 // Middleware to extract client ID from JWT token
 const authenticateClient = (req, res, next) => {
@@ -32,7 +33,6 @@ const authenticateClient = (req, res, next) => {
 // POST: Create a new order
 router.post('/', async (req, res) => {
     try {
-        // FIX: Add check for request body to prevent crash if body is not parsed
         if (!req.body) {
             return res.status(400).json({ message: 'Request body is missing or invalid. Ensure `Content-Type` header is set to `application/json`.' });
         }
@@ -238,7 +238,6 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
             }
             order.status = status;
 
-            // FIX: Make timestamp update more robust by initializing the Map if it doesn't exist.
             if (!order.statusTimestamps) {
                 order.statusTimestamps = new Map();
             }
@@ -365,6 +364,7 @@ router.patch('/:orderId', async (req, res) => {
                 if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
                     return res.status(400).json({ message: 'Invalid assigned user ID format.' });
                 }
+                // This is where the error was happening
                 const user = await User.findById(assignedTo);
                 if (!user) {
                     return res.status(400).json({ message: 'Assigned user not found.' });
@@ -380,7 +380,6 @@ router.patch('/:orderId', async (req, res) => {
 
         const savedOrder = await order.save(); // .save() will trigger validation
 
-        // FIX: Re-fetch and populate the document after saving for better reliability.
         const populatedOrder = await Order.findById(savedOrder._id)
             .populate('products.productId')
             .populate('confirmedBy', 'name email')
@@ -392,7 +391,6 @@ router.patch('/:orderId', async (req, res) => {
         });
 
     } catch (error) {
-        // Log the full error for better debugging on the server
         console.error('Update order error:', error);
 
         if (error.name === 'ValidationError') {
@@ -403,7 +401,6 @@ router.patch('/:orderId', async (req, res) => {
             return res.status(400).json({ message: `Invalid ID format for field: ${error.path}` });
         }
 
-        // Generic server error for everything else
         res.status(500).json({
             message: 'Server error',
             error: error.message
