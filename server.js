@@ -53,26 +53,7 @@ const authroutesuser = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emails');
-// Use 'let' for pixelRoutes to allow for potential reassignment.
-let pixelRoutes = require('./routes/pixel'); // ✅ Pixel routes
-
-// =================================================================================================
-// 🚨 AUTOMATIC ERROR CORRECTION 🚨
-// =================================================================================================
-// The error "TypeError: Router.use() requires a middleware function but got a Object"
-// consistently points to `./routes/pixel.js` exporting an object instead of the router directly.
-// For example, it might be exporting `module.exports = { router }` when it should be `module.exports = router;`
-//
-// The code below attempts to automatically fix this. It checks if `pixelRoutes` is an object
-// containing a `router` property and, if so, uses that property as the actual router.
-// This makes the server more resilient to this common mistake.
-//
-// The best long-term solution is still to fix the export in `./routes/pixel.js`.
-// =================================================================================================
-if (pixelRoutes && typeof pixelRoutes === 'object' && Object.hasOwnProperty.call(pixelRoutes, 'router')) {
-    console.log('⚠️  Warning: Correcting a malformed route export from ./routes/pixel.js. Using `pixelRoutes.router`.');
-    pixelRoutes = pixelRoutes.router; // Reassign to the actual router object.
-}
+const pixelRoutes = require('./routes/pixel'); // ✅ Pixel routes
 
 // ========================
 // 🚏 Mount Routes
@@ -83,7 +64,7 @@ app.use('/products', productRoutes);
 app.use('/orders', orderRoutes);
 app.use('/api/site-config', siteConfigRoutes); // This correctly mounts all routes from routes/site.js
 app.use('/api/emails', emailRoutes);
-app.use('/site', pixelRoutes); // ✅ Mount pixel endpoints at /site
+app.use('/site', pixelRoutes); // ✅ Mount pixel endpoints at /api/pixels
 
 // ========================
 // ❌ 404 Not Found Handler
