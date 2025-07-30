@@ -65,17 +65,34 @@ app.use('/orders', orderRoutes);
 app.use('/api/site-config', siteConfigRoutes); // This correctly mounts all routes from routes/site.js
 app.use('/api/emails', emailRoutes);
 
-// 🚨 ERROR ANALYSIS: The error "TypeError: Router.use() requires a middleware function but got a Object"
-// originates from the line below. It indicates that the `pixelRoutes` variable holds a standard object,
-// not the Express Router instance that `app.use()` expects.
+// =================================================================================================
+// 🚨 CRITICAL ERROR ANALYSIS 🚨
+// =================================================================================================
+// The error you are seeing: "TypeError: Router.use() requires a middleware function but got a Object"
+// is caused by the line directly below this comment block.
 //
-// ✅ SOLUTION: The problem is in your `./routes/pixel.js` file.
-// You need to ensure that you are exporting the router instance directly.
-// Open `./routes/pixel.js` and make sure the last line of the file is:
+// WHAT IT MEANS:
+// Express's `app.use()` was expecting a middleware function or a router, but instead, it received a
+// plain JavaScript object from the `pixelRoutes` variable.
 //
+// HOW TO FIX IT:
+// The problem is NOT in this file (server.js). It is in the file that you are importing:
+//
+// 👉👉👉      ./routes/pixel.js      👈👈👈
+//
+// You must open `./routes/pixel.js` and ensure that you are exporting the router instance correctly.
+//
+// Find the last line in `./routes/pixel.js`.
+//
+// ✅ IT MUST BE EXACTLY THIS:
 // module.exports = router;
 //
-// It should NOT be `module.exports = { router }` or any other object structure.
+// ❌ IT MUST NOT BE THIS (or anything similar):
+// module.exports = { router };
+//
+// By making this change in `./routes/pixel.js`, the `require('./routes/pixel')` call in this file
+// will receive the router function correctly, and the error will be resolved.
+// =================================================================================================
 app.use('/site', pixelRoutes); // ✅ Mount pixel endpoints at /site (Comment corrected)
 
 // ========================
