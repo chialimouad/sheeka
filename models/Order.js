@@ -1,4 +1,5 @@
 // models/Order.js
+// No changes were needed in this file. It is included for completeness.
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
