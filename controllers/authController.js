@@ -43,44 +43,25 @@ const login = async (req, res) => {
 };
 
 // --- User Controllers ---
-exports.createUser = async (req, res) => {
-    // 1. Run validation
+const createUser = async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
     }
 
-    // 2. Destructure ALL fields from the request body, including 'role'
-    const { name, email, password, jobTitle, department, manager, employmentStatus, role } = req.body;
-
     try {
-        // 3. Check if user already exists
-        let user = await User.findOne({ email });
-        if (user) {
-            return res.status(400).json({ message: 'User already exists' });
+        const { name, email, password, jobTitle, department, manager, employmentStatus } = req.body;
+        const existingUser = await User.findOne({ email: email.toLowerCase() });
+        if (existingUser) {
+            return res.status(409).json({ message: 'A user with this email already exists.' });
         }
-
-        // 4. Create a new user instance, making sure to include the 'role'
-        user = new User({
-            name,
-            email,
-            password,
-            jobTitle,
-            department: department || null,
-            manager: manager || null,
-            employmentStatus,
-            role // This is the crucial part that was likely missing
-        });
-
-        // 5. Save the new user to the database
-        await user.save();
-        
-        // 6. Respond with success (you can also generate and return a JWT token here if needed)
-        res.status(201).json({ message: 'User created successfully', userId: user.id });
-
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server error');
+        const newUser = await User.create({ name, email, password, jobTitle, department, manager, employmentStatus });
+        const userResponse = newUser.toObject();
+        delete userResponse.password;
+        res.status(201).json({ message: 'User created successfully', user: userResponse });
+    } catch (error) {
+        console.error('Create User Error:', error);
+        res.status(500).json({ message: 'Server error during user creation.' });
     }
 };
 
