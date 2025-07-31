@@ -1,79 +1,82 @@
+// models/Pixel.js
+
 const mongoose = require('mongoose');
 
 const PixelSchema = new mongoose.Schema({
-  fbPixelId: {
-    type: String,
-    trim: true,
-    // You might want to make these unique if only one set of IDs should exist at a time,
-    // or if a specific ID should only appear once.
-    // However, if you're tracking history, you'd allow duplicates and just fetch the latest.
-    // For this 'latest config' scenario, uniqueness per entry isn't strictly necessary
-    // but useful if you intend for only ONE active Facebook ID at any point.
-    // unique: true // Uncomment if you want each fbPixelId to be unique across all documents
-  },
-  tiktokPixelId: {
-    type: String,
-    trim: true,
-    // unique: true // Uncomment if you want each tiktokPixelId to be unique across all documents
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-    // Ensures we can easily sort to find the latest
-  }
+    // This tenantId field ensures that each pixel configuration is tied to a specific client.
+    tenantId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: [true, 'A tenant ID is required for every pixel configuration.'],
+        ref: 'Client',
+        index: true,
+    },
+    fbPixelId: {
+        type: String,
+        trim: true,
+    },
+    tiktokPixelId: {
+        type: String,
+        trim: true,
+    },
+}, {
+    timestamps: true // Adds createdAt and updatedAt fields
 });
 
-// --- Static Methods ---
+// --- Tenant-Aware Static Methods ---
 
 /**
- * Retrieves the latest pixel configuration based on the creation date.
- * This is a static method accessible directly on the PixelModel.
- * @returns {object} An object containing facebookPixelId and tiktokPixelId, or an empty object if none found.
+ * Retrieves the latest pixel configuration for a specific tenant.
+ * @param {string} tenantId - The ID of the tenant.
+ * @returns {object} An object with facebookPixelId and tiktokPixelId, or null if none found.
  */
-PixelSchema.statics.getLatestPixelConfig = async function () {
-  const latestPixel = await this.findOne().sort({ createdAt: -1 }).lean(); // .lean() for plain JS object, better performance
-  if (latestPixel) {
-    return {
-      facebookPixelId: latestPixel.fbPixelId,
-      tiktokPixelId: latestPixel.tiktokPixelId
-    };
-  }
-  return {}; // No pixel configuration found
+PixelSchema.statics.getLatestPixelConfigForTenant = async function (tenantId) {
+    const latestPixel = await this.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
+    if (latestPixel) {
+        return {
+            facebookPixelId: latestPixel.fbPixelId,
+            tiktokPixelId: latestPixel.tiktokPixelId
+        };
+    }
+    return null; // Return null to indicate no config was found
 };
 
 /**
- * Creates a new pixel entry.
- * @param {object} data - Object containing fbPixelId and/or tiktokPixelId.
+ * Creates a new pixel entry for a specific tenant.
+ * @param {object} data - Object containing fbPixelId, tiktokPixelId, and tenantId.
  * @returns {object} The newly created pixel document.
  */
-PixelSchema.statics.createPixel = async function (data) {
-  // Basic validation could also happen here or in the controller
-  if (!data.fbPixelId && !data.tiktokPixelId) {
-    const error = new Error('At least one of fbPixelId or tiktokPixelId is required.');
-    error.statusCode = 400; // Custom property for handling in controller
-    throw error;
-  }
-  return this.create(data);
+PixelSchema.statics.createPixelForTenant = async function (data) {
+    if (!data.tenantId) {
+        throw new Error('tenantId is required to create a pixel entry.');
+    }
+    if (!data.fbPixelId && !data.tiktokPixelId) {
+        const error = new Error('At least one of fbPixelId or tiktokPixelId is required.');
+        error.statusCode = 400;
+        throw error;
+    }
+    return this.create(data);
 };
 
 /**
- * Fetches all stored pixel entries.
+ * Fetches all stored pixel entries for a specific tenant.
+ * @param {string} tenantId - The ID of the tenant.
  * @returns {Array<object>} An array of pixel documents.
  */
-PixelSchema.statics.getAllPixels = async function () {
-  return this.find({}).sort({ createdAt: -1 }).lean(); // Sort and lean for efficiency
+PixelSchema.statics.getAllPixelsForTenant = async function (tenantId) {
+    return this.find({ tenantId }).sort({ createdAt: -1 }).lean();
 };
 
 /**
- * Deletes a pixel entry by its MongoDB _id.
- * @param {string} id - The MongoDB _id of the pixel entry to delete.
+ * Deletes a pixel entry by its ID, ensuring it belongs to the correct tenant.
+ * @param {string} id - The MongoDB _id of the pixel entry.
+ * @param {string} tenantId - The ID of the tenant.
  * @returns {object|null} The deleted pixel document, or null if not found.
  */
-PixelSchema.statics.deletePixel = async function (id) {
-  return this.findByIdAndDelete(id).lean();
+PixelSchema.statics.deletePixelForTenant = async function (id, tenantId) {
+    return this.findOneAndDelete({ _id: id, tenantId }).lean();
 };
 
-// --- Compile and Export the Model ---
+
 const PixelModel = mongoose.model('Pixel', PixelSchema);
 
 module.exports = PixelModel;
