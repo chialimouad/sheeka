@@ -5,12 +5,41 @@ const mongoose = require('mongoose');
 
 dotenv.config(); // Load environment variables from .env file
 
-const router = express.Router();
-
 // Import Mongoose Models
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const User = require('../models/User');
+
+// --- NEW: Abandoned Cart Schema and Model ---
+// This schema will store the details of carts that were started but not completed.
+const abandonedCartSchema = new mongoose.Schema({
+    fullName: { type: String, trim: true },
+    phoneNumber: { type: String, required: true, trim: true },
+    wilaya: String,
+    commune: String,
+    product: {
+        productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+        name: String,
+        quantity: Number,
+        color: String,
+        size: String,
+        price: Number
+    },
+    pageUrl: String,
+    // The 'createdAt' field includes a TTL (Time To Live) index.
+    // Documents in this collection will be automatically deleted from the database after 30 days.
+    createdAt: { type: Date, default: Date.now, expires: '30d' } 
+});
+
+// To avoid duplicate entries, we create a compound index.
+// This ensures that we only store one abandoned cart record per phone number and product ID.
+abandonedCartSchema.index({ phoneNumber: 1, 'product.productId': 1 }, { unique: true });
+
+const AbandonedCart = mongoose.model('AbandonedCart', abandonedCartSchema);
+// --- End of New Schema ---
+
+
+const router = express.Router();
 
 // Middleware to extract client ID from JWT token
 const authenticateClient = (req, res, next) => {
@@ -29,6 +58,64 @@ const authenticateClient = (req, res, next) => {
     }
     next();
 };
+
+// --- NEW: Route to handle abandoned cart data ---
+router.post('/abandoned', async (req, res) => {
+    try {
+        const { fullName, phoneNumber, product, pageUrl, wilaya, commune } = req.body;
+
+        // Basic validation to ensure the most critical data is present.
+        if (!phoneNumber || !product || !product.productId) {
+            return res.status(400).json({ message: 'Phone number and product ID are required.' });
+        }
+
+        // We use `findOneAndUpdate` with `upsert: true`.
+        // This is a powerful command that means:
+        // 1. Find a document matching the `filter`.
+        // 2. If it exists, apply the `update`.
+        // 3. If it does NOT exist, create a new document using both the filter and update data (upsert).
+        // This prevents creating multiple abandoned cart entries for the same person and product.
+        const filter = { phoneNumber: phoneNumber, 'product.productId': product.productId };
+        const update = {
+            $set: {
+                fullName: fullName,
+                wilaya: wilaya,
+                commune: commune,
+                product: product,
+                pageUrl: pageUrl,
+                createdAt: new Date() // We update the timestamp on each interaction.
+            }
+        };
+        const options = { upsert: true, new: true, setDefaultsOnInsert: true };
+
+        const abandonedCart = await AbandonedCart.findOneAndUpdate(filter, update, options);
+
+        res.status(200).json({ message: 'Abandoned cart data saved successfully.', cart: abandonedCart });
+
+    } catch (error) {
+        // If the database operation fails (e.g., due to the unique index), we catch the error.
+        if (error.code === 11000) {
+            // This specific error code means a duplicate key error, which is expected with our logic.
+            // We can just confirm that the data is already there.
+            return res.status(200).json({ message: 'Cart data already exists.' });
+        }
+        console.error('Abandoned cart error:', error);
+        res.status(500).json({ message: 'Server error while saving abandoned cart.', error: error.message });
+    }
+});
+
+// --- NEW: Route to get all abandoned carts ---
+router.get('/abandoned', async (req, res) => {
+    try {
+        // This finds all documents in the AbandonedCart collection and sorts them by creation date.
+        const carts = await AbandonedCart.find().sort({ createdAt: -1 });
+        res.status(200).json(carts);
+    } catch (error) {
+        console.error('Fetch abandoned carts error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
 
 // POST: Create a new order
 router.post('/', async (req, res) => {
@@ -106,6 +193,13 @@ router.post('/', async (req, res) => {
         });
 
         await newOrder.save();
+        
+        // After a successful order, we can remove any corresponding abandoned cart record.
+        if (products.length > 0) {
+            await AbandonedCart.deleteOne({ phoneNumber: phoneNumber, 'product.productId': products[0].productId });
+        }
+
+
         res.status(201).json({
             message: 'Order created successfully',
             order: newOrder
