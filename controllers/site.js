@@ -1,92 +1,154 @@
-const SiteConfig = require('../models/sitecontroll'); // Assuming the model is in ../models/SiteConfig.js
+// controllers/siteConfigController.js
 
-// @desc    Get the singleton site configuration
-// @route   GET /api/site-config
-// @access  Public
-exports.getSiteConfig = async (req, res) => {
-    try {
-        // The getSingleton static method in your model will find the existing
-        // config or create a default one if it doesn't exist.
-        const config = await SiteConfig.getSingleton();
-        res.json(config);
-    } catch (err) {
-        console.error('Error in getSiteConfig:', err.message);
-        res.status(500).send('Server Error');
+const PixelModel = require('../models/Pixel');
+const SiteConfig = require('../models/SiteConfig');
+const { validationResult, param } = require('express-validator');
+
+// =========================
+// Pixel Handlers (Tenant-Aware)
+// =========================
+
+const PixelController = {
+    /**
+     * @desc    Create a new Facebook or TikTok pixel ID entry.
+     * @route   POST /api/pixels
+     * @access  Private (Admin)
+     */
+    postPixel: async (req, res) => {
+        try {
+            const { fbPixelId, tiktokPixelId } = req.body;
+            const tenantId = req.user.tenantId; // From 'protect' middleware
+
+            const newPixel = await PixelModel.createPixelForTenant({
+                fbPixelId,
+                tiktokPixelId,
+                tenantId
+            });
+
+            res.status(201).json({
+                message: 'Pixel IDs stored successfully!',
+                pixel: newPixel
+            });
+        } catch (error) {
+            console.error('Error saving pixel IDs:', error);
+            res.status(error.statusCode || 500).json({ message: error.message || 'Failed to save pixel IDs.' });
+        }
+    },
+
+    /**
+     * @desc    Get all stored pixel entries for the current tenant.
+     * @route   GET /api/pixels
+     * @access  Private (Admin)
+     */
+    getPixels: async (req, res) => {
+        try {
+            const tenantId = req.user.tenantId;
+            const pixels = await PixelModel.getAllPixelsForTenant(tenantId);
+            res.status(200).json({
+                message: 'Fetched all pixel IDs successfully!',
+                pixels
+            });
+        } catch (error) {
+            console.error('Error fetching pixel IDs:', error);
+            res.status(500).json({ message: 'Failed to fetch pixel IDs.' });
+        }
+    },
+
+    /**
+     * @desc    Delete a specific pixel entry by ID.
+     * @route   DELETE /api/pixels/:id
+     * @access  Private (Admin)
+     */
+    deletePixel: [
+        param('id').isMongoId().withMessage('Invalid Pixel ID format.'),
+        async (req, res) => {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
+            try {
+                const pixelId = req.params.id;
+                const tenantId = req.user.tenantId;
+
+                const deletedPixel = await PixelModel.deletePixelForTenant(pixelId, tenantId);
+
+                if (!deletedPixel) {
+                    return res.status(404).json({ message: 'Pixel ID not found or already deleted.' });
+                }
+
+                res.status(200).json({
+                    message: 'Pixel ID deleted successfully!',
+                    pixel: deletedPixel
+                });
+            } catch (error) {
+                console.error('Error deleting pixel ID:', error);
+                res.status(500).json({ message: 'Failed to delete pixel ID.' });
+            }
+        }
+    ]
+};
+
+// =========================
+// Site Config Handlers (Tenant-Aware)
+// =========================
+
+const SiteConfigController = {
+    /**
+     * @desc    Get the complete site configuration for the current tenant.
+     * @route   GET /api/site-config
+     * @access  Public
+     */
+    getSiteConfig: async (req, res) => {
+        try {
+            const tenantId = req.tenantId; // From `identifyTenant` middleware
+
+            // Fetch site config and pixel config in parallel for efficiency.
+            const [siteConfig, pixelConfig] = await Promise.all([
+                SiteConfig.findOrCreateForTenant(tenantId),
+                PixelModel.getLatestPixelConfigForTenant(tenantId)
+            ]);
+
+            // Combine the data from both models into a single response object.
+            const fullConfig = {
+                ...siteConfig.toObject(), // Convert mongoose doc to plain object
+                facebookPixelId: pixelConfig ? pixelConfig.facebookPixelId : null,
+                tiktokPixelId: pixelConfig ? pixelConfig.tiktokPixelId : null,
+            };
+
+            res.status(200).json(fullConfig);
+        } catch (error) {
+            console.error('Error fetching site configuration:', error);
+            res.status(500).json({ message: 'Failed to fetch site configuration.' });
+        }
+    },
+
+    /**
+     * @desc    Update the site configuration for the current tenant.
+     * @route   PUT /api/site-config
+     * @access  Private (Admin)
+     */
+    updateSiteConfig: async (req, res) => {
+        try {
+            const tenantId = req.user.tenantId; // From 'protect' middleware
+            
+            // Use findOneAndUpdate to update the document for the correct tenant.
+            // The { new: true } option returns the updated document.
+            // The { upsert: true } option ensures that if a config doesn't exist, it will be created.
+            const updatedConfig = await SiteConfig.findOneAndUpdate(
+                { tenantId },
+                { $set: req.body },
+                { new: true, upsert: true, runValidators: true }
+            );
+
+            res.status(200).json({
+                message: "Site configuration updated successfully!",
+                config: updatedConfig
+            });
+        } catch (error) {
+            console.error('Error updating site configuration:', error);
+            res.status(500).json({ message: 'Failed to update site configuration.' });
+        }
     }
 };
 
-// @desc    Update the entire site configuration
-// @route   PUT /api/site-config
-// @access  Private (Admin)
-// This is the function that will allow you to "upload" new delivery fees.
-exports.updateSiteConfig = async (req, res) => {
-    try {
-        // Fetch the one and only config document
-        const config = await SiteConfig.getSingleton();
-
-        if (!config) {
-            return res.status(404).json({ msg: 'Site configuration not found.' });
-        }
-
-        // The request body should contain the full configuration object,
-        // including the updated deliveryFees array.
-        const updates = req.body;
-
-        // Update all fields based on the request body.
-        // This will replace the old deliveryFees array with the new one from the request.
-        config.siteName = updates.siteName || config.siteName;
-        config.slogan = updates.slogan || config.slogan;
-        config.primaryColor = updates.primaryColor || config.primaryColor;
-        config.secondaryColor = updates.secondaryColor || config.secondaryColor;
-        config.tertiaryColor = updates.tertiaryColor || config.tertiaryColor;
-        config.generalTextColor = updates.generalTextColor || config.generalTextColor;
-        config.footerBgColor = updates.footerBgColor || config.footerBgColor;
-        config.footerTextColor = updates.footerTextColor || config.footerTextColor;
-        config.footerLinkColor = updates.footerLinkColor || config.footerLinkColor;
-        config.aboutUsText = updates.aboutUsText || config.aboutUsText;
-        config.aboutUsImageUrl = updates.aboutUsImageUrl || config.aboutUsImageUrl;
-        config.socialMediaLinks = updates.socialMediaLinks || config.socialMediaLinks;
-        config.deliveryFees = updates.deliveryFees || config.deliveryFees; // <-- This is the key line for your issue
-        config.currentDataIndex = updates.currentDataIndex !== undefined ? updates.currentDataIndex : config.currentDataIndex;
-
-
-        // Save the updated configuration to the database
-        const updatedConfig = await config.save();
-
-        // Send the newly updated configuration back as a response
-        res.json(updatedConfig);
-
-    } catch (err) {
-        console.error('Error in updateSiteConfig:', err.message);
-        res.status(500).send('Server Error');
-    }
-};
-
-
-// @desc    Update only the currentDataIndex field
-// @route   PUT /api/site-config/index
-// @access  Private (Admin)
-exports.updateCurrentDataIndex = async (req, res) => {
-    try {
-        const { currentDataIndex } = req.body;
-
-        if (currentDataIndex === undefined) {
-            return res.status(400).json({ msg: 'currentDataIndex is required.' });
-        }
-
-        const config = await SiteConfig.getSingleton();
-
-        if (!config) {
-            return res.status(404).json({ msg: 'Site configuration not found.' });
-        }
-
-        config.currentDataIndex = currentDataIndex;
-
-        const updatedConfig = await config.save();
-        res.json(updatedConfig);
-
-    } catch (err) {
-        console.error('Error in updateCurrentDataIndex:', err.message);
-        res.status(500).send('Server Error');
-    }
-};
+module.exports = { PixelController, SiteConfigController };
