@@ -10,8 +10,7 @@ const Order = require('../models/Order');
 const Product = require('../models/Product');
 const User = require('../models/User');
 
-// --- NEW: Abandoned Cart Schema and Model ---
-// This schema will store the details of carts that were started but not completed.
+// --- Abandoned Cart Schema and Model ---
 const abandonedCartSchema = new mongoose.Schema({
     fullName: { type: String, trim: true },
     phoneNumber: { type: String, required: true, trim: true },
@@ -26,17 +25,13 @@ const abandonedCartSchema = new mongoose.Schema({
         price: Number
     },
     pageUrl: String,
-    // The 'createdAt' field includes a TTL (Time To Live) index.
-    // Documents in this collection will be automatically deleted from the database after 30 days.
     createdAt: { type: Date, default: Date.now, expires: '30d' } 
 });
 
-// To avoid duplicate entries, we create a compound index.
-// This ensures that we only store one abandoned cart record per phone number and product ID.
 abandonedCartSchema.index({ phoneNumber: 1, 'product.productId': 1 }, { unique: true });
 
 const AbandonedCart = mongoose.model('AbandonedCart', abandonedCartSchema);
-// --- End of New Schema ---
+// --- End of Schema ---
 
 
 const router = express.Router();
@@ -52,29 +47,21 @@ const authenticateClient = (req, res, next) => {
                 clientId: decoded.id
             };
         } catch (err) {
-            // If the token is invalid, we don't block the request,
-            // but subsequent logic will handle the lack of a client ID.
+            // Token is invalid, but we don't block the request.
         }
     }
     next();
 };
 
-// --- NEW: Route to handle abandoned cart data ---
+// --- Abandoned Cart Routes ---
+
+// POST: Create or update an abandoned cart record
 router.post('/abandoned', async (req, res) => {
     try {
         const { fullName, phoneNumber, product, pageUrl, wilaya, commune } = req.body;
-
-        // Basic validation to ensure the most critical data is present.
         if (!phoneNumber || !product || !product.productId) {
             return res.status(400).json({ message: 'Phone number and product ID are required.' });
         }
-
-        // We use `findOneAndUpdate` with `upsert: true`.
-        // This is a powerful command that means:
-        // 1. Find a document matching the `filter`.
-        // 2. If it exists, apply the `update`.
-        // 3. If it does NOT exist, create a new document using both the filter and update data (upsert).
-        // This prevents creating multiple abandoned cart entries for the same person and product.
         const filter = { phoneNumber: phoneNumber, 'product.productId': product.productId };
         const update = {
             $set: {
@@ -83,20 +70,14 @@ router.post('/abandoned', async (req, res) => {
                 commune: commune,
                 product: product,
                 pageUrl: pageUrl,
-                createdAt: new Date() // We update the timestamp on each interaction.
+                createdAt: new Date()
             }
         };
         const options = { upsert: true, new: true, setDefaultsOnInsert: true };
-
         const abandonedCart = await AbandonedCart.findOneAndUpdate(filter, update, options);
-
         res.status(200).json({ message: 'Abandoned cart data saved successfully.', cart: abandonedCart });
-
     } catch (error) {
-        // If the database operation fails (e.g., due to the unique index), we catch the error.
         if (error.code === 11000) {
-            // This specific error code means a duplicate key error, which is expected with our logic.
-            // We can just confirm that the data is already there.
             return res.status(200).json({ message: 'Cart data already exists.' });
         }
         console.error('Abandoned cart error:', error);
@@ -104,10 +85,9 @@ router.post('/abandoned', async (req, res) => {
     }
 });
 
-// --- NEW: Route to get all abandoned carts ---
+// GET: Retrieve all abandoned carts
 router.get('/abandoned', async (req, res) => {
     try {
-        // This finds all documents in the AbandonedCart collection and sorts them by creation date.
         const carts = await AbandonedCart.find().sort({ createdAt: -1 });
         res.status(200).json(carts);
     } catch (error) {
@@ -116,77 +96,59 @@ router.get('/abandoned', async (req, res) => {
     }
 });
 
+// **NEW** DELETE: Remove an abandoned cart by its ID
+router.delete('/abandoned/:cartId', async (req, res) => {
+    try {
+        const { cartId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(cartId)) {
+            return res.status(400).json({ message: 'Invalid cart ID format.' });
+        }
+        const result = await AbandonedCart.findByIdAndDelete(cartId);
+        if (!result) {
+            return res.status(404).json({ message: 'Abandoned cart not found.' });
+        }
+        res.status(200).json({ message: 'Abandoned cart deleted successfully.' });
+    } catch (error) {
+        console.error('Delete abandoned cart error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+
+// --- Regular Order Routes ---
 
 // POST: Create a new order
 router.post('/', async (req, res) => {
     try {
         if (!req.body) {
-            return res.status(400).json({ message: 'Request body is missing or invalid. Ensure `Content-Type` header is set to `application/json`.' });
+            return res.status(400).json({ message: 'Request body is missing or invalid.' });
         }
-        const {
-            fullName,
-            phoneNumber,
-            wilaya,
-            commune,
-            address,
-            products,
-            status,
-            notes,
-            barcodeId
-        } = req.body;
+        const { fullName, phoneNumber, wilaya, commune, address, products, status, notes, barcodeId } = req.body;
 
         if (!fullName || !phoneNumber || !wilaya || !commune || !products || products.length === 0) {
-            return res.status(400).json({
-                message: 'Missing required fields.'
-            });
+            return res.status(400).json({ message: 'Missing required fields.' });
         }
 
         const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
         if (!phoneRegex.test(phoneNumber)) {
-            return res.status(400).json({
-                message: 'Invalid Algerian phone number format.'
-            });
+            return res.status(400).json({ message: 'Invalid Algerian phone number format.' });
         }
 
         for (const item of products) {
-            const {
-                productId,
-                quantity,
-                color,
-                size
-            } = item;
-            if (!productId || !quantity || !color || !size) {
-                return res.status(400).json({
-                    message: 'Each product must include ID, quantity, color, and size.'
-                });
-            }
-
-            const product = await Product.findById(productId);
+            const product = await Product.findById(item.productId);
             if (!product) {
-                return res.status(400).json({
-                    message: `Product with ID ${productId} not found.`
-                });
+                return res.status(400).json({ message: `Product with ID ${item.productId} not found.` });
             }
-            if (product.quantity < quantity) {
-                return res.status(400).json({
-                    message: `Insufficient stock for product: ${product.name}. Available: ${product.quantity}, Requested: ${quantity}`
-                });
+            if (product.quantity < item.quantity) {
+                return res.status(400).json({ message: `Insufficient stock for product: ${product.name}.` });
             }
-
-            product.quantity -= quantity;
+            product.quantity -= item.quantity;
             await product.save();
         }
 
-        const totalOrdersCount = products.length;
-
         const newOrder = new Order({
-            fullName,
-            phoneNumber,
-            wilaya,
-            commune,
-            address,
-            products,
-            totalOrdersCount,
+            fullName, phoneNumber, wilaya, commune, address, products,
+            totalOrdersCount: products.length,
             status: status || 'pending',
             notes: notes || '',
             barcodeId: barcodeId || null
@@ -194,24 +156,19 @@ router.post('/', async (req, res) => {
 
         await newOrder.save();
         
-        // After a successful order, we can remove any corresponding abandoned cart record.
         if (products.length > 0) {
             await AbandonedCart.deleteOne({ phoneNumber: phoneNumber, 'product.productId': products[0].productId });
         }
 
-
-        res.status(201).json({
-            message: 'Order created successfully',
-            order: newOrder
-        });
+        res.status(201).json({ message: 'Order created successfully', order: newOrder });
     } catch (error) {
         console.error('Create order error:', error);
-        res.status(500).json({
-            message: 'Server error',
-            error: error.message
-        });
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
+
+// ... (The rest of your existing routes: GET, PATCH, DELETE for orders) ...
+
 // GET: Order by Barcode ID
 router.get('/barcode/:barcodeId', async (req, res) => {
     try {
@@ -394,7 +351,6 @@ router.patch('/:orderId/status', authenticateClient, async (req, res) => {
 
         await order.save();
 
-        // Re-fetch and populate for the response
         const populatedOrder = await Order.findById(orderId)
             .populate('products.productId')
             .populate('confirmedBy', 'name email')
@@ -424,7 +380,7 @@ router.patch('/:orderId', async (req, res) => {
         }
 
         if (!req.body) {
-            return res.status(400).json({ message: 'Request body is missing or invalid. Ensure `Content-Type` header is set to `application/json`.' });
+            return res.status(400).json({ message: 'Request body is missing or invalid.' });
         }
 
         const order = await Order.findById(orderId);
@@ -432,23 +388,11 @@ router.patch('/:orderId', async (req, res) => {
             return res.status(404).json({ message: 'Order not found.' });
         }
 
-        const {
-            fullName,
-            phoneNumber,
-            wilaya,
-            commune,
-            address,
-            notes,
-            assignedTo,
-            barcodeId
-        } = req.body;
+        const { fullName, phoneNumber, wilaya, commune, address, notes, assignedTo, barcodeId } = req.body;
 
         let hasUpdate = false;
 
-        if (fullName !== undefined) {
-            order.fullName = fullName;
-            hasUpdate = true;
-        }
+        if (fullName !== undefined) { order.fullName = fullName; hasUpdate = true; }
         if (phoneNumber !== undefined) {
             const phoneRegex = /^(\+213|0)(5|6|7)[0-9]{8}$/;
             if (!phoneRegex.test(phoneNumber)) {
@@ -457,26 +401,11 @@ router.patch('/:orderId', async (req, res) => {
             order.phoneNumber = phoneNumber;
             hasUpdate = true;
         }
-        if (wilaya !== undefined) {
-            order.wilaya = wilaya;
-            hasUpdate = true;
-        }
-        if (commune !== undefined) {
-            order.commune = commune;
-            hasUpdate = true;
-        }
-        if (address !== undefined) {
-            order.address = address;
-            hasUpdate = true;
-        }
-        if (notes !== undefined) {
-            order.notes = notes;
-            hasUpdate = true;
-        }
-        if (barcodeId !== undefined) {
-            order.barcodeId = barcodeId;
-            hasUpdate = true;
-        }
+        if (wilaya !== undefined) { order.wilaya = wilaya; hasUpdate = true; }
+        if (commune !== undefined) { order.commune = commune; hasUpdate = true; }
+        if (address !== undefined) { order.address = address; hasUpdate = true; }
+        if (notes !== undefined) { order.notes = notes; hasUpdate = true; }
+        if (barcodeId !== undefined) { order.barcodeId = barcodeId; hasUpdate = true; }
 
         if (assignedTo !== undefined) {
             if (assignedTo === null || assignedTo === '') {
@@ -499,22 +428,14 @@ router.patch('/:orderId', async (req, res) => {
         }
 
         const savedOrder = await order.save();
-
-        // **FIX:** Re-fetch the document for the response WITHOUT populating `assignedTo`.
         const updatedOrderForResponse = await Order.findById(savedOrder._id)
             .populate('products.productId')
             .populate('confirmedBy', 'name email');
-        // By omitting `.populate('assignedTo', ...)`, the `assignedTo` field in the response
-        // will now be the plain ID string you expect.
 
-        res.status(200).json({
-            message: 'Order updated successfully',
-            order: updatedOrderForResponse
-        });
+        res.status(200).json({ message: 'Order updated successfully', order: updatedOrderForResponse });
 
     } catch (error) {
         console.error('Update order error:', error);
-
         if (error.name === 'ValidationError') {
             const messages = Object.values(error.errors).map(val => val.message);
             return res.status(400).json({ message: `Validation failed: ${messages.join(', ')}` });
@@ -522,44 +443,29 @@ router.patch('/:orderId', async (req, res) => {
         if (error.name === 'CastError') {
             return res.status(400).json({ message: `Invalid ID format for field: ${error.path}` });
         }
-
-        res.status(500).json({
-            message: 'Server error',
-            error: error.message
-        });
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
 
 // DELETE: Remove order
 router.delete('/:orderId', async (req, res) => {
     try {
-        const {
-            orderId
-        } = req.params;
+        const { orderId } = req.params;
         const order = await Order.findById(orderId);
 
-        if (!order) return res.status(404).json({
-            message: 'Order not found.'
-        });
+        if (!order) return res.status(404).json({ message: 'Order not found.' });
 
         for (const item of order.products) {
             await Product.findByIdAndUpdate(item.productId, {
-                $inc: {
-                    quantity: item.quantity
-                }
+                $inc: { quantity: item.quantity }
             });
         }
 
         await Order.findByIdAndDelete(orderId);
-        res.status(200).json({
-            message: 'Order deleted successfully and stock restored.'
-        });
+        res.status(200).json({ message: 'Order deleted successfully and stock restored.' });
     } catch (error) {
         console.error('Delete order error:', error);
-        res.status(500).json({
-            message: 'Server error',
-            error: error.message
-        });
+        res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
 
