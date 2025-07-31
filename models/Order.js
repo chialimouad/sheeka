@@ -2,6 +2,13 @@
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
+    // This tenantId field ensures every order is tied to a specific client.
+    tenantId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+        ref: 'Client',
+        index: true,
+    },
     fullName: {
         type: String,
         required: true
@@ -34,25 +41,14 @@ const orderSchema = new mongoose.Schema({
             ref: 'Product',
             required: true
         },
-        name: {
-            type: String
-        },
-        quantity: {
-            type: Number,
-            required: true
-        },
-        color: {
-            type: String,
-            required: true
-        },
-        size: {
-            type: String,
-            required: true
-        }
+        name: { type: String },
+        quantity: { type: Number, required: true },
+        color: { type: String },
+        size: { type: String }
     }],
-    totalOrdersCount: {
+    totalPrice: {
         type: Number,
-        default: 0
+        required: true
     },
     status: {
         type: String,
@@ -66,28 +62,25 @@ const orderSchema = new mongoose.Schema({
     },
     confirmedBy: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'User', // Staff member who confirmed
         default: null
     },
     assignedTo: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'User', // Staff member for delivery
         default: null
     },
     notes: {
         type: String,
         default: ''
     },
-    // --- NEW FIELD FOR TRACKING ---
     source: {
         type: String,
         enum: ['web', 'abandoned_cart_recovery'],
         default: 'web'
     },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
+}, {
+    timestamps: true
 });
 
 orderSchema.pre('save', function(next) {
@@ -97,6 +90,4 @@ orderSchema.pre('save', function(next) {
     next();
 });
 
-const Order = mongoose.model('Order', orderSchema);
-
-module.exports = Order;
+module.exports = mongoose.model('Order', orderSchema);
