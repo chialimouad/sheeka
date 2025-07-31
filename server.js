@@ -39,12 +39,12 @@ connectDB();
 // 🧩 Import Route Modules
 // ========================
 const provisioningRoutes = require('./routes/rovisioningRoutes');
-const userRoutes = require('./routes/userRoutes');
-const customerRoutes = require('./routes/customerRoutes');
+const userRoutes = require('./routes/authRoutes');
+const customerRoutes = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
-const orderRoutes = require('./routes/orderRoutes');
-const siteConfigRoutes = require('./routes/siteConfigRoutes');
-const emailRoutes = require('./routes/emailRoutes');
+const orderRoutes = require('./routes/orders');
+const siteConfigRoutes = require('./routes/site');
+const emailRoutes = require('./routes/emails');
 
 // ========================
 // 🚏 Mount Routes
