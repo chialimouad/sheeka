@@ -1,34 +1,25 @@
-// --- server.js ---
-// Main server entry point
+// server.js
+// Main server entry point for the multi-tenant ERP system.
 
-require('dotenv').config(); // Load environment variables from .env
-
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const path = require('path');
-const fs = require('fs');
+
+// --- Import Middleware ---
+const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 
 const app = express();
 
 // ========================
-// 📦 Middleware Setup
+// 📦 Core Middleware
 // ========================
 app.use(cors());
 app.use(express.json());
 app.use(helmet());
 app.use(morgan('dev'));
-
-// ========================
-// 📁 Static Files Setup
-// ========================
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-app.use('/uploads', express.static(uploadDir)); // Serve static files
 
 // ========================
 // 📡 Connect to MongoDB
@@ -47,40 +38,45 @@ connectDB();
 // ========================
 // 🧩 Import Route Modules
 // ========================
-const authRoutes = require('./routes/authRoutes');
-const orderRoutes = require('./routes/orders');
-const authroutesuser = require('./routes/authroutesuser');
+const provisioningRoutes = require('./routes/provisioningRoutes');
+const userRoutes = require('./routes/userRoutes');
+const customerRoutes = require('./routes/customerRoutes');
 const productRoutes = require('./routes/productRoutes');
-const siteConfigRoutes = require('./routes/site');
-const emailRoutes = require('./routes/emails');
-const pixelRoutes = require('./routes/pixel'); // ✅ Pixel routes
+const orderRoutes = require('./routes/orderRoutes');
+const siteConfigRoutes = require('./routes/siteConfigRoutes');
+const emailRoutes = require('./routes/emailRoutes');
 
 // ========================
 // 🚏 Mount Routes
 // ========================
-app.use('/auth', authRoutes);
-app.use('/authuser', authroutesuser);
-app.use('/products', productRoutes);
-app.use('/orders', orderRoutes);
-app.use('/api/site-config', siteConfigRoutes); // This correctly mounts all routes from routes/site.js
+
+// --- Super Admin Routes ---
+// These routes are for the master admin to create and manage clients.
+// They are protected by a master API key.
+app.use('/api/provision', isSuperAdmin, provisioningRoutes);
+
+// --- Tenant-Specific API Routes ---
+// These are the main application routes. The `identifyTenant` middleware
+// will run on each of these to determine which client's data to access.
+app.use('/api/users', userRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/config', siteConfigRoutes);
 app.use('/api/emails', emailRoutes);
-app.use('/site', pixelRoutes); // ✅ Mount pixel endpoints at /api/pixels
+
 
 // ========================
-// ❌ 404 Not Found Handler
+// ❌ Error Handling
 // ========================
 app.use((req, res, next) => {
     res.status(404).json({ message: 'Route not found' });
 });
 
-// ========================
-// 🧯 Global Error Handler
-// ========================
 app.use((err, req, res, next) => {
     console.error('🔥 Server Error:', err.stack);
     res.status(err.statusCode || 500).json({
         message: err.message || 'Internal Server Error',
-        ...(process.env.NODE_ENV === 'development' && { error: err })
     });
 });
 
