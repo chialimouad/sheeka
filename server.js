@@ -38,7 +38,7 @@ connectDB();
 // ========================
 // 🧩 Import Route Modules
 // ========================
-const provisioningRoutes = require('./routes/provisioningRoutes');
+const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/userRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const productRoutes = require('./routes/productRoutes');
