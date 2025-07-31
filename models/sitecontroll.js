@@ -1,106 +1,10 @@
+// models/SiteConfig.js
+
 const mongoose = require('mongoose');
-
-const SiteConfigSchema = new mongoose.Schema({
-    // General site information
-    siteName: {
-        type: String,
-        required: true,
-        default: ''
-    },
-    slogan: {
-        type: String,
-        required: true,
-        default: ''
-    },
-    // Main brand colors (using hex codes for flexibility, can be mapped to Tailwind classes in frontend)
-    primaryColor: { // Used for main accents, like buttons, active states
-        type: String,
-        default: '#C8797D' // Example: Sheeka's accent pink/red
-    },
-    secondaryColor: { // Used for darker accents, hover states
-        type: String,
-        default: '#A85F64' // Example: Darker Sheeka pink/red
-    },
-    tertiaryColor: { // Used for creamy background elements
-        type: String,
-        default: '#FDF5E6' // Example: Creamy off-white
-    },
-    generalTextColor: { // Used for main body text
-        type: String,
-        default: '#4A4A4A' // Example: Dark charcoal
-    },
-    // Footer specific styles
-    footerBgColor: {
-        type: String,
-        default: '#4A4A4A' // Example: Dark charcoal for footer background
-    },
-    footerTextColor: {
-        type: String,
-        default: '#DDCACA' // Example: Lighter grey for footer text
-    },
-    footerLinkColor: {
-        type: String,
-        default: '#E6B89C' // Example: Light brown for footer links
-    },
-    // About Us section content
-    aboutUsText: {
-        type: String,
-        required: true,
-        default: `At , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
-
-From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`
-    },
-    aboutUsImageUrl: { // New field for About Us image
-        type: String,
-        default: 'https://placehold.co/800x600/F020D8/FFFFFF?text=About+Us'
-    },
-    // Social Media Links (flexible array for multiple links)
-    socialMediaLinks: [
-        {
-            platform: { // e.g., 'Facebook', 'Instagram', 'Twitter'
-                type: String,
-                required: true
-            },
-            url: {
-                type: String,
-                required: true
-            },
-            iconClass: { // e.g., 'fab fa-facebook-f', 'fab fa-instagram', 'fab fa-twitter'
-                type: String,
-                required: true
-            }
-        }
-    ],
-    // Delivery Fees
-    deliveryFees: [
-        {
-            wilayaId: {
-                type: Number,
-                required: true
-            },
-            wilayaName: {
-                type: String,
-                required: true
-            },
-            price: {
-                type: Number,
-                required: true,
-                default: 0
-            }
-        }
-    ],
-    // NEW FIELD: A generic number data field
-    currentDataIndex: {
-        type: Number,
-        default: 0 // Default value
-    }
-}, {
-    timestamps: true // Adds createdAt and updatedAt timestamps
-});
 
 // Helper function to generate default Algerian wilayas and their default fees
 const generateDefaultDeliveryFees = () => {
-    const defaultFees = [
+    return [
         { "wilayaId": 1, "wilayaName": "Adrar", "price": 800 },
         { "wilayaId": 2, "wilayaName": "Chlef", "price": 650 },
         { "wilayaId": 3, "wilayaName": "Laghouat", "price": 700 },
@@ -153,73 +57,69 @@ const generateDefaultDeliveryFees = () => {
         { "wilayaId": 50, "wilayaName": "Bordj Badji Mokhtar", "price": 1100 },
         { "wilayaId": 51, "wilayaName": "Ouled Djellal", "price": 980 },
         { "wilayaId": 52, "wilayaName": "Béni Abbès", "price": 1050 },
-        { "wilayaId": 53, "wilayaName": "Timimoun", "price": 1000 }, // Corrected ID to match name, though it's a duplicate entry in original source
+        { "wilayaId": 53, "wilayaName": "In Guezzam", "price": 1250 },
         { "wilayaId": 54, "wilayaName": "Touggourt", "price": 990 },
         { "wilayaId": 55, "wilayaName": "Djanet", "price": 1400 },
         { "wilayaId": 56, "wilayaName": "El M'Ghair", "price": 970 },
         { "wilayaId": 57, "wilayaName": "El Meniaa", "price": 1150 },
         { "wilayaId": 58, "wilayaName": "In Salah", "price": 1300 }
     ];
-
-    return defaultFees;
 };
 
-SiteConfigSchema.statics.getSingleton = async function() {
-    let config = await this.findOne();
-    if (!config) {
-        // Create a default configuration if none exists
-        config = await this.create({
-            siteName: '',
-            slogan: '',
-            primaryColor: '#C8797D',
-            secondaryColor: '#A85F64',
-            tertiaryColor: '#FDF5E6',
-            generalTextColor: '#4A4A4A',
-            footerBgColor: '#4A4A4A',
-            footerTextColor: '#DDCACA',
-            footerLinkColor: '#E6B89C',
-            aboutUsText: `At , we believe that fashion is a powerful form of self-expression. Our brand is dedicated to providing high-quality, stylish, and comfortable clothing that empowers you to express your unique personality.
+const SiteConfigSchema = new mongoose.Schema({
+    // This tenantId field is the cornerstone of the multi-tenant architecture.
+    // It must be unique, as each client has only one site configuration.
+    tenantId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: true,
+        ref: 'Client',
+        unique: true,
+        index: true,
+    },
+    siteName: { type: String, default: 'My Store' },
+    slogan: { type: String, default: 'Quality products you can trust.' },
+    primaryColor: { type: String, default: '#C8797D' },
+    secondaryColor: { type: String, default: '#A85F64' },
+    tertiaryColor: { type: String, default: '#FDF5E6' },
+    generalTextColor: { type: String, default: '#4A4A4A' },
+    footerBgColor: { type: String, default: '#4A4A4A' },
+    footerTextColor: { type: String, default: '#DDCACA' },
+    footerLinkColor: { type: String, default: '#E6B89C' },
+    aboutUsText: { type: String, default: 'Welcome to our store!' },
+    aboutUsImageUrl: { type: String, default: 'https://placehold.co/800x600/cccccc/FFFFFF?text=About+Us' },
+    socialMediaLinks: [{
+        platform: { type: String, required: true },
+        url: { type: String, required: true },
+        iconClass: { type: String, required: true }
+    }],
+    deliveryFees: [{
+        wilayaId: { type: Number, required: true },
+        wilayaName: { type: String, required: true },
+        price: { type: Number, required: true, default: 0 }
+    }],
+    currentDataIndex: { type: Number, default: 0 }
+}, {
+    timestamps: true
+});
 
-From conceptualization to creation, every piece is crafted with meticulous attention to detail and a passion for design. We're committed to sustainable practices and ethical production, ensuring that your style choices make a positive impact. Join the Sheeka family and redefine your wardrobe.`,
-            aboutUsImageUrl: 'https://placehold.co/800x600/F020D8/FFFFFF?text=About+Us',
+/**
+ * @description Finds the configuration for a given tenant. If it doesn't exist,
+ * it creates a new one with default values.
+ * @param {string} tenantId The ID of the tenant.
+ * @returns {Promise<Document>} The site configuration document.
+ */
+SiteConfigSchema.statics.findOrCreateForTenant = async function(tenantId) {
+    let config = await this.findOne({ tenantId });
+    if (!config) {
+        config = await this.create({
+            tenantId,
+            deliveryFees: generateDefaultDeliveryFees(), // Initialize with default fees
             socialMediaLinks: [
                 { platform: 'Facebook', url: '#', iconClass: 'fab fa-facebook-f' },
                 { platform: 'Instagram', url: '#', iconClass: 'fab fa-instagram' },
                 { platform: 'Twitter', url: '#', iconClass: 'fab fa-twitter' }
             ],
-            deliveryFees: generateDefaultDeliveryFees(), // Initialize with default fees
-            currentDataIndex: 0 // NEW: Initialize currentDataIndex
         });
-    } else {
-        // Ensure that existing configs have the deliveryFees field.
-        // If not, initialize it with defaults or merge.
-        let changed = false;
-        if (!config.deliveryFees || config.deliveryFees.length === 0) {
-            config.deliveryFees = generateDefaultDeliveryFees();
-            changed = true;
-        } else {
-            // Optional: If you want to ensure all 58 wilayas are always present,
-            // you could iterate through `generateDefaultDeliveryFees()` and add
-            // any missing wilayas to `config.deliveryFees`.
-            const existingWilayaIds = new Set(config.deliveryFees.map(f => f.wilayaId));
-            const defaultFeesList = generateDefaultDeliveryFees();
-            defaultFeesList.forEach(defaultFee => {
-                if (!existingWilayaIds.has(defaultFee.wilayaId)) {
-                    config.deliveryFees.push(defaultFee);
-                    changed = true;
-                }
-            });
-        }
-
-        // NEW: Ensure currentDataIndex exists on existing configurations
-        if (config.currentDataIndex === undefined) {
-            config.currentDataIndex = 0;
-            changed = true;
-        }
-
-        if (changed) {
-            await config.save();
-        }
     }
     return config;
 };
