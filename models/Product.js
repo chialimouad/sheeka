@@ -1,11 +1,14 @@
+// models/Product.js
+
 const mongoose = require('mongoose');
 
-// Sub-schema for individual reviews
+// Sub-schema for individual reviews, now linked to Customers
 const reviewSchema = new mongoose.Schema({
-    user: {
+    // This correctly references the Customer model, as they are the ones leaving reviews.
+    customer: {
         type: mongoose.Schema.Types.ObjectId,
         required: true,
-        ref: 'User' // Reference to the User model
+        ref: 'Customer'
     },
     name: {
         type: String,
@@ -27,70 +30,68 @@ const reviewSchema = new mongoose.Schema({
 
 
 const productSchema = new mongoose.Schema({
-    name: { 
-        type: String, 
-        required: true 
+    // This tenantId field is the cornerstone of the multi-tenant architecture.
+    tenantId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: [true, 'A tenant ID is required for every product.'],
+        ref: 'Client',
+        index: true,
     },
-    // The description will store HTML content from a rich text editor
-    description: { 
-        type: String, 
-        required: true 
+    name: {
+        type: String,
+        required: true
     },
-    quantity: { 
-        type: Number, 
-        required: true 
+    description: {
+        type: String,
+        required: true
     },
-    price: { 
-        type: Number, 
-        required: true 
+    quantity: {
+        type: Number,
+        required: true
     },
-    // Field for the original price (optional)
+    price: {
+        type: Number,
+        required: true
+    },
     olprice: {
         type: Number,
-        required: false // Optional, as not all products may have a sale price
+        required: false
     },
-    // Field for a promotional code (optional)
     promocode: {
         type: String,
-        required: false // Optional, as a promo code may not always apply
+        required: false
     },
-    // ** NEW ** Field for promotional text (e.g., "Sale", "20% Off")
     textpromo: {
         type: String,
-        required: false // Optional, as promotional text may not always be present
+        required: false
     },
-    // An array of URLs for the main product images
-    images: { 
-        type: [String], 
-        required: true 
+    images: {
+        type: [String],
+        required: true
     },
     variants: [{
-        colors: { 
-            type: [String], 
-            required: true 
+        colors: {
+            type: [String],
+            required: true
         },
-        sizes: { 
-            type: [String], 
-            required: true 
+        sizes: {
+            type: [String],
+            required: true
         }
     }],
-    // Array of review sub-documents
     reviews: [reviewSchema],
-    // Field to store the average rating
     rating: {
         type: Number,
         required: true,
         default: 0
     },
-    // Field to store the number of reviews
     numReviews: {
         type: Number,
         required: true,
         default: 0
     }
-}, { 
-    // Adds createdAt & updatedAt fields automatically
-    timestamps: true 
+}, {
+    timestamps: true
 });
 
 module.exports = mongoose.model('Product', productSchema);
