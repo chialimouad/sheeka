@@ -1,314 +1,269 @@
+// controllers/productController.js
+
 const Product = require('../models/Product');
-const PromoImage = require('../models/imagespromo');
-const Collection = require('../models/Collection');
+const PromoImage = require('../models/imagespromo'); // Assumes this model now has a tenantId field
+const Collection = require('../models/Collection'); // Assumes this model now has a tenantId field
 const multer = require('multer');
-const mongoose = require('mongoose');
 const { v2: cloudinary } = require('cloudinary');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const { body, param, query, validationResult } = require('express-validator');
-// NOTE: You would typically have an authentication middleware to protect routes.
-// const { protect } = require('../middleware/authMiddleware'); 
 
 // =========================
-// 📦 Multer & Cloudinary Setup
+// 📦 Dynamic Multer & Cloudinary Setup
 // =========================
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'di1u2ssnm',
-    api_key: process.env.CLOUDINARY_API_KEY || '382166879473993',
-    api_secret: process.env.CLOUDINARY_API_SECRET || 'R4mh6IC2ilC88VKiTFPyyxtBeFU',
-});
 
-const storage = new CloudinaryStorage({
-    cloudinary,
-    params: {
-        folder: 'sheeka_products',
-        allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-        transformation: [{ width: 800, crop: 'limit' }],
-    },
-});
+/**
+ * @function uploadMiddleware
+ * @description Dynamically configures Multer and Cloudinary for file uploads based on the current tenant's credentials.
+ */
+exports.uploadMiddleware = (req, res, next) => {
+    // req.client is attached by the `identifyTenant` middleware
+    if (!req.client || !req.client.config || !req.client.config.cloudinary) {
+        return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
+    }
 
-// Export the upload middleware to be used in the router
-const upload = multer({ storage });
-exports.upload = upload;
-exports.uploadPromo = upload;
+    const tenantCloudinaryConfig = req.client.config.cloudinary;
+
+    // Create a new Cloudinary instance specifically for this tenant
+    const cloudinaryInstance = new cloudinary.config(tenantCloudinaryConfig);
+
+    const storage = new CloudinaryStorage({
+        cloudinary: cloudinaryInstance,
+        params: {
+            folder: `tenant_${req.tenantId}/products`, // Isolate uploads into tenant-specific folders
+            allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+            transformation: [{ width: 1024, crop: 'limit' }],
+        },
+    });
+
+    const upload = multer({ storage }).array('images', 10);
+
+    upload(req, res, (err) => {
+        if (err) {
+            console.error('Multer upload error for tenant ' + req.tenantId, err);
+            return res.status(400).json({ message: 'Image upload failed.', error: err.message });
+        }
+        next();
+    });
+};
 
 // =========================
-// 📸 Promo Image Handlers
+// 📸 Promo Image Handlers (Tenant-Aware)
 // =========================
-exports.getProductImagesOnly = async (req, res, next) => {
+
+exports.getProductImagesOnly = async (req, res) => {
     try {
-        const promos = await PromoImage.find({}, 'images').lean();
-        const allImages = promos.flatMap(p => (p && Array.isArray(p.images) ? p.images.filter(img => typeof img === 'string' && img.trim() !== '') : []));
+        // Fetch only images belonging to the current tenant
+        const promos = await PromoImage.find({ tenantId: req.tenantId }, 'images').lean();
+        const allImages = promos.flatMap(p => p.images || []);
         res.json(allImages);
     } catch (error) {
-        console.error('❌ Backend: Error fetching promo images:', error);
-        next(error);
+        console.error('Error fetching promo images:', error);
+        res.status(500).json({ message: 'Server error fetching promo images.' });
     }
 };
 
-exports.uploadPromoImages = async (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+exports.uploadPromoImages = async (req, res) => {
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No images uploaded' });
     }
     try {
-        if (!req.files || req.files.length === 0) {
-            return res.status(400).json({ error: 'No images uploaded' });
-        }
         const images = req.files.map(file => file.path);
-        const newPromo = new PromoImage({ images });
+        // Create the promo image record for the current tenant
+        const newPromo = new PromoImage({ images, tenantId: req.user.tenantId });
         await newPromo.save();
         res.status(201).json(newPromo);
     } catch (error) {
-        console.error('❌ Backend: Error uploading promo images:', error);
-        next(error);
+        console.error('Error uploading promo images:', error);
+        res.status(500).json({ message: 'Server error uploading promo images.' });
     }
 };
 
-exports.deletePromoImage = [
-    query('url').isURL().withMessage('Image URL must be a valid URL.').notEmpty().withMessage('Image URL is required.'),
-    async (req, res, next) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-        try {
-            const imageUrl = req.query.url;
-            const publicIdMatch = imageUrl.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
-            let publicId = '';
-            if (publicIdMatch && publicIdMatch[1]) {
-                publicId = publicIdMatch[1].replace(/\.\w{3,4}$/, '');
-            }
-            if (!publicId) {
-                return res.status(400).json({ message: 'Could not extract Cloudinary public ID from image URL.' });
-            }
-            let cloudinaryResult = { result: 'not_attempted' };
-            try {
-                cloudinaryResult = await cloudinary.uploader.destroy(publicId);
-            } catch (cloudinaryError) {
-                console.error(`❌ Error calling Cloudinary API for ${publicId}:`, cloudinaryError);
-            }
-            const dbResult = await PromoImage.updateMany({}, { $pull: { images: imageUrl } });
-            await PromoImage.deleteMany({ images: { $size: 0 } });
-            res.json({ message: '✅ Image deletion process completed.', dbResult, cloudinaryResult });
-        } catch (error) {
-            console.error('Server error during promo image deletion:', error);
-            next(error);
-        }
-    }
-];
 
 // =========================
-// 🏢 Product Handlers
+// 🏢 Product Handlers (Tenant-Aware)
 // =========================
 
 exports.addProduct = [
-    // ** FIX **: Removed upload.array() from here. It will be applied in the router.
-    body('name').trim().notEmpty().withMessage('Product name is required.'),
-    body('description').trim().notEmpty().withMessage('Product description is required.'),
-    body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
-    body('price').isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
-    body('olprice').optional().isFloat({ min: 0 }).withMessage('Original price must be a non-negative number.'),
-    body('promocode').optional().trim().escape(),
-    body('textpromo').optional().trim().escape(),
-    body('variants').optional().isJSON().withMessage('Variants must be a valid JSON array string.'),
-    
-    async (req, res, next) => {
+    body('name').trim().notEmpty(),
+    body('description').trim().notEmpty(),
+    body('quantity').isInt({ min: 0 }),
+    body('price').isFloat({ min: 0 }),
+    async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
         try {
-            const { name, description, quantity, price, olprice, promocode, textpromo, variants, product_type, custom_option } = req.body;
-            
+            const { name, description, quantity, price, olprice, variants } = req.body;
+            const tenantId = req.user.tenantId; // From 'protect' middleware
+
             if (!req.files || req.files.length === 0) {
-                return res.status(400).json({ error: 'At least one image is required for a product.' });
+                return res.status(400).json({ error: 'At least one image is required.' });
             }
-            
-            const images = req.files.map(file => file.path);
-            const parsedVariants = variants ? JSON.parse(variants) : [];
-            
+
             const newProduct = new Product({
+                tenantId,
                 name,
                 description,
                 quantity,
                 price,
                 olprice,
-                promocode,
-                textpromo,
-                images,
-                variants: parsedVariants,
-                product_type,
-                custom_option
+                images: req.files.map(file => file.path),
+                variants: variants ? JSON.parse(variants) : [],
             });
-            
+
             await newProduct.save();
             res.status(201).json(newProduct);
         } catch (error) {
             console.error('Error adding product:', error);
-            next(error);
+            res.status(500).json({ message: 'Server error while adding product.' });
         }
     }
 ];
 
-exports.getProducts = async (req, res, next) => {
+exports.getProducts = async (req, res) => {
     try {
-        const products = await Product.find().sort({ createdAt: -1 }).lean();
+        const products = await Product.find({ tenantId: req.tenantId }).sort({ createdAt: -1 }).lean();
         res.json(products);
     } catch (error) {
         console.error('Error fetching products:', error);
-        next(error);
+        res.status(500).json({ message: 'Server error fetching products.' });
     }
 };
 
 exports.getProductById = [
-    param('id').isMongoId().withMessage('Invalid Product ID format.'),
-    async (req, res, next) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
+    param('id').isMongoId(),
+    async (req, res) => {
         try {
-            const product = await Product.findById(req.params.id).populate('reviews.user', 'name').lean();
+            const product = await Product.findOne({ _id: req.params.id, tenantId: req.tenantId }).lean();
             if (!product) {
                 return res.status(404).json({ error: 'Product not found.' });
             }
             res.json(product);
         } catch (error) {
-            console.error('❌ getProductById failed:', error);
-            next(error);
+            console.error('getProductById failed:', error);
+            res.status(500).json({ message: 'Server error.' });
         }
     }
 ];
 
 exports.updateProduct = [
-    // ** FIX **: Removed upload.array() from here. It will be applied in the router.
-    param('id').isMongoId().withMessage('Invalid Product ID format.'),
-    body('name').optional().trim().notEmpty().withMessage('Product name cannot be empty.'),
-    body('description').optional().trim().notEmpty().withMessage('Product description cannot be empty.'),
-    body('quantity').optional().isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
-    body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
-    body('olprice').optional().isFloat({ min: 0 }).withMessage('Original price must be a non-negative number.'),
-    body('promocode').optional().trim().escape(),
-    body('textpromo').optional().trim().escape(),
-
-    async (req, res, next) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
+    param('id').isMongoId(),
+    async (req, res) => {
         try {
-            const product = await Product.findById(req.params.id);
+            const tenantId = req.user.tenantId;
+            const product = await Product.findOne({ _id: req.params.id, tenantId });
+
             if (!product) {
-                return res.status(404).json({ message: 'Product not found.' });
+                return res.status(404).json({ message: 'Product not found for this client.' });
             }
-            
-            let imagesToKeep = product.images;
-            if (req.body.imagesToKeep) {
-                try {
-                    imagesToKeep = (typeof req.body.imagesToKeep === 'string') 
-                        ? JSON.parse(req.body.imagesToKeep) 
-                        : req.body.imagesToKeep;
-                } catch (e) {
-                    return res.status(400).json({ message: 'Invalid format for imagesToKeep.' });
-                }
-            }
-            
+
+            // Update text fields
+            const { name, description, quantity, price, olprice, variants } = req.body;
+            if (name) product.name = name;
+            if (description) product.description = description;
+            if (quantity) product.quantity = quantity;
+            if (price) product.price = price;
+            if (olprice) product.olprice = olprice;
+            if (variants) product.variants = JSON.parse(variants);
+
+            // Handle image updates
             const newImageUrls = req.files ? req.files.map(file => file.path) : [];
-            const imagesToDelete = product.images.filter(url => !imagesToKeep.includes(url));
-
-            for (const imageUrl of imagesToDelete) {
-                const publicIdMatch = imageUrl.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
-                if (publicIdMatch && publicIdMatch[1]) {
-                    const publicId = publicIdMatch[1].replace(/\.\w{3,4}$/, '');
-                    try {
-                        await cloudinary.uploader.destroy(publicId);
-                    } catch (cloudinaryError) {
-                        console.error(`Failed to delete image from Cloudinary ${publicId}:`, cloudinaryError);
-                    }
-                }
-            }
-            product.images = [...imagesToKeep, ...newImageUrls];
-
-            const { name, description, quantity, price, olprice, promocode, textpromo, variants } = req.body;
-            if (name !== undefined) product.name = name;
-            if (description !== undefined) product.description = description;
-            if (quantity !== undefined) product.quantity = quantity;
-            if (price !== undefined) product.price = price;
-            if (olprice !== undefined) product.olprice = olprice;
-            if (promocode !== undefined) product.promocode = promocode;
-            if (textpromo !== undefined) product.textpromo = textpromo;
-
-            if (variants !== undefined) {
-                try {
-                    const parsedVariants = (typeof variants === 'string') 
-                        ? JSON.parse(variants) 
-                        : variants;
-
-                    if (!Array.isArray(parsedVariants)) {
-                        throw new Error('Variants data is not an array.');
-                    }
-                    
-                    const cleanedVariants = parsedVariants.map(v => {
-                        const { _id, ...rest } = v;
-                        return rest;
-                    });
-                    product.variants = cleanedVariants;
-                } catch (e) {
-                    return res.status(400).json({ message: `Invalid variants format: ${e.message}` });
-                }
-            }
+            product.images = [...product.images, ...newImageUrls]; // Add new images
 
             const updatedProduct = await product.save();
             res.json({ message: 'Product updated successfully', product: updatedProduct });
-
         } catch (error) {
             console.error('Error updating product:', error);
-            next(error);
+            res.status(500).json({ message: 'Server error while updating product.' });
         }
     }
 ];
 
 exports.deleteProduct = [
-    param('id').isMongoId().withMessage('Invalid Product ID format.'),
-    async (req, res, next) => {
+    param('id').isMongoId(),
+    async (req, res) => {
+        try {
+            const tenantId = req.user.tenantId;
+            const product = await Product.findOneAndDelete({ _id: req.params.id, tenantId });
+
+            if (!product) {
+                return res.status(404).json({ error: 'Product not found for this client.' });
+            }
+
+            if (product.images && product.images.length > 0) {
+                const cloudinaryInstance = new cloudinary.config(req.client.config.cloudinary);
+                const publicIds = product.images.map(url => {
+                    const match = url.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
+                    return match ? match[1] : null;
+                }).filter(Boolean);
+
+                if (publicIds.length > 0) {
+                    await cloudinaryInstance.api.delete_resources(publicIds);
+                }
+            }
+
+            res.json({ message: 'Product deleted successfully' });
+        } catch (error) {
+            console.error('Error deleting product:', error);
+            res.status(500).json({ message: 'Server error while deleting product.' });
+        }
+    }
+];
+
+// =========================
+// 🛒 Collection Handlers (Tenant-Aware)
+// =========================
+
+exports.addCollection = [
+    body('name').trim().notEmpty(),
+    async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
         try {
-            const product = await Product.findByIdAndDelete(req.params.id);
-            if (!product) {
-                return res.status(404).json({ error: 'Product not found.' });
-            }
-            if (product.images && product.images.length > 0) {
-                for (const imageUrl of product.images) {
-                    const publicIdMatch = imageUrl.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
-                    if (publicIdMatch && publicIdMatch[1]) {
-                        const publicId = publicIdMatch[1].replace(/\.\w{3,4}$/, '');
-                        try {
-                            await cloudinary.uploader.destroy(publicId);
-                        } catch (cloudinaryError) {
-                            console.error(`❌ Error deleting image from Cloudinary ${publicId}:`, cloudinaryError);
-                        }
-                    }
-                }
-            }
-            res.json({ message: 'Product deleted successfully' });
+            const { name, thumbnailUrl, productIds } = req.body;
+            const newCollection = new Collection({
+                name,
+                thumbnailUrl,
+                productIds: productIds || [],
+                tenantId: req.user.tenantId // Scope to the current tenant
+            });
+            await newCollection.save();
+            res.status(201).json(newCollection);
         } catch (error) {
-            console.error('Error deleting product:', error);
-            next(error);
+            if (error.code === 11000) {
+                return res.status(409).json({ error: 'A collection with this name already exists for this client.' });
+            }
+            console.error('Error adding collection:', error);
+            res.status(500).json({ message: 'Server error adding collection.' });
         }
     }
 ];
 
+exports.getCollections = async (req, res) => {
+    try {
+        const collections = await Collection.find({ tenantId: req.tenantId })
+            .populate({ path: 'productIds', select: 'name images price' })
+            .lean();
+        res.json(collections);
+    } catch (error) {
+        console.error('Error fetching collections:', error);
+        res.status(500).json({ message: 'Server error fetching collections.' });
+    }
+};
+
+// =========================
+// ⭐ Product Review Handlers (Tenant-Aware & Secure)
+// =========================
+
 exports.createProductReview = [
-    // protect, 
-    param('id').isMongoId().withMessage('Invalid Product ID format.'),
-    body('rating').isFloat({ min: 1, max: 5 }).withMessage('Rating must be a number between 1 and 5.'),
-    body('comment').trim().notEmpty().withMessage('Comment cannot be empty.'),
-    async (req, res, next) => {
+    param('id').isMongoId(),
+    body('rating').isFloat({ min: 1, max: 5 }),
+    body('comment').trim().notEmpty(),
+    async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
@@ -316,185 +271,40 @@ exports.createProductReview = [
 
         try {
             const { rating, comment } = req.body;
-            const product = await Product.findById(req.params.id);
+            const customer = req.customer; // Should be attached by a customer-specific auth middleware
+            
+            if (!customer) {
+                return res.status(401).json({ message: 'Not authorized. Please log in as a customer.' });
+            }
+
+            const product = await Product.findOne({ _id: req.params.id, tenantId: customer.tenantId });
 
             if (!product) {
-                return res.status(404).json({ message: 'Product not found' });
+                return res.status(404).json({ message: 'Product not found.' });
             }
 
-            if (!req.user) {
-                 // For testing without auth; replace with actual user from `protect` middleware
-                 req.user = { _id: new mongoose.Types.ObjectId(), name: 'Anonymous User' };
-            }
-            const alreadyReviewed = product.reviews.find(
-                (r) => r.user.toString() === req.user._id.toString()
-            );
-
+            const alreadyReviewed = product.reviews.find(r => r.customer.toString() === customer.id.toString());
             if (alreadyReviewed) {
-                return res.status(400).json({ message: 'Product already reviewed' });
+                return res.status(400).json({ message: 'You have already reviewed this product.' });
             }
 
             const review = {
-                name: req.user.name,
+                name: customer.name,
                 rating: Number(rating),
                 comment,
-                user: req.user._id,
+                customer: customer.id,
             };
 
             product.reviews.push(review);
-
             product.numReviews = product.reviews.length;
             product.rating = product.reviews.reduce((acc, item) => item.rating + acc, 0) / product.reviews.length;
 
             await product.save();
-            res.status(201).json({ message: 'Review added successfully' });
+            res.status(201).json({ message: 'Review added successfully.' });
 
         } catch (error) {
             console.error('Error creating product review:', error);
-            next(error);
-        }
-    }
-];
-
-exports.getProductReviews = [
-    param('id').isMongoId().withMessage('Invalid Product ID format.'),
-    async (req, res, next) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        try {
-            const product = await Product.findById(req.params.id)
-                                         .select('reviews')
-                                         .populate('reviews.user', 'name');
-            
-            if (!product) {
-                return res.status(404).json({ message: 'Product not found' });
-            }
-
-            res.json(product.reviews);
-
-        } catch (error) {
-            console.error('Error fetching product reviews:', error);
-            next(error);
-        }
-    }
-];
-
-
-// =========================
-// 🛒 Collection Handlers
-// =========================
-exports.getCollections = async (req, res, next) => {
-    try {
-        const collections = await Collection.find().populate({ path: 'productIds', select: 'name images price' }).lean();
-        const updatedCollections = collections.map(collection => {
-            const populatedProducts = (collection.productIds || []).filter(p => p && p.name && p.price !== undefined && Array.isArray(p.images));
-            return { ...collection, productIds: populatedProducts };
-        });
-        res.json(updatedCollections);
-    } catch (error) {
-        console.error('❌ Error fetching collections:', error);
-        next(error);
-    }
-};
-
-exports.getCollectionById = [
-    param('id').isMongoId().withMessage('Invalid collection ID format.'),
-    async (req, res, next) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-        try {
-            const { id } = req.params;
-            const collection = await Collection.findById(id).populate({ path: 'productIds', select: 'name description images price variants quantity' }).lean();
-            if (!collection) {
-                return res.status(404).json({ message: 'Collection not found.' });
-            }
-            collection.productIds = (collection.productIds || []).filter(p => p && p._id);
-            res.json(collection);
-        } catch (error) {
-            console.error('Error fetching collection by ID:', error);
-            next(error);
-        }
-    }
-];
-
-exports.addCollection = [
-    body('name').trim().notEmpty().withMessage('Collection name is required.'),
-    body('thumbnailUrl').optional().isURL().withMessage('Thumbnail URL must be a valid URL.'),
-    body('productIds').optional().isArray().withMessage('Product IDs must be an array.')
-        .custom(ids => ids.every(id => mongoose.Types.ObjectId.isValid(id))).withMessage('Each product ID must be a valid MongoDB Object ID.'),
-    async (req, res, next) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-        try {
-            const { name, thumbnailUrl, productIds } = req.body;
-            const newCollection = new Collection({ name, thumbnailUrl, productIds: productIds || [] });
-            await newCollection.save();
-            res.status(201).json(newCollection);
-        } catch (error) {
-            if (error.code === 11000) {
-                return res.status(409).json({ error: 'Collection with this name already exists.' });
-            }
-            next(error);
-        }
-    }
-];
-
-exports.updateCollection = [
-    param('id').isMongoId().withMessage('Invalid Collection ID format.'),
-    body('name').optional().trim().notEmpty().withMessage('Collection name cannot be empty.'),
-    body('thumbnailUrl').optional().isURL().withMessage('Thumbnail URL must be a valid URL.'),
-    body('productIds').optional().isArray().withMessage('Product IDs must be an array.')
-        .custom(ids => ids.every(id => mongoose.Types.ObjectId.isValid(id))).withMessage('Each product ID must be a valid MongoDB Object ID.'),
-    async (req, res, next) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-        try {
-            const { name, thumbnailUrl, productIds } = req.body;
-            const updatedFields = {};
-            if (name !== undefined) updatedFields.name = name;
-            if (thumbnailUrl !== undefined) updatedFields.thumbnailUrl = thumbnailUrl;
-            if (productIds !== undefined) updatedFields.productIds = productIds;
-            if (Object.keys(updatedFields).length === 0) {
-                return res.status(400).json({ message: 'No fields provided for update.' });
-            }
-            const collection = await Collection.findByIdAndUpdate(req.params.id, updatedFields, { new: true, runValidators: true }).lean();
-            if (!collection) {
-                return res.status(404).json({ error: 'Collection not found.' });
-            }
-            res.json({ message: 'Collection updated successfully', collection });
-        } catch (error) {
-            if (error.code === 11000) {
-                return res.status(409).json({ error: 'Collection with this name already exists.' });
-            }
-            next(error);
-        }
-    }
-];
-
-exports.deleteCollection = [
-    param('id').isMongoId().withMessage('Invalid Collection ID format.'),
-    async (req, res, next) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-        try {
-            const collection = await Collection.findByIdAndDelete(req.params.id);
-            if (!collection) {
-                return res.status(404).json({ error: 'Collection not found.' });
-            }
-            res.json({ message: 'Collection deleted successfully' });
-        } catch (error) {
-            next(error);
+            res.status(500).json({ message: 'Server error creating review.' });
         }
     }
 ];
