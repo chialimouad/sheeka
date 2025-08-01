@@ -13,13 +13,31 @@ const { provisionNewClient } = require('../controllers/provisioningController');
 router.post(
     '/client',
     [
-        body('clientName', 'Client business name is required').not().isEmpty().trim(),
-        body('adminEmail', 'A valid admin email is required').isEmail(),
-        body('adminPassword', 'Admin password must be at least 8 characters long').isLength({ min: 8 }),
-        body('cloudinaryCloudName', 'Cloudinary Cloud Name is required').not().isEmpty(),
-        body('cloudinaryApiKey', 'Cloudinary API Key is required').not().isEmpty(),
-        body('cloudinaryApiSecret', 'Cloudinary API Secret is required').not().isEmpty()
-        // 🧹 Nodemailer fields removed
+        body('clientName')
+            .notEmpty()
+            .withMessage('Client business name is required')
+            .trim(),
+
+        body('adminEmail')
+            .isEmail()
+            .withMessage('A valid admin email is required')
+            .normalizeEmail(),
+
+        body('adminPassword')
+            .isLength({ min: 8 })
+            .withMessage('Admin password must be at least 8 characters long'),
+
+        body('cloudinaryCloudName')
+            .notEmpty()
+            .withMessage('Cloudinary Cloud Name is required'),
+
+        body('cloudinaryApiKey')
+            .notEmpty()
+            .withMessage('Cloudinary API Key is required'),
+
+        body('cloudinaryApiSecret')
+            .notEmpty()
+            .withMessage('Cloudinary API Secret is required')
     ],
     provisionNewClient
 );
