@@ -1,21 +1,21 @@
 const mongoose = require('mongoose');
-const AutoIncrement = require('mongoose-sequence')(mongoose);
 
 /**
  * @desc Defines the schema for a Client (Tenant).
- * Each client has a unique, auto-incrementing tenantId.
+ * The tenantId is now manually generated in the controller.
  */
 const clientSchema = new mongoose.Schema({
-    // tenantId will be auto-generated and incremented by the plugin, starting from 1001.
     tenantId: {
         type: Number,
+        required: true, // It's now required as we set it manually.
         unique: true,
+        index: true, // Add an index for faster lookups.
     },
     name: {
         type: String,
         required: true,
         trim: true,
-        unique: true, // It's good practice to keep client names unique as well.
+        unique: true,
     },
     isActive: {
         type: Boolean,
@@ -37,9 +37,5 @@ const clientSchema = new mongoose.Schema({
         },
     },
 }, { timestamps: true }); // Automatically adds createdAt and updatedAt fields.
-
-// Apply the auto-increment plugin to the tenantId field.
-// It will create a counter collection and ensure tenantId is unique and sequential.
-clientSchema.plugin(AutoIncrement, { inc_field: 'tenantId', id: 'tenantId_counter', start_seq: 1001 });
 
 module.exports = mongoose.model('Client', clientSchema);
