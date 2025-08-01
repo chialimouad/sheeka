@@ -3,21 +3,25 @@
 /**
  * @desc     Protects the client provisioning route.
  * Ensures that only a request with the master API key can create new tenants.
- * NOTE: The API key is hardcoded as requested. The standard, more secure practice
- * is to store this in an environment variable (.env file).
+ * NOTE: The API key is hardcoded for now. In production, use an environment variable.
  */
+
 const isSuperAdmin = (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
-    
-    // The Super Admin API Key is now hardcoded directly into the file.
+
+    // ✅ Hardcoded Super Admin Key — replace with env in production
     const superAdminKey = 'mouadchiali2231421ans';
 
-    if (apiKey && apiKey === superAdminKey) {
-        next(); // The provided API key is correct, proceed to the next step.
-    } else {
-        // The API key is missing or incorrect, send a "Forbidden" error.
-        res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action.' });
+    if (!apiKey) {
+        return res.status(401).json({ message: 'Unauthorized: API key missing.' });
     }
+
+    if (apiKey !== superAdminKey) {
+        return res.status(403).json({ message: 'Forbidden: Invalid API key.' });
+    }
+
+    // ✅ API key is correct, allow request to continue
+    next();
 };
 
 module.exports = { isSuperAdmin };
