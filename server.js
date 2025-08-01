@@ -51,18 +51,14 @@ const emailRoutes = require('./routes/emails');
 // ========================
 
 // --- Super Admin Routes ---
-// These routes are for the master admin to create and manage clients.
-// They are protected by a master API key.
 app.use('/api/provision', isSuperAdmin, provisioningRoutes);
 
 // --- Tenant-Specific API Routes ---
-// These are the main application routes. The `identifyTenant` middleware
-// will run on each of these to determine which client's data to access.
 app.use('/api/users', userRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/config', siteConfigRoutes);
+app.use('/api/config', siteConfigRoutes); // Corrected usage
 app.use('/api/emails', emailRoutes);
 
 
