@@ -2,7 +2,6 @@ const { validationResult } = require('express-validator');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
 const path = require('path');
-const mkdirp = require('mkdirp');
 
 /**
  * @desc Creates a new client ERP instance (tenant)
@@ -46,7 +45,8 @@ const provisionNewClient = async (req, res) => {
             return res.status(409).json({ message: `❌ Tenant '${tenantId}' already exists.` });
         }
 
-        await mkdirp(tenantDir); // Create directory if not exists
+        // ✅ Create tenant directory
+        fs.mkdirSync(tenantDir, { recursive: true });
 
         // ✅ Create configuration object
         const config = {
