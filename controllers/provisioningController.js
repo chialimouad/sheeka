@@ -1,10 +1,8 @@
-// controllers/provisioningController.js
-
 const { validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const Client = require('../models/Client'); // Assuming your client model is here
-const User = require('../models/User');     // Assuming your user model is here
+const Client = require('../models/Client');
+const User = require('../models/User');
 
 exports.provisionNewClient = async (req, res) => {
     const errors = validationResult(req);
@@ -19,39 +17,33 @@ exports.provisionNewClient = async (req, res) => {
         cloudinaryCloudName,
         cloudinaryApiKey,
         cloudinaryApiSecret,
+        nodemailerEmail,
+        nodemailerAppPassword
     } = req.body;
 
     try {
-        // Check if a client with the same name or admin email already exists
-        let client = await Client.findOne({ name: clientName });
-        if (client) {
-            return res.status(400).json({ message: 'A client with this name already exists.' });
+        // ✅ Check for existing client by name
+        const existingClient = await Client.findOne({ name: clientName });
+        if (existingClient) {
+            return res.status(400).json({ message: '❌ A client with this name already exists.' });
         }
 
-        let adminUser = await User.findOne({ email: adminEmail });
-         if (adminUser) {
-            return res.status(400).json({ message: 'This email is already registered to another user.' });
+        // ✅ Check for existing user by email
+        const existingUser = await User.findOne({ email: adminEmail });
+        if (existingUser) {
+            return res.status(400).json({ message: '❌ This admin email is already in use.' });
         }
 
-        // --- NEW: Automatically generate the tenantId ---
-        // 1. Get the number of existing clients to create a unique index.
+        // ✅ Generate unique tenantId
         const clientCount = await Client.countDocuments();
-        
-        // 2. Format the index to be three digits with leading zeros (e.g., 1 -> "001").
         const clientIndex = String(clientCount + 1).padStart(3, '0');
-
-        // 3. Sanitize the client name (remove spaces, convert to lowercase).
         const sanitizedClientName = clientName.replace(/\s+/g, '').toLowerCase();
-
-        // 4. Construct the final tenantId based on your formula.
         const generatedTenantId = `${sanitizedClientName}${clientIndex}sheeka@mouad`;
-        // --- END NEW LOGIC ---
 
-        // --- Create the new Client (Tenant) ---
-        client = new Client({
+        // ✅ Create and save the new client
+        const client = new Client({
             name: clientName,
-            // ADDED: Save the newly generated tenantId to the database.
-            tenantId: generatedTenantId, 
+            tenantId: generatedTenantId,
             isActive: true,
             config: {
                 jwtSecret: crypto.randomBytes(32).toString('hex'),
@@ -60,18 +52,21 @@ exports.provisionNewClient = async (req, res) => {
                     api_key: cloudinaryApiKey,
                     api_secret: cloudinaryApiSecret,
                 },
-            
-            },
+                nodemailer: {
+                    email: nodemailerEmail,
+                    appPassword: nodemailerAppPassword
+                }
+            }
         });
 
         await client.save();
 
-        // --- Create the initial Admin User for this Client ---
+        // ✅ Hash password and create admin user
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(adminPassword, salt);
 
-        adminUser = new User({
-            tenantId: client._id, 
+        const adminUser = new User({
+            tenantId: client._id,
             name: 'Admin',
             email: adminEmail,
             password: hashedPassword,
@@ -80,12 +75,12 @@ exports.provisionNewClient = async (req, res) => {
 
         await adminUser.save();
 
-        res.status(201).json({
-            message: 'Client provisioned successfully.',
+        // ✅ Send success response
+        return res.status(201).json({
+            message: '✅ Client provisioned successfully.',
             client: {
                 id: client._id,
                 name: client.name,
-                // Include the new tenantId in the response
                 tenantId: client.tenantId,
             },
             adminUser: {
@@ -95,7 +90,10 @@ exports.provisionNewClient = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Provisioning Error:', error.message);
-        res.status(500).json({ message: 'Server error during client provisioning.' });
+        console.error('❌ Provisioning Error:', error);
+        return res.status(500).json({
+            message: 'Server error during client provisioning.',
+            error: error.message
+        });
     }
 };
