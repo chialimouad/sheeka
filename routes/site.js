@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { body, param } = require('express-validator');
+const { param } = require('express-validator');
 
 // Import the refactored controllers
 const {
@@ -10,48 +10,31 @@ const {
     PixelController
 } = require('../controllers/site');
 
-// Import the necessary middleware for security and tenant identification
+// Import the necessary middleware
 const { identifyTenant } = require('../middleware/tenantMiddleware');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 
-// ================================
-// ⚙️ SITE CONFIGURATION ROUTES
-// ================================
+// --- Main Site Config Routes ---
 
-/**
- * @route   GET /api/config
- * @desc    Get the complete public site configuration for the current client
- * @access  Public
- */
+// GET the public site configuration for the current client
 router.get(
     '/',
-    identifyTenant, // Identifies the client based on the request (e.g., subdomain)
+    identifyTenant,
     SiteConfigController.getSiteConfig
 );
 
-/**
- * @route   PUT /api/config
- * @desc    Update the main site configuration for the current client
- * @access  Private (Admin)
- */
+// PUT to update the site configuration (Admin only)
 router.put(
     '/',
     identifyTenant,
-    protect, // Ensures a user is logged in
-    isAdmin, // Ensures the user has admin privileges
+    protect,
+    isAdmin,
     SiteConfigController.updateSiteConfig
 );
 
+// --- Pixel Tracking Routes ---
 
-// ================================
-// 픽셀 추적 경로
-// ================================
-
-/**
- * @route   GET /api/config/pixels
- * @desc    현재 클라이언트의 모든 픽셀 구성을 가져옵니다
- * @access  Private (Admin)
- */
+// GET all pixel configurations for the current client (Admin only)
 router.get(
     '/pixels',
     identifyTenant,
@@ -60,36 +43,22 @@ router.get(
     PixelController.getPixels
 );
 
-/**
- * @route   POST /api/config/pixels
- * @desc    현재 클라이언트에 대한 새 픽셀 구성을 만듭니다
- * @access  Private (Admin)
- */
+// POST a new pixel configuration for the current client (Admin only)
 router.post(
     '/pixels',
     identifyTenant,
     protect,
     isAdmin,
-    [ // 유효성 검사 추가
-        body('fbPixelId').optional().trim().notEmpty().withMessage('Facebook Pixel ID는 비워 둘 수 없습니다.'),
-        body('tiktokPixelId').optional().trim().notEmpty().withMessage('TikTok Pixel ID는 비워 둘 수 없습니다.')
-    ],
     PixelController.postPixel
 );
 
-/**
- * @route   DELETE /api/config/pixels/:id
- * @desc    ID로 픽셀 구성을 삭제합니다
- * @access  Private (Admin)
- */
+// DELETE a pixel configuration by its ID (Admin only)
 router.delete(
     '/pixels/:id',
     identifyTenant,
     protect,
     isAdmin,
-    [ // ID 형식에 대한 유효성 검사
-        param('id').isMongoId().withMessage('잘못된 픽셀 ID 형식입니다.')
-    ],
+    [param('id').isMongoId().withMessage('Invalid Pixel ID format.')],
     PixelController.deletePixel
 );
 
