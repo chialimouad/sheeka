@@ -19,7 +19,6 @@ exports.provisionNewClient = async (req, res) => {
 
     const {
         clientName,
-        subdomain,
         adminEmail,
         adminPassword,
         cloudinaryCloudName,
@@ -30,20 +29,14 @@ exports.provisionNewClient = async (req, res) => {
     } = req.body;
 
     try {
-        // 1. Check if the subdomain is already in use to prevent duplicates.
-        const existingClient = await Client.findOne({ subdomain: subdomain.toLowerCase() });
-        if (existingClient) {
-            return res.status(409).json({ message: `Subdomain '${subdomain}' is already in use.` });
-        }
+   
 
-        // 2. Generate a unique and secure JWT secret for the new client.
         // This is a standard and secure way to create a secret key for signing tokens.
         const jwtSecret = crypto.randomBytes(32).toString('hex');
 
         // 3. Create the new Client document with all their configuration.
         const newClient = new Client({
             name: clientName,
-            subdomain: subdomain.toLowerCase(),
             config: {
                 jwtSecret, // Store the new secret for this client
                 cloudinary: {
@@ -79,7 +72,6 @@ exports.provisionNewClient = async (req, res) => {
             client: {
                 id: savedClient._id,
                 name: savedClient.name,
-                subdomain: savedClient.subdomain,
             }
         });
 
