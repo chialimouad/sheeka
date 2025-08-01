@@ -3,34 +3,30 @@
 const Client = require('../models/Client');
 
 /**
- * @desc    Identifies the client (tenant) based on the request's subdomain.
+ * @desc    Identifies the client (tenant) based on a tenant ID header.
  * Attaches the client's full document and ID to the request object.
- * @note    This should be the VERY FIRST middleware on any tenant-aware route.
  */
 const identifyTenant = async (req, res, next) => {
     try {
-        // In production, you would parse the hostname, e.g., 'sheeka.yourapp.com'
-        // For development, we can use a custom header like 'x-tenant-id' for easier testing.
-        const subdomain = req.headers['x-tenant-subdomain']; // For testing with tools like Postman
-        // const hostnameParts = req.hostname.split('.');
-        // const subdomain = hostnameParts[0];
+        // Use x-tenant-id header instead of subdomain
+        const tenantId = req.headers['x-tenant-id'];
 
-        if (!subdomain) {
-            return res.status(400).json({ message: 'Unable to identify client. Subdomain or x-tenant-subdomain header is missing.' });
+        if (!tenantId) {
+            return res.status(400).json({ message: 'Tenant ID (x-tenant-id) is missing from the headers.' });
         }
 
-        // Find the client with the matching subdomain.
-        const client = await Client.findOne({ subdomain: subdomain.toLowerCase() }).lean();
+        // Find the client using the tenantId (could be _id or a custom field)
+        const client = await Client.findById(tenantId).lean();
 
         if (!client) {
-            return res.status(404).json({ message: `Client with subdomain '${subdomain}' not found.` });
+            return res.status(404).json({ message: 'Client not found.' });
         }
 
         if (!client.isActive) {
             return res.status(403).json({ message: 'This client account is inactive.' });
         }
 
-        // Attach the client's data to the request object for use in subsequent middleware and controllers.
+        // Attach client info to request
         req.client = client;
         req.tenantId = client._id;
 
