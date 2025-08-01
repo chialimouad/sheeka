@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
-const jwt = 'jsonwebtoken';
+// This is the corrected line. It now properly imports the jsonwebtoken library.
+const jwt = require('jsonwebtoken'); 
 const { validationResult } = require('express-validator');
 
 // --- Helper function to generate JWT ---
@@ -44,7 +45,6 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials.' });
         }
 
-        // --- THIS IS THE FIX ---
         // We get the secret from the client object attached by the middleware.
         const jwtSecret = req.client.config.jwtSecret;
 
