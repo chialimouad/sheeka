@@ -7,26 +7,31 @@ const { body } = require('express-validator');
 // Import the controller that handles the logic for creating a new client
 const { provisionNewClient } = require('../controllers/provisioningController');
 
-// Note: The 'isSuperAdmin' middleware is applied in server.js before this router is used.
+// --- Route: POST /api/provision/client ---
+// Desc:    Creates a new client instance (tenant) with its own DB, config, and admin.
+// Access:  Private (Super Admin Only) - validated by isSuperAdmin middleware in server.js
 
-/**
- * @route   POST /api/provision/client
- * @desc    Creates a new client instance (tenant) with its own configuration and admin user.
- * @access  Private (Super Admin Only)
- */
 router.post(
     '/client',
     [
-        // --- Input Validation ---
-        // This ensures that all the data from your "Super Admin" HTML page is present and valid.
-        body('clientName', 'Client business name is required').not().isEmpty().trim(),
-        body('adminEmail', 'A valid admin email is required').isEmail(),
-        body('adminPassword', 'Admin password must be at least 8 characters long').isLength({ min: 8 }),
-        body('cloudinaryCloudName', 'Cloudinary Cloud Name is required').not().isEmpty(),
-        body('cloudinaryApiKey', 'Cloudinary API Key is required').not().isEmpty(),
-        body('cloudinaryApiSecret', 'Cloudinary API Secret is required').not().isEmpty(),
-        body('nodemailerEmail', 'Nodemailer sending email is required').isEmail(),
-        body('nodemailerAppPassword', 'Nodemailer App Password is required').not().isEmpty(),
+        // Validate input fields
+        body('clientName')
+            .notEmpty().withMessage('Client business name is required')
+            .trim(),
+        body('adminEmail')
+            .isEmail().withMessage('A valid admin email is required'),
+        body('adminPassword')
+            .isLength({ min: 8 }).withMessage('Admin password must be at least 8 characters long'),
+        body('cloudinaryCloudName')
+            .notEmpty().withMessage('Cloudinary Cloud Name is required'),
+        body('cloudinaryApiKey')
+            .notEmpty().withMessage('Cloudinary API Key is required'),
+        body('cloudinaryApiSecret')
+            .notEmpty().withMessage('Cloudinary API Secret is required'),
+        body('nodemailerEmail')
+            .isEmail().withMessage('Nodemailer sending email is required'),
+        body('nodemailerAppPassword')
+            .notEmpty().withMessage('Nodemailer App Password is required'),
     ],
     provisionNewClient
 );
