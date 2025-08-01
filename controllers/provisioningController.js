@@ -1,7 +1,10 @@
+// controllers/provisioningController.js
+
 const { validationResult } = require('express-validator');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
 const path = require('path');
+const mkdirp = require('mkdirp');
 
 /**
  * @desc Creates a new client ERP instance (tenant)
@@ -10,7 +13,6 @@ const path = require('path');
  */
 const provisionNewClient = async (req, res) => {
     try {
-        // ✅ Validate request
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
@@ -25,11 +27,7 @@ const provisionNewClient = async (req, res) => {
             cloudinaryApiSecret
         } = req.body;
 
-        if (!clientName || !adminEmail || !adminPassword) {
-            return res.status(400).json({ message: "❌ Required fields are missing." });
-        }
-
-        // ✅ Generate tenant ID (format: clientnameYYYYsheekaltd)
+        // ✅ Generate tenant ID: format => clientnameYYYYsheekaltd
         const currentYear = new Date().getFullYear();
         const sanitizedName = clientName.toLowerCase().replace(/\s+/g, '');
         const tenantId = `${sanitizedName}${currentYear}sheekaltd`;
@@ -39,33 +37,25 @@ const provisionNewClient = async (req, res) => {
 
         // ✅ Define tenant directory
         const tenantDir = path.join(__dirname, '..', 'tenants', tenantId);
+        await mkdirp(tenantDir); // Ensures the directory exists
 
-        // Check if already exists
-        if (fs.existsSync(tenantDir)) {
-            return res.status(409).json({ message: `❌ Tenant '${tenantId}' already exists.` });
-        }
-
-        // ✅ Create tenant directory
-        fs.mkdirSync(tenantDir, { recursive: true });
-
-        // ✅ Create configuration object
+        // ✅ Create configuration file for tenant
         const config = {
             tenantId,
             clientName,
             adminEmail,
             hashedPassword,
             cloudinary: {
-                cloudName: cloudinaryCloudName || '',
-                apiKey: cloudinaryApiKey || '',
-                apiSecret: cloudinaryApiSecret || ''
+                cloudName: cloudinaryCloudName,
+                apiKey: cloudinaryApiKey,
+                apiSecret: cloudinaryApiSecret
             }
         };
 
-        // ✅ Save config file
-        const configPath = path.join(tenantDir, 'config.json');
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-
-        console.log(`✅ Tenant created at: ${configPath}`);
+        fs.writeFileSync(
+            path.join(tenantDir, 'config.json'),
+            JSON.stringify(config, null, 2)
+        );
 
         return res.status(201).json({
             message: `✅ Client '${clientName}' provisioned successfully.`,
