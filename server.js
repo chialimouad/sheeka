@@ -54,12 +54,12 @@ const emailRoutes = require('./routes/emails');
 app.use('/api/provision', isSuperAdmin, provisioningRoutes);
 
 // --- Tenant-Specific API Routes ---
-app.use('/api/users', userRoutes);
-app.use('/api/customers', customerRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/config', siteConfigRoutes); // Corrected usage
-app.use('/api/emails', emailRoutes);
+app.use('/users', userRoutes);
+app.use('/customers', customerRoutes);
+app.use('/products', productRoutes);
+app.use('/orders', orderRoutes);
+app.use('/config', siteConfigRoutes); // Corrected usage
+app.use('/emails', emailRoutes);
 
 
 // ========================
