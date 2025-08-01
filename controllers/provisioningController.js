@@ -5,6 +5,7 @@ const Client = require('../models/Client');
 const User = require('../models/User');
 
 exports.provisionNewClient = async (req, res) => {
+    // Validate request body
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -20,26 +21,26 @@ exports.provisionNewClient = async (req, res) => {
     } = req.body;
 
     try {
-        // ✅ Check for existing client by name
+        // Check if client already exists
         const existingClient = await Client.findOne({ name: clientName });
         if (existingClient) {
             return res.status(400).json({ message: '❌ A client with this name already exists.' });
         }
 
-        // ✅ Check for existing user by email
+        // Check if user with the same email already exists
         const existingUser = await User.findOne({ email: adminEmail });
         if (existingUser) {
             return res.status(400).json({ message: '❌ This admin email is already in use.' });
         }
 
-        // ✅ Generate unique tenantId
+        // Generate a tenantId
         const clientCount = await Client.countDocuments();
         const clientIndex = String(clientCount + 1).padStart(3, '0');
         const sanitizedClientName = clientName.replace(/\s+/g, '').toLowerCase();
-        const generatedTenantId = `${sanitizedClientName}${clientIndex}sheeka@mouad`;
+        const generatedTenantId = `${sanitizedClientName}${clientIndex}@sheeka`;
 
-        // ✅ Create and save the new client
-        const client = new Client({
+        // Create and save new client
+        const newClient = new Client({
             name: clientName,
             tenantId: generatedTenantId,
             isActive: true,
@@ -49,38 +50,36 @@ exports.provisionNewClient = async (req, res) => {
                     cloud_name: cloudinaryCloudName,
                     api_key: cloudinaryApiKey,
                     api_secret: cloudinaryApiSecret,
-                },
-              
+                }
             }
         });
 
-        await client.save();
+        await newClient.save();
 
-        // ✅ Hash password and create admin user
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(adminPassword, salt);
+        // Hash password and create admin user
+        const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
-        const adminUser = new User({
-            tenantId: client._id,
+        const newAdminUser = new User({
+            tenantId: newClient._id,
             name: 'Admin',
             email: adminEmail,
             password: hashedPassword,
-            role: 'admin',
+            role: 'admin'
         });
 
-        await adminUser.save();
+        await newAdminUser.save();
 
-        // ✅ Send success response
+        // Respond with success
         return res.status(201).json({
             message: '✅ Client provisioned successfully.',
             client: {
-                id: client._id,
-                name: client.name,
-                tenantId: client.tenantId,
+                id: newClient._id,
+                name: newClient.name,
+                tenantId: newClient.tenantId,
             },
             adminUser: {
-                id: adminUser._id,
-                email: adminUser.email,
+                id: newAdminUser._id,
+                email: newAdminUser.email,
             }
         });
 
