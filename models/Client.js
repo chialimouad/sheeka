@@ -60,11 +60,7 @@ const ClientSchema = new mongoose.Schema({
             api_secret: { type: String, required: true, set: encrypt, get: decrypt },
         },
         // FIX: Changed field names to match the data being sent from the controller.
-        nodemailer: {
-            email: { type: String, required: true },
-            // The app password will be encrypted
-            appPassword: { type: String, required: true, set: encrypt, get: decrypt },
-        },
+     
     }
 }, {
     timestamps: true,
