@@ -19,6 +19,9 @@ function encrypt(text) {
 }
 
 function decrypt(text) {
+    if (!text || typeof text !== 'string' || !text.includes(':')) {
+        return text; // Return text as-is if it's not in the expected encrypted format
+    }
     const textParts = text.split(':');
     const iv = Buffer.from(textParts.shift(), 'hex');
     const encryptedText = Buffer.from(textParts.join(':'), 'hex');
@@ -36,9 +39,10 @@ const ClientSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Client name is required.'],
     },
-    subdomain: {
+    // FIX: Replaced 'subdomain' with 'tenantId' to match the provisioning controller.
+    tenantId: {
         type: String,
-        required: [true, 'Subdomain is required.'],
+        required: [true, 'Tenant ID is required.'],
         unique: true,
         lowercase: true,
         index: true,
@@ -55,10 +59,11 @@ const ClientSchema = new mongoose.Schema({
             // The API secret will be encrypted
             api_secret: { type: String, required: true, set: encrypt, get: decrypt },
         },
+        // FIX: Changed field names to match the data being sent from the controller.
         nodemailer: {
-            user: { type: String, required: true },
+            email: { type: String, required: true },
             // The app password will be encrypted
-            pass: { type: String, required: true, set: encrypt, get: decrypt },
+            appPassword: { type: String, required: true, set: encrypt, get: decrypt },
         },
     }
 }, {
