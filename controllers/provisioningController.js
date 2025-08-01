@@ -1,95 +1,48 @@
-const { validationResult } = require('express-validator');
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const Client = require('../models/Client');
 const User = require('../models/User');
+const bcrypt = require('bcrypt');
 
-exports.provisionNewClient = async (req, res) => {
-    // Step 1: Validate input
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
-    }
+const provisionNewClient = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
 
-    const {
-        clientName,
-        adminEmail,
-        adminPassword,
-        cloudinaryCloudName,
-        cloudinaryApiKey,
-        cloudinaryApiSecret,
-    } = req.body;
+    // Generate a clean tenantId string like 'mycompany2025sheekaltd'
+    const sanitizedClientName = name.toLowerCase().replace(/\s+/g, '');
+    const currentYear = new Date().getFullYear();
+    const tenantIdString = `${sanitizedClientName}${currentYear}sheekaltd`;
 
-    try {
-        // Step 2: Ensure client name and email are unique
-        const [existingClient, existingUser] = await Promise.all([
-            Client.findOne({ name: clientName }),
-            User.findOne({ email: adminEmail }),
-        ]);
+    // Hash the password for security
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-        if (existingClient) {
-            return res.status(409).json({ message: '❌ A client with this name already exists.' });
-        }
+    // Step 1: Create the client
+    const newClient = new Client({
+      name,
+      email,
+      tenantId: tenantIdString,
+    });
 
-        if (existingUser) {
-            return res.status(409).json({ message: '❌ This admin email is already in use.' });
-        }
+    console.log("Saving client...");
+    await newClient.save();
+    console.log("✅ Client created:", newClient);
 
-        // Step 3: Generate a unique tenantId
-        const clientCount = await Client.countDocuments();
-        const clientIndex = String(clientCount + 1).padStart(3, '0');
-        const sanitizedClientName = clientName.replace(/\s+/g, '').toLowerCase();
-        const tenantId = `${sanitizedClientName}${clientIndex}@sheeka`;
+    // Step 2: Create the admin user for the client
+    const newAdminUser = new User({
+      tenantId: newClient._id, // use ObjectId reference to the Client
+      name: 'Admin',
+      email,
+      password: hashedPassword,
+      role: 'admin',
+    });
 
-        // Step 4: Create the client record
-        const jwtSecret = crypto.randomBytes(32).toString('hex');
-        const newClient = new Client({
-            name: clientName,
-            tenantId,
-            isActive: true,
-            config: {
-                jwtSecret,
-                cloudinary: {
-                    cloud_name: cloudinaryCloudName,
-                    api_key: cloudinaryApiKey,
-                    api_secret: cloudinaryApiSecret,
-                },
-            },
-        });
+    console.log("Saving admin user...");
+    await newAdminUser.save();
+    console.log("✅ Admin user created:", newAdminUser);
 
-        await newClient.save();
-
-        // Step 5: Hash password and create the admin user
-        const hashedPassword = await bcrypt.hash(adminPassword, 10);
-        const newAdminUser = new User({
-            tenantId: newClient.tenantId, // 🛠️ Correct: Use tenantId string, not _id
-            name: 'Admin',
-            email: adminEmail,
-            password: hashedPassword,
-            role: 'admin',
-        });
-
-        await newAdminUser.save();
-
-        // Step 6: Respond
-        return res.status(201).json({
-            message: '✅ Client provisioned successfully.',
-            client: {
-                id: newClient._id,
-                name: newClient.name,
-                tenantId: newClient.tenantId,
-            },
-            adminUser: {
-                id: newAdminUser._id,
-                email: newAdminUser.email,
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Provisioning Error:', error);
-        return res.status(500).json({
-            message: '❌ Server error during client provisioning.',
-            error: error.message
-        });
-    }
+    res.status(201).json({ message: 'Client and admin user provisioned successfully!' });
+  } catch (error) {
+    console.error("❌ Provisioning error:", error);
+    res.status(500).json({ error: 'Server error during client provisioning.' });
+  }
 };
+
+module.exports = { provisionNewClient };
