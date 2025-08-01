@@ -60,24 +60,19 @@ exports.provisionNewClient = async (req, res) => {
             },
         });
         
-        console.log('Attempting to save new client...');
         savedClient = await newClient.save();
-        console.log(`Successfully saved client with Tenant ID: ${savedClient.tenantId}`);
-        
         const tenantId = savedClient.tenantId;
 
         // 5. Create the initial administrator user for this new client.
         const adminUser = new User({
-            tenantId,
+            tenantId, // This will now correctly be saved as a Number.
             name: 'Administrator',
             email: adminEmail.toLowerCase(),
             password: adminPassword,
             role: 'admin',
         });
 
-        console.log('Attempting to save new admin user...');
         await adminUser.save();
-        console.log('Successfully saved admin user.');
 
         res.status(201).json({
             message: 'Client provisioned successfully!',
@@ -89,17 +84,16 @@ exports.provisionNewClient = async (req, res) => {
         });
 
     } catch (error) {
-        // --- DETAILED ERROR LOGGING ---
-        console.error('CRITICAL: Failed to provision new client. See details below.');
-        console.error('Error Name:', error.name);
-        console.error('Error Message:', error.message);
-        console.error('Error Code:', error.code);
-        console.error('Full Error Object:', error); // This will print the full error stack trace
+        console.error('Failed to provision new client:', error.message);
 
-        // If client was created but user failed, you might want to delete the client to avoid orphaned data.
+        // If client was created but user failed, delete the client to avoid orphaned data.
         if (savedClient) {
-            console.error(`Rollback: Deleting client '${savedClient.name}' because admin user creation failed.`);
             await Client.findByIdAndDelete(savedClient._id);
+        }
+        
+        // Handle potential race condition where two requests try to create a client with the same tenantId.
+        if (error.code === 11000) { 
+             return res.status(409).json({ message: 'A client with this name or tenant ID was just created. Please try again.' });
         }
 
         res.status(500).json({ message: 'Server error during client provisioning.' });
