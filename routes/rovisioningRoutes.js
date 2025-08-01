@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 const { provisionNewClient } = require('../controllers/provisioningController');
+const { isSuperAdmin } = require('../middleware/superAdminMiddleware'); // ✅ Import protection middleware
 
 /**
  * @route   POST /api/provision/client
@@ -12,11 +13,12 @@ const { provisionNewClient } = require('../controllers/provisioningController');
  */
 router.post(
     '/client',
+    isSuperAdmin, // ✅ Super Admin protection
     [
         body('clientName')
+            .trim()
             .notEmpty()
-            .withMessage('Client business name is required')
-            .trim(),
+            .withMessage('Client business name is required'),
 
         body('adminEmail')
             .isEmail()
