@@ -1,7 +1,7 @@
 // controllers/siteConfigController.js
 
-const PixelModel = require('../models/Pixel');
-const SiteConfig = require('../models/SiteConfig');
+const PixelModel = require('../models/pixel');
+const SiteConfig = require('../models/sitecontroll');
 const { validationResult, param } = require('express-validator');
 
 // =========================
