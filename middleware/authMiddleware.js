@@ -2,7 +2,7 @@
 
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const Customer = require('../models/Customer');
+const Customer = require('../models/Client');
 
 /**
  * @desc    Protects routes by verifying a staff user's (e.g., admin) JWT.
