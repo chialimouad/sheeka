@@ -60,7 +60,7 @@ const ClientSchema = new mongoose.Schema({
             api_secret: { type: String, required: true, set: encrypt, get: decrypt },
         },
         // FIX: Changed field names to match the data being sent from the controller.
-     
+
     }
 }, {
     timestamps: true,
