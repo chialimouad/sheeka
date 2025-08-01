@@ -1,15 +1,15 @@
 // middleware/superAdminMiddleware.js
 
 /**
- * @desc     Protects the client provisioning route.
- * Ensures that only a request with the master API key can create new tenants.
- * NOTE: The API key is hardcoded for now. In production, use an environment variable.
+ * @desc Protects the client provisioning route.
+ * Only allows requests with the Super Admin API key.
+ * NOTE: Replace the hardcoded API key with an environment variable for production use.
  */
 
 const isSuperAdmin = (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
 
-    // ✅ Hardcoded Super Admin Key — replace with env in production
+    // ✅ Replace this with: process.env.SUPER_ADMIN_KEY in production
     const superAdminKey = 'mouadchiali2231421ans';
 
     if (!apiKey) {
@@ -20,8 +20,7 @@ const isSuperAdmin = (req, res, next) => {
         return res.status(403).json({ message: 'Forbidden: Invalid API key.' });
     }
 
-    // ✅ API key is correct, allow request to continue
-    next();
+    next(); // ✅ API key is valid, continue to the next middleware or route
 };
 
 module.exports = { isSuperAdmin };
