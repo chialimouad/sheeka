@@ -11,7 +11,7 @@ const {
     getUsers,
     updateIndex,
     getUserIndex
-} = require('../controllers/userController'); // Corrected controller name
+} = require('../controllers/authcontrolleruser'); // Corrected controller name
 
 // Import the necessary middleware for security and tenant identification
 // These files would need to be created in your middleware directory.
