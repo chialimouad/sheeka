@@ -19,8 +19,6 @@ exports.provisionNewClient = async (req, res) => {
         cloudinaryCloudName,
         cloudinaryApiKey,
         cloudinaryApiSecret,
-        nodemailerEmail,
-        nodemailerAppPassword
     } = req.body;
 
     try {
@@ -62,10 +60,7 @@ exports.provisionNewClient = async (req, res) => {
                     api_key: cloudinaryApiKey,
                     api_secret: cloudinaryApiSecret,
                 },
-                nodemailer: {
-                    email: nodemailerEmail,
-                    appPassword: nodemailerAppPassword,
-                },
+            \
             },
         });
 
