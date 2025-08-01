@@ -2,95 +2,95 @@
 
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const Customer = require('../models/Client');
+const Client = require('../models/Client'); // Used for customers
 
 /**
- * @desc    Protects routes by verifying a staff user's (e.g., admin) JWT.
- * Attaches the authenticated user to the request object.
+ * Extracts and returns the bearer token from the request headers.
+ */
+const getTokenFromHeader = (req) => {
+    const authHeader = req.headers.authorization;
+    return authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+};
+
+/**
+ * @desc    Middleware to protect staff/admin routes (Users)
  */
 const protect = async (req, res, next) => {
-    let token;
-    const authHeader = req.headers.authorization;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        try {
-            token = authHeader.split(' ')[1];
-
-            // The tenant MUST be identified before this middleware runs.
-            if (!req.client || !req.client.config || !req.client.config.jwtSecret) {
-                return res.status(401).json({ message: 'Not authorized, client JWT secret is missing.' });
-            }
-
-            // Verify the token using the tenant-specific secret key.
-            const decoded = jwt.verify(token, req.client.config.jwtSecret);
-
-            // Find the user by ID and ensure they belong to the correct tenant.
-            req.user = await User.findOne({ _id: decoded.id, tenantId: req.tenantId }).select('-password');
-
-            if (!req.user) {
-                return res.status(401).json({ message: 'Not authorized, user not found for this client.' });
-            }
-
-            next();
-        } catch (error) {
-            console.error('Authentication Error:', error);
-            return res.status(401).json({ message: 'Not authorized, token failed.' });
-        }
-    }
+    const token = getTokenFromHeader(req);
 
     if (!token) {
-        return res.status(401).json({ message: 'Not authorized, no token provided.' });
+        return res.status(401).json({ message: 'Unauthorized: No token provided.' });
+    }
+
+    try {
+        if (!req.client?.config?.jwtSecret) {
+            return res.status(500).json({ message: 'Server error: Missing tenant JWT secret.' });
+        }
+
+        const decoded = jwt.verify(token, req.client.config.jwtSecret);
+
+        const user = await User.findOne({ _id: decoded.id, tenantId: req.tenantId }).select('-password');
+
+        if (!user) {
+            return res.status(401).json({ message: 'Unauthorized: User not found.' });
+        }
+
+        req.user = user;
+        next();
+    } catch (error) {
+        console.error('User Auth Error:', error.message);
+        return res.status(401).json({ message: 'Unauthorized: Invalid token.' });
     }
 };
 
 /**
- * @desc    Authorization middleware to check if the logged-in user is an admin.
- * @note    This must be used AFTER the `protect` middleware.
+ * @desc    Middleware to authorize only admins
  */
 const isAdmin = (req, res, next) => {
-    if (req.user && req.user.role === 'admin') {
+    if (req.user?.role === 'admin') {
         next();
     } else {
-        res.status(403).json({ message: 'Forbidden. Admin access required.' });
+        res.status(403).json({ message: 'Forbidden: Admin access required.' });
     }
 };
 
 /**
- * @desc    Protects routes by verifying an end-customer's JWT.
- * Attaches the authenticated customer to the request object.
+ * @desc    Middleware to protect customer routes (Clients)
  */
 const protectCustomer = async (req, res, next) => {
-    let token;
-    const authHeader = req.headers.authorization;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        try {
-            token = authHeader.split(' ')[1];
-
-            if (!req.client || !req.client.config || !req.client.config.jwtSecret) {
-                return res.status(401).json({ message: 'Not authorized, client JWT secret is missing.' });
-            }
-
-            const decoded = jwt.verify(token, req.client.config.jwtSecret);
-
-            // Find the customer by ID and ensure they belong to the correct tenant.
-            req.customer = await Customer.findOne({ _id: decoded.id, tenantId: req.tenantId }).select('-password');
-
-            if (!req.customer) {
-                return res.status(401).json({ message: 'Not authorized, customer not found for this client.' });
-            }
-
-            next();
-        } catch (error) {
-            console.error('Customer Authentication Error:', error);
-            return res.status(401).json({ message: 'Not authorized, token failed.' });
-        }
-    }
+    const token = getTokenFromHeader(req);
 
     if (!token) {
-        return res.status(401).json({ message: 'Not authorized, no token provided.' });
+        return res.status(401).json({ message: 'Unauthorized: No token provided.' });
+    }
+
+    try {
+        if (!req.client?.config?.jwtSecret) {
+            return res.status(500).json({ message: 'Server error: Missing tenant JWT secret.' });
+        }
+
+        const decoded = jwt.verify(token, req.client.config.jwtSecret);
+
+        if (decoded.role !== 'client') {
+            return res.status(403).json({ message: 'Forbidden: Customer access only.' });
+        }
+
+        const customer = await Client.findOne({ _id: decoded.id, tenantId: req.tenantId }).select('-password');
+
+        if (!customer) {
+            return res.status(401).json({ message: 'Unauthorized: Customer not found.' });
+        }
+
+        req.customer = customer;
+        next();
+    } catch (error) {
+        console.error('Customer Auth Error:', error.message);
+        return res.status(401).json({ message: 'Unauthorized: Invalid token.' });
     }
 };
 
-
-module.exports = { protect, isAdmin, protectCustomer };
+module.exports = {
+    protect,
+    isAdmin,
+    protectCustomer,
+};
