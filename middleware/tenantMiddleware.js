@@ -1,9 +1,7 @@
-// middleware/tenantMiddleware.js
-
 const Client = require('../models/Client');
 
 /**
- * @desc    Identifies the client (tenant) based on a tenant ID header.
+ * @desc Identifies the client (tenant) based on a tenant ID header.
  * Attaches the client's full document and ID to the request object.
  */
 const identifyTenant = async (req, res, next) => {
@@ -15,11 +13,11 @@ const identifyTenant = async (req, res, next) => {
             return res.status(400).json({ message: 'Tenant ID (x-tenant-id) is missing from the headers.' });
         }
 
-        // Find the client using the tenantId (could be _id or a custom field)
-        const client = await Client.findById(tenantId).lean();
+        // 🔁 Find client by custom tenantId field, not by Mongo _id
+        const client = await Client.findOne({ tenantId }).lean();
 
         if (!client) {
-            return res.status(404).json({ message: 'Client not found.' });
+            return res.status(404).json({ message: 'Client not found with provided tenant ID.' });
         }
 
         if (!client.isActive) {
@@ -28,7 +26,7 @@ const identifyTenant = async (req, res, next) => {
 
         // Attach client info to request
         req.client = client;
-        req.tenantId = client._id;
+        req.tenantId = client.tenantId; // Now using the custom tenantId
 
         next();
     } catch (error) {
