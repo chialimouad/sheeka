@@ -42,7 +42,7 @@ const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 
 const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
-const customerRoutes = require('./routes/authRoutesUser');
+const customerRoutes = require('./routes/authroutesUser');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
 const siteConfigRoutes = require('./routes/site');
