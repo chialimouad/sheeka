@@ -60,7 +60,7 @@ exports.provisionNewClient = async (req, res) => {
                     api_key: cloudinaryApiKey,
                     api_secret: cloudinaryApiSecret,
                 },
-            \
+            
             },
         });
 
