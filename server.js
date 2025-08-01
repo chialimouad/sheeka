@@ -8,13 +8,10 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 
-// --- Import Middleware ---
-const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
-
 const app = express();
 
 // ========================
-// 📦 Core Middleware
+// 🔐 Core Middleware
 // ========================
 app.use(cors());
 app.use(express.json());
@@ -22,11 +19,14 @@ app.use(helmet());
 app.use(morgan('dev'));
 
 // ========================
-// 📡 Connect to MongoDB
+// 📡 MongoDB Connection
 // ========================
 const connectDB = async () => {
     try {
-        await mongoose.connect(process.env.MONGO_URI);
+        await mongoose.connect(process.env.MONGO_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
         console.log('✅ MongoDB Connected');
     } catch (error) {
         console.error('❌ MongoDB Connection Error:', error.message);
@@ -36,36 +36,33 @@ const connectDB = async () => {
 connectDB();
 
 // ========================
-// 🧩 Import Route Modules
+// 🧩 Middleware & Routes
 // ========================
+const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
+
 const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
-const customerRoutes = require('./routes/authroutesuser');
+const customerRoutes = require('./routes/authRoutesUser');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
 const siteConfigRoutes = require('./routes/site');
-const emailRoutes = require('./routes/emails');  
+const emailRoutes = require('./routes/emails');
 
 // ========================
 // 🚏 Mount Routes
 // ========================
-
-// --- Super Admin Routes ---
-app.use('/api/provision', isSuperAdmin, provisioningRoutes);
-
-// --- Tenant-Specific API Routes ---
+app.use('/api/provision', isSuperAdmin, provisioningRoutes); // Super admin only
 app.use('/users', userRoutes);
 app.use('/customers', customerRoutes);
 app.use('/products', productRoutes);
 app.use('/orders', orderRoutes);
-app.use('/config', siteConfigRoutes); // Corrected usage
+app.use('/config', siteConfigRoutes);
 app.use('/emails', emailRoutes);
-
 
 // ========================
 // ❌ Error Handling
 // ========================
-app.use((req, res, next) => {
+app.use((req, res) => {
     res.status(404).json({ message: 'Route not found' });
 });
 
