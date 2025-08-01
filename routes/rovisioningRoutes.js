@@ -20,7 +20,6 @@ router.post(
         // --- Input Validation ---
         // This ensures that all the data from your "Super Admin" HTML page is present and valid.
         body('clientName', 'Client business name is required').not().isEmpty().trim(),
-        body('subdomain', 'A valid subdomain is required').isSlug().toLowerCase(),
         body('adminEmail', 'A valid admin email is required').isEmail(),
         body('adminPassword', 'Admin password must be at least 8 characters long').isLength({ min: 8 }),
         body('cloudinaryCloudName', 'Cloudinary Cloud Name is required').not().isEmpty(),
