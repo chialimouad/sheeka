@@ -1,89 +1,108 @@
 // routes/userRoutes.js
 
 const express = require('express');
-const router = express.Router();
 const { body, param } = require('express-validator');
+const router = express.Router();
 
-// Import the refactored controller functions
+// Controller functions
 const {
     register,
     login,
     getUsers,
     updateIndex,
     getUserIndex
-} = require('../controllers/authcontrolleruser'); // Corrected controller name
+} = require('../controllers/authcontrolleruser');
 
-// Import the necessary middleware for security and tenant identification
-// These files would need to be created in your middleware directory.
+// Middleware
 const { identifyTenant } = require('../middleware/tenantMiddleware');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 
 // =========================
-// Public User Routes (Tenant-Aware)
-// These routes are for staff/admin users to register and log into their specific client dashboard.
+// Public Routes (Tenant-Aware)
 // =========================
 
 /**
  * @route   POST /api/users/register
- * @desc    Register a new staff user for the current client
- * @access  Public (but scoped to a tenant)
+ * @desc    Register a new staff user (tenant-scoped)
+ * @access  Public (requires tenant header)
  */
-router.post('/register', [
-    identifyTenant, // Identifies which client this request is for
-    body('name', 'Name is required').not().isEmpty(),
-    body('email', 'Please include a valid email').isEmail(),
-    body('password', 'Password must be 6 or more characters').isLength({ min: 6 }),
-    body('role', 'A valid role is required').isIn(['admin', 'confirmation', 'stockagent', 'user']),
-    body('index').optional().isNumeric().isIn([0, 1]),
-], register);
+router.post(
+    '/register',
+    identifyTenant,
+    [
+        body('name').notEmpty().withMessage('Name is required'),
+        body('email').isEmail().withMessage('Please include a valid email'),
+        body('password').isLength({ min: 6 }).withMessage('Password must be 6 or more characters'),
+        body('role').isIn(['admin', 'confirmation', 'stockagent', 'user']).withMessage('Invalid role'),
+        body('index').optional().isInt({ min: 0, max: 1 }).withMessage('Index must be 0 or 1'),
+    ],
+    register
+);
 
 /**
  * @route   POST /api/users/login
- * @desc    Authenticate a staff user & get token
- * @access  Public (but scoped to a tenant)
+ * @desc    Authenticate staff user
+ * @access  Public (requires tenant header)
  */
-router.post('/login', [
-    identifyTenant, // Identifies which client this request is for
-    body('email', 'Please include a valid email').isEmail(),
-    body('password', 'Password is required').exists(),
-], login);
-
+router.post(
+    '/login',
+    identifyTenant,
+    [
+        body('email').isEmail().withMessage('Please include a valid email'),
+        body('password').notEmpty().withMessage('Password is required'),
+    ],
+    login
+);
 
 // =========================
-// Protected Admin Routes
-// These routes require a user to be logged in and have an 'admin' role.
+// Admin Protected Routes
 // =========================
 
 /**
  * @route   GET /api/users
- * @desc    Get all users for the current client
- * @access  Private (Admin)
+ * @desc    Get all staff users for a tenant
+ * @access  Private (Admin only)
  */
-router.get('/', identifyTenant, protect, isAdmin, getUsers);
-
-/**
- * @route   GET /api/users/:id/index
- * @desc    Get a specific user's index by their ID
- * @access  Private (Admin)
- */
-router.get('/:id/index', [
+router.get(
+    '/',
     identifyTenant,
     protect,
     isAdmin,
-    param('id').isMongoId().withMessage('Invalid user ID format')
-], getUserIndex);
+    getUsers
+);
+
+/**
+ * @route   GET /api/users/:id/index
+ * @desc    Get user's index by ID
+ * @access  Private (Admin only)
+ */
+router.get(
+    '/:id/index',
+    identifyTenant,
+    protect,
+    isAdmin,
+    [
+        param('id').isMongoId().withMessage('Invalid user ID format')
+    ],
+    getUserIndex
+);
 
 /**
  * @route   PUT /api/users/:id/index
- * @desc    Update a user's index
- * @access  Private (Admin can update anyone, User can update themselves)
+ * @desc    Update a user's index (admin or self)
+ * @access  Private (controller enforces access control)
  */
-router.put('/:id/index', [
+router.put(
+    '/:id/index',
     identifyTenant,
-    protect, // Protects the route, controller handles role logic
-    param('id').isMongoId().withMessage('Invalid user ID format'),
-    body('newIndexValue', 'A new index value of 0 or 1 is required').isNumeric().isIn([0, 1])
-], updateIndex);
-
+    protect,
+    [
+        param('id').isMongoId().withMessage('Invalid user ID format'),
+        body('newIndexValue')
+            .isInt({ min: 0, max: 1 })
+            .withMessage('A new index value of 0 or 1 is required')
+    ],
+    updateIndex
+);
 
 module.exports = router;
