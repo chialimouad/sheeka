@@ -18,9 +18,13 @@ exports.uploadMiddleware = (req, res, next) => {
         return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
     }
     const tenantCloudinaryConfig = req.client.config.cloudinary;
-    const cloudinaryInstance = new cloudinary.config(tenantCloudinaryConfig);
+    
+    // FIX: Configure the global cloudinary object directly.
+    cloudinary.config(tenantCloudinaryConfig);
+
     const storage = new CloudinaryStorage({
-        cloudinary: cloudinaryInstance,
+        // FIX: Pass the configured cloudinary object itself, not the result of config().
+        cloudinary: cloudinary, 
         params: {
             folder: `tenant_${req.tenantId}/products`,
             allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
@@ -287,6 +291,24 @@ exports.getCollections = async (req, res) => {
         res.status(500).json({ message: 'Server error fetching collections.' });
     }
 };
+
+// **FIX**: Added placeholder functions for update and delete to prevent server crashes
+exports.updateCollection = [
+    param('id').isMongoId(),
+    async (req, res) => {
+        // Placeholder - Implement your update logic here
+        res.status(501).json({ message: 'Update collection not implemented yet.' });
+    }
+];
+
+exports.deleteCollection = [
+    param('id').isMongoId(),
+    async (req, res) => {
+        // Placeholder - Implement your delete logic here
+        res.status(501).json({ message: 'Delete collection not implemented yet.' });
+    }
+];
+
 
 // =========================
 // ⭐ Product Review Handlers (Tenant-Aware & Secure)
