@@ -24,14 +24,14 @@ const { protect, isAdmin } = require('../middleware/authMiddleware');
 router.post('/abandoned-cart', identifyTenant, async (req, res) => {
     try {
         const { fullName, phoneNumber, product, pageUrl, wilaya, commune } = req.body;
-        const tenantId = req.tenantId;
+        const tenantIdentifier = req.tenantId;
 
         if (!phoneNumber || !product || !product.productId) {
             return res.status(400).json({ message: 'Phone number and product ID are required.' });
         }
         
-        // Find the client to get the correct ObjectId for storage
-        const client = await Client.findOne({ tenantIdentifier: tenantId });
+        // **FIX**: Changed query to use `tenantId` which is the correct field in the Client model.
+        const client = await Client.findOne({ tenantId: tenantIdentifier });
         if (!client) {
             return res.status(404).json({ message: 'Client not found.' });
         }
@@ -58,7 +58,8 @@ router.post('/', identifyTenant, async (req, res) => {
             return res.status(400).json({ message: 'Missing required fields.' });
         }
 
-        const client = await Client.findOne({ tenantIdentifier });
+        // **FIX**: Changed query to use `tenantId` which is the correct field in the Client model.
+        const client = await Client.findOne({ tenantId: tenantIdentifier });
         if (!client) {
             return res.status(404).json({ message: 'Client not found.' });
         }
@@ -110,7 +111,8 @@ const getTenantObjectId = async (req, res) => {
         res.status(400).json({ message: 'Tenant identifier not found in user token.' });
         return null;
     }
-    const client = await Client.findOne({ tenantIdentifier });
+    // **FIX**: Changed query to use `tenantId` which is the correct field in the Client model.
+    const client = await Client.findOne({ tenantId: tenantIdentifier });
     if (!client) {
         res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
         return null;
