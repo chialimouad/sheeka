@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 
 /**
  * @desc Defines the schema for a Client (Tenant).
+ * This schema includes all fields required by the provisioning controller.
  */
 const clientSchema = new mongoose.Schema({
     tenantId: {
@@ -17,13 +18,17 @@ const clientSchema = new mongoose.Schema({
         trim: true,
         unique: true,
     },
-    // **FIX**: Added the email field which is required by the database's unique index.
-    // This ensures that the admin's email is saved with the client record.
     email: {
         type: String,
         required: [true, 'Client email is required.'],
         unique: true,
-        lowercase: true, // Store emails in lowercase to prevent case-sensitive duplicates
+        lowercase: true, 
+        trim: true,
+    },
+    phoneNumber: {
+        type: String,
+        required: [true, 'Client phone number is required.'],
+        unique: true,
         trim: true,
     },
     isActive: {
