@@ -47,13 +47,18 @@ exports.provisionNewClient = async (req, res) => {
     let savedClient = null; // Keep track of the saved client for potential rollback
 
     try {
-        // 1. Check if the client name is already in use.
-        const existingClient = await Client.findOne({ name: clientName });
-        if (existingClient) {
+        // 1. Check if the client name or admin email is already in use.
+        const existingClientByName = await Client.findOne({ name: clientName });
+        if (existingClientByName) {
             return res.status(409).json({ message: `Client name '${clientName}' is already in use.` });
         }
+        const existingClientByEmail = await Client.findOne({ email: adminEmail.toLowerCase() });
+        if (existingClientByEmail) {
+            return res.status(409).json({ message: `An account with email '${adminEmail}' already exists.` });
+        }
 
-        // 2. **FIXED**: Get the next tenantId atomically from the counter.
+
+        // 2. Get the next tenantId atomically from the counter.
         const nextTenantId = await getNextSequenceValue('tenantId');
 
         // 3. Generate a unique JWT secret for the new client.
@@ -61,8 +66,10 @@ exports.provisionNewClient = async (req, res) => {
 
         // 4. Create the new Client document.
         const newClient = new Client({
-            tenantId: nextTenantId, // Use the new atomic ID
+            tenantId: nextTenantId,
             name: clientName,
+            // **FIX**: Added the admin's email to the client document to satisfy the unique email constraint.
+            email: adminEmail.toLowerCase(),
             config: {
                 jwtSecret,
                 cloudinary: {
@@ -108,8 +115,10 @@ exports.provisionNewClient = async (req, res) => {
             await Client.findByIdAndDelete(savedClient._id);
         }
         
+        // **FIX**: Provide a more specific error message for duplicate key errors.
         if (error.code === 11000) { 
-             return res.status(409).json({ message: 'A client with this name was just created. Please try again.' });
+             const field = Object.keys(error.keyValue)[0]; // e.g., 'name' or 'email'
+             return res.status(409).json({ message: `A client with this ${field} already exists. Please choose another.` });
         }
 
         res.status(500).json({ message: 'Server error during client provisioning.' });
