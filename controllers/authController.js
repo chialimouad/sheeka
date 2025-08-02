@@ -1,9 +1,7 @@
-// controllers/userController.js
-
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { validationResult, param } = require('express-validator');
+const { validationResult } = require('express-validator');
 
 /**
  * @function generateToken
@@ -15,8 +13,34 @@ const { validationResult, param } = require('express-validator');
  * @returns {string} The generated JWT.
  */
 const generateToken = (userId, tenantId, role, jwtSecret) => {
-    // The JWT now includes the tenantId to scope all future requests.
     return jwt.sign({ id: userId, tenantId, role }, jwtSecret, { expiresIn: '28d' });
+};
+
+/**
+ * @function checkEmail
+ * @description Checks if an email is available for registration
+ */
+exports.checkEmail = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email } = req.body;
+    try {
+        const existingUser = await User.findOne({ 
+            email: email.toLowerCase(), 
+            tenantId: req.tenantId 
+        });
+        
+        res.json({
+            available: !existingUser,
+            message: existingUser ? 'Email already in use' : 'Email available'
+        });
+    } catch (error) {
+        console.error('Email check error:', error);
+        res.status(500).json({ message: 'Error checking email availability' });
+    }
 };
 
 /**
@@ -29,15 +53,20 @@ exports.register = async (req, res) => {
         return res.status(400).json({ errors: errors.array() });
     }
 
-    // The tenantId and jwtSecret are attached to the request by our new middleware.
     const { tenantId, jwtSecret } = req;
     const { name, email, password, role, index } = req.body;
 
     try {
-        // Ensure user doesn't exist for THIS tenant.
-        const existingUser = await User.findOne({ email: email.toLowerCase(), tenantId });
+        // Case-insensitive email check
+        const existingUser = await User.findOne({ 
+            email: email.toLowerCase(), 
+            tenantId 
+        });
+        
         if (existingUser) {
-            return res.status(409).json({ message: 'User with this email already exists for this client.' });
+            return res.status(409).json({ 
+                message: 'User with this email already exists for this tenant.' 
+            });
         }
 
         const salt = await bcrypt.genSalt(10);
@@ -47,9 +76,9 @@ exports.register = async (req, res) => {
             name,
             email: email.toLowerCase(),
             password: hashedPassword,
-            role: role || 'user', // Default to 'user' role
-            index: typeof index === 'number' ? index : 0, // Default to 0
-            tenantId, // Associate the new user with the current tenant
+            role: role || 'user',
+            index: typeof index === 'number' ? index : 0,
+            tenantId,
         });
 
         const token = generateToken(newUser._id, newUser.tenantId, newUser.role, jwtSecret);
@@ -68,7 +97,10 @@ exports.register = async (req, res) => {
 
     } catch (error) {
         console.error('Registration Error:', error);
-        res.status(500).json({ message: 'Server error during registration.' });
+        res.status(500).json({ 
+            message: 'Server error during registration.',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
@@ -86,15 +118,16 @@ exports.login = async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        // Find the user associated with THIS tenant.
-        const user = await User.findOne({ email: email.toLowerCase(), tenantId });
+        const user = await User.findOne({ 
+            email: email.toLowerCase(), 
+            tenantId 
+        });
 
         if (!user) {
             return res.status(401).json({ message: 'Invalid credentials.' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
-
         if (!isMatch) {
             return res.status(401).json({ message: 'Invalid credentials.' });
         }
@@ -115,114 +148,134 @@ exports.login = async (req, res) => {
 
     } catch (error) {
         console.error('Login Error:', error);
-        res.status(500).json({ message: 'Server error during login.' });
+        res.status(500).json({ 
+            message: 'Server error during login.',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
 /**
  * @function getUsers
  * @description Fetches a list of all users for the current tenant.
- * @security Protected by `protect` and `isAdmin` middleware.
  */
 exports.getUsers = async (req, res) => {
     try {
-        // req.user.tenantId is guaranteed to be present by the 'protect' middleware.
-        // This ensures an admin can only see users of their own organization.
-        const users = await User.find({ tenantId: req.user.tenantId }, 'name email role index');
+        const users = await User.find({ 
+            tenantId: req.user.tenantId 
+        }, 'name email role index createdAt');
+        
         res.status(200).json(users);
     } catch (error) {
         console.error('Error fetching users:', error);
-        res.status(500).json({ message: 'Server error: Could not retrieve users.' });
+        res.status(500).json({ 
+            message: 'Server error: Could not retrieve users.',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 
 /**
- * @function updateIndex
- * @description Updates a user's 'index' field by ID, scoped to the current tenant.
- * @security Protected by `protect` middleware.
- */
-exports.updateIndex = [
-    param('id').isMongoId().withMessage('Invalid User ID format.'),
-    async (req, res) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        try {
-            const { newIndexValue } = req.body;
-            const userIdToUpdate = req.params.id;
-            const requestingUser = req.user; // from 'protect' middleware
-
-            // An admin can update any user within their tenant.
-            // A regular user can only update their own index.
-            if (requestingUser.role !== 'admin' && requestingUser.id !== userIdToUpdate) {
-                return res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action.' });
-            }
-
-            const updatedUser = await User.findOneAndUpdate(
-                { _id: userIdToUpdate, tenantId: requestingUser.tenantId }, // CRITICAL: Scoped to tenant
-                { index: newIndexValue },
-                { new: true, runValidators: true }
-            );
-
-            if (!updatedUser) {
-                return res.status(404).json({ message: 'User not found within your organization.' });
-            }
-
-            res.status(200).json({
-                message: 'User index updated successfully',
-                user: {
-                    id: updatedUser._id,
-                    index: updatedUser.index,
-                    role: updatedUser.role,
-                }
-            });
-
-        } catch (error) {
-            console.error('Update Index Error:', error);
-            res.status(500).json({ message: 'Server error during index update.' });
-        }
+ * @function updateIndex
+ * @description Updates a user's 'index' field by ID, scoped to the current tenant.
+ */
+exports.updateIndex = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
     }
-];
 
+    try {
+        const { newIndexValue } = req.body;
+        const userIdToUpdate = req.params.id;
+        const requestingUser = req.user;
+
+        // Authorization check
+        if (requestingUser.role !== 'admin' && requestingUser.id !== userIdToUpdate) {
+            return res.status(403).json({ 
+                message: 'Forbidden: You do not have permission to perform this action.' 
+            });
+        }
+
+        const updatedUser = await User.findOneAndUpdate(
+            { 
+                _id: userIdToUpdate, 
+                tenantId: requestingUser.tenantId 
+            },
+            { index: newIndexValue },
+            { 
+                new: true, 
+                runValidators: true,
+                select: '_id index role'
+            }
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({ 
+                message: 'User not found within your organization.' 
+            });
+        }
+
+        res.status(200).json({
+            message: 'User index updated successfully',
+            user: {
+                id: updatedUser._id,
+                index: updatedUser.index,
+                role: updatedUser.role,
+            }
+        });
+
+    } catch (error) {
+        console.error('Update Index Error:', error);
+        res.status(500).json({ 
+            message: 'Server error during index update.',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
 
 /**
- * @function getUserIndex
- * @description Fetches a specific user's 'index' field by ID, scoped to the current tenant.
- * @security Protected by `protect` and `isAdmin` middleware.
- */
-exports.getUserIndex = [
-    param('id').isMongoId().withMessage('Invalid User ID format.'),
-    async (req, res) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        try {
-            const userId = req.params.id;
-            const tenantId = req.user.tenantId; // from 'protect' middleware
-
-            const user = await User.findOne({ _id: userId, tenantId }, 'index');
-
-            if (!user) {
-                return res.status(404).json({ message: 'User not found within your organization.' });
-            }
-
-            if (user.index === undefined || user.index === null) {
-                return res.status(404).json({ message: 'User index not set for this user.' });
-            }
-
-            res.status(200).json({
-                message: 'User index fetched successfully',
-                userId: user._id,
-                index: user.index
-            });
-
-        } catch (error) {
-            console.error('Get User Index Error:', error);
-            res.status(500).json({ message: 'Server error while fetching user index.' });
-        }
+ * @function getUserIndex
+ * @description Fetches a specific user's 'index' field by ID, scoped to the current tenant.
+ */
+exports.getUserIndex = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
     }
-];
+
+    try {
+        const userId = req.params.id;
+        const tenantId = req.user.tenantId;
+
+        const user = await User.findOne({ 
+            _id: userId, 
+            tenantId 
+        }, 'index');
+
+        if (!user) {
+            return res.status(404).json({ 
+                message: 'User not found within your organization.' 
+            });
+        }
+
+        if (user.index === undefined || user.index === null) {
+            return res.status(404).json({ 
+                message: 'User index not set for this user.' 
+            });
+        }
+
+        res.status(200).json({
+            message: 'User index fetched successfully',
+            userId: user._id,
+            index: user.index
+        });
+
+    } catch (error) {
+        console.error('Get User Index Error:', error);
+        res.status(500).json({ 
+            message: 'Server error while fetching user index.',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
