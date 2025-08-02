@@ -74,6 +74,7 @@ exports.provisionNewClient = async (req, res) => {
         const newClient = new Client({
             tenantId: nextTenantId,
             name: clientName,
+            // **FIX**: Added the admin's email to the client document to satisfy the unique email constraint.
             email: adminEmail.toLowerCase(),
             config: {
                 jwtSecret,
@@ -120,7 +121,7 @@ exports.provisionNewClient = async (req, res) => {
             await Client.findByIdAndDelete(savedClient._id);
         }
         
-        // Provide a more specific error message for duplicate key errors.
+        // **FIX**: Provide a more specific error message for duplicate key errors.
         if (error.code === 11000) { 
              const field = Object.keys(error.keyValue)[0]; // e.g., 'name' or 'email'
              return res.status(409).json({ message: `A client with this ${field} already exists. Please choose another.` });
