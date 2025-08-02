@@ -3,7 +3,6 @@ const mongoose = require('mongoose');
 
 /**
  * @desc Defines the schema for a Client (Tenant).
- * This schema includes all fields required by the provisioning controller.
  */
 const clientSchema = new mongoose.Schema({
     tenantId: {
