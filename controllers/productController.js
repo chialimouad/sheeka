@@ -13,7 +13,6 @@ const { body, param, validationResult } = require('express-validator');
 // =========================
 // 📦 Dynamic Multer & Cloudinary Setup
 // =========================
-// ... (This section remains unchanged)
 exports.uploadMiddleware = (req, res, next) => {
     if (!req.client || !req.client.config || !req.client.config.cloudinary) {
         return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
@@ -46,13 +45,13 @@ const getTenantObjectId = async (req, res) => {
     const tenantIdentifier = req.user ? req.user.tenantId : req.tenantId;
     
     if (!tenantIdentifier) {
-        res.status(400).json({ message: 'Tenant identifier not found in request.' });
+        if (!res.headersSent) res.status(400).json({ message: 'Tenant identifier not found in request.' });
         return null;
     }
     
     const client = await Client.findOne({ tenantId: tenantIdentifier });
     if (!client) {
-        res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
+        if (!res.headersSent) res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
         return null;
     }
     return client._id; // The actual ObjectId
@@ -149,7 +148,6 @@ exports.getProducts = async (req, res) => {
         res.json(products);
     } catch (error) {
         console.error('Error fetching products:', error);
-        // Avoid sending a response if one was already sent by the helper
         if (!res.headersSent) {
             res.status(500).json({ message: 'Server error fetching products.' });
         }
@@ -244,10 +242,106 @@ exports.deleteProduct = [
 // =========================
 // 🛒 Collection Handlers (Tenant-Aware)
 // =========================
-// ... (These handlers would also need to be updated similarly if they are used)
 
+exports.addCollection = [
+    body('name').trim().notEmpty(),
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+        try {
+            const tenantObjectId = await getTenantObjectId(req, res);
+            if (!tenantObjectId) return;
+
+            const { name, thumbnailUrl, productIds } = req.body;
+            const newCollection = new Collection({
+                name,
+                thumbnailUrl,
+                productIds: productIds || [],
+                tenantId: tenantObjectId
+            });
+            await newCollection.save();
+            res.status(201).json(newCollection);
+        } catch (error) {
+            if (error.code === 11000) {
+                return res.status(409).json({ error: 'A collection with this name already exists for this client.' });
+            }
+            console.error('Error adding collection:', error);
+            res.status(500).json({ message: 'Server error adding collection.' });
+        }
+    }
+];
+
+exports.getCollections = async (req, res) => {
+    try {
+        const tenantObjectId = await getTenantObjectId(req, res);
+        if (!tenantObjectId) return;
+
+        const collections = await Collection.find({ tenantId: tenantObjectId })
+            .populate({ path: 'productIds', select: 'name images price' })
+            .lean();
+        res.json(collections);
+    } catch (error) {
+        console.error('Error fetching collections:', error);
+        res.status(500).json({ message: 'Server error fetching collections.' });
+    }
+};
 
 // =========================
 // ⭐ Product Review Handlers (Tenant-Aware & Secure)
 // =========================
-// ... (This handler already correctly uses customer.tenantId, so it's likely fine)
+
+exports.createProductReview = [
+    param('id').isMongoId(),
+    body('rating').isFloat({ min: 1, max: 5 }),
+    body('comment').trim().notEmpty(),
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        try {
+            const customer = req.customer;
+            if (!customer) {
+                return res.status(401).json({ message: 'Not authorized. Please log in as a customer.' });
+            }
+            
+            const tenantObjectId = customer.tenantId; // Assumes customer model has tenantId ObjectId
+            if (!tenantObjectId) {
+                 return res.status(400).json({ message: 'Customer is not associated with a tenant.' });
+            }
+
+            const product = await Product.findOne({ _id: req.params.id, tenantId: tenantObjectId });
+
+            if (!product) {
+                return res.status(404).json({ message: 'Product not found.' });
+            }
+
+            const alreadyReviewed = product.reviews.find(r => r.customer.toString() === customer.id.toString());
+            if (alreadyReviewed) {
+                return res.status(400).json({ message: 'You have already reviewed this product.' });
+            }
+
+            const { rating, comment } = req.body;
+            const review = {
+                name: customer.name,
+                rating: Number(rating),
+                comment,
+                customer: customer.id,
+            };
+
+            product.reviews.push(review);
+            product.numReviews = product.reviews.length;
+            product.rating = product.reviews.reduce((acc, item) => item.rating + acc, 0) / product.reviews.length;
+
+            await product.save();
+            res.status(201).json({ message: 'Review added successfully.' });
+
+        } catch (error) {
+            console.error('Error creating product review:', error);
+            res.status(500).json({ message: 'Server error creating review.' });
+        }
+    }
+];
