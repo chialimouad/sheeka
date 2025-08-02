@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 
 /**
  * @desc Defines the schema for a Client (Tenant).
+ * This version removes the 'subdomain' field to align with the login-by-ID approach.
  */
 const clientSchema = new mongoose.Schema({
     tenantId: {
