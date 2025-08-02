@@ -1,128 +1,219 @@
-const express = require('express');
-const { body, param } = require('express-validator');
-const router = express.Router();
+const { validationResult } = require('express-validator');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
-// Controller functions
-const {
-    register,
-    login,
-    getUsers,
-    updateIndex,
-    getUserIndex,
-    checkEmail
-} = require('../controllers/authcontrolleruser');
+// Generate JWT token
+const generateToken = (userId, tenantId, role, jwtSecret) => {
+    return jwt.sign(
+        { id: userId, tenantId, role },
+        jwtSecret,
+        { expiresIn: '28d' }
+    );
+};
 
-// Middleware
-const { identifyTenant } = require('../middleware/tenantMiddleware');
-const { protect, isAdmin } = require('../middleware/authMiddleware');
+// Check email availability
+exports.checkEmail = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
 
-// =========================
-// Public Staff Routes (Scoped to Tenant)
-// =========================
+    try {
+        const { email } = req.body;
+        const existingUser = await req.tenant.model('User').findOne({ email });
+        
+        res.status(200).json({
+            available: !existingUser,
+            message: existingUser ? 'Email already in use' : 'Email available'
+        });
+    } catch (error) {
+        console.error('Email check error:', error);
+        res.status(500).json({
+            message: 'Error checking email availability',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
 
-/**
- * @route   POST /api/users/check-email
- * @desc    Check if email is available for registration
- * @access  Public (Tenant header required)
- */
-router.post(
-    '/check-email',
-    identifyTenant,
-    [
-        body('email').isEmail().withMessage('Valid email is required')
-    ],
-    checkEmail
-);
+// Register new user
+exports.register = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
 
-/**
- * @route   POST /api/users/register
- * @desc    Register a new staff user for the current tenant
- * @access  Public (Tenant header required)
- */
-router.post(
-    '/register',
-    identifyTenant,
-    [
-        body('name').notEmpty().withMessage('Name is required'),
-        body('email').isEmail().withMessage('Valid email is required')
-            .custom(async (email, { req }) => {
-                const existingUser = await req.tenant.model('User').findOne({ email });
-                if (existingUser) {
-                    throw new Error('Email already in use');
-                }
-                return true;
-            }),
-        body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-        body('role').isIn(['admin', 'confirmation', 'stockagent', 'user']).withMessage('Invalid role'),
-        body('index').optional().isInt({ min: 0, max: 1 }).withMessage('Index must be 0 or 1'),
-    ],
-    register
-);
+    try {
+        const { name, email, password, role, index } = req.body;
+        const { tenant, jwtSecret } = req;
 
-/**
- * @route   POST /api/users/login
- * @desc    Authenticate a staff user
- * @access  Public (Tenant header required)
- */
-router.post(
-    '/login',
-    identifyTenant,
-    [
-        body('email').isEmail().withMessage('Valid email is required'),
-        body('password').notEmpty().withMessage('Password is required'),
-    ],
-    login
-);
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
 
-// =========================
-// Protected Admin Routes
-// =========================
+        // Create user
+        const user = await tenant.model('User').create({
+            name,
+            email,
+            password: hashedPassword,
+            role: role || 'user',
+            index: index || 0,
+            tenantId: tenant._id
+        });
 
-/**
- * @route   GET /api/users
- * @desc    Get all users for the current tenant
- * @access  Private (Admin only)
- */
-router.get(
-    '/',
-    identifyTenant,
-    protect,
-    isAdmin,
-    getUsers
-);
+        // Generate token
+        const token = generateToken(user._id, tenant._id, user.role, jwtSecret);
 
-/**
- * @route   GET /api/users/:id/index
- * @desc    Get a specific user's index
- * @access  Private (Admin only)
- */
-router.get(
-    '/:id/index',
-    identifyTenant,
-    protect,
-    isAdmin,
-    [
-        param('id').isMongoId().withMessage('Invalid user ID format'),
-    ],
-    getUserIndex
-);
+        res.status(201).json({
+            message: 'Registration successful',
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                index: user.index
+            },
+            token
+        });
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({
+            message: 'Registration failed',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
 
-/**
- * @route   PUT /api/users/:id/index
- * @desc    Update a user's index (Admin can update any, users can update their own — handled in controller)
- * @access  Private
- */
-router.put(
-    '/:id/index',
-    identifyTenant,
-    protect,
-    [
-        param('id').isMongoId().withMessage('Invalid user ID format'),
-        body('newIndexValue')
-            .isInt({ min: 0, max: 1 })
-            .withMessage('New index value must be 0 or 1'),
-    ],
-    updateIndex
-);
+// User login
+exports.login = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
 
-module.exports = router;
+    try {
+        const { email, password } = req.body;
+        const { tenant, jwtSecret } = req;
+
+        // Find user
+        const user = await tenant.model('User').findOne({ email });
+        if (!user) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+
+        // Check password
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+
+        // Generate token
+        const token = generateToken(user._id, tenant._id, user.role, jwtSecret);
+
+        res.status(200).json({
+            message: 'Login successful',
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                index: user.index
+            },
+            token
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({
+            message: 'Login failed',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get all users
+exports.getUsers = async (req, res) => {
+    try {
+        const users = await req.tenant.model('User').find(
+            {},
+            'name email role index createdAt'
+        );
+        res.status(200).json(users);
+    } catch (error) {
+        console.error('Get users error:', error);
+        res.status(500).json({
+            message: 'Failed to get users',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get user index
+exports.getUserIndex = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const user = await req.tenant.model('User').findById(
+            req.params.id,
+            'index'
+        );
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.status(200).json({
+            index: user.index,
+            userId: user._id
+        });
+    } catch (error) {
+        console.error('Get user index error:', error);
+        res.status(500).json({
+            message: 'Failed to get user index',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Update user index
+exports.updateIndex = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const { newIndexValue } = req.body;
+        const { id } = req.params;
+        const { user: requester, tenant } = req;
+
+        // Authorization check
+        if (requester.role !== 'admin' && requester.id !== id) {
+            return res.status(403).json({ 
+                message: 'Not authorized to update this user' 
+            });
+        }
+
+        const updatedUser = await tenant.model('User').findByIdAndUpdate(
+            id,
+            { index: newIndexValue },
+            { new: true, select: '_id index role' }
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.status(200).json({
+            message: 'Index updated successfully',
+            user: updatedUser
+        });
+    } catch (error) {
+        console.error('Update index error:', error);
+        res.status(500).json({
+            message: 'Failed to update index',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
