@@ -1,5 +1,3 @@
-// routes/userRoutes.js
-
 const express = require('express');
 const { body, param } = require('express-validator');
 const router = express.Router();
@@ -10,7 +8,8 @@ const {
     login,
     getUsers,
     updateIndex,
-    getUserIndex
+    getUserIndex,
+    checkEmail
 } = require('../controllers/authcontrolleruser');
 
 // Middleware
@@ -22,6 +21,20 @@ const { protect, isAdmin } = require('../middleware/authMiddleware');
 // =========================
 
 /**
+ * @route   POST /api/users/check-email
+ * @desc    Check if email is available for registration
+ * @access  Public (Tenant header required)
+ */
+router.post(
+    '/check-email',
+    identifyTenant,
+    [
+        body('email').isEmail().withMessage('Valid email is required')
+    ],
+    checkEmail
+);
+
+/**
  * @route   POST /api/users/register
  * @desc    Register a new staff user for the current tenant
  * @access  Public (Tenant header required)
@@ -31,7 +44,14 @@ router.post(
     identifyTenant,
     [
         body('name').notEmpty().withMessage('Name is required'),
-        body('email').isEmail().withMessage('Valid email is required'),
+        body('email').isEmail().withMessage('Valid email is required')
+            .custom(async (email, { req }) => {
+                const existingUser = await req.tenant.model('User').findOne({ email });
+                if (existingUser) {
+                    throw new Error('Email already in use');
+                }
+                return true;
+            }),
         body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
         body('role').isIn(['admin', 'confirmation', 'stockagent', 'user']).withMessage('Invalid role'),
         body('index').optional().isInt({ min: 0, max: 1 }).withMessage('Index must be 0 or 1'),
@@ -89,7 +109,7 @@ router.get(
 
 /**
  * @route   PUT /api/users/:id/index
- * @desc    Update a user’s index (Admin can update any, users can update their own — handled in controller)
+ * @desc    Update a user's index (Admin can update any, users can update their own — handled in controller)
  * @access  Private
  */
 router.put(
