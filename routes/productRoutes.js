@@ -16,11 +16,9 @@ const { protectCustomer } = require('../middleware/customerAuthMiddleware');
 // ================================
 // 🛒 COLLECTION ROUTES
 // ================================
-// **FIX**: These specific routes are placed before any dynamic '/:id' routes.
+// **FIX**: These specific routes are now placed BEFORE the dynamic '/:id' routes.
 
-// Get all collections for a client (Public)
-// Note: This route was changed from public to protected to align with the others.
-// If it should be public, you can remove the 'protect' and 'isAdmin' middleware.
+// Get all collections for a client (Admin Only)
 router.get('/collections', identifyTenant, protect, isAdmin, productController.getCollections);
 
 // Create a new collection (Admin Only)
