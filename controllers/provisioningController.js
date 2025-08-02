@@ -44,6 +44,12 @@ exports.provisionNewClient = async (req, res) => {
         nodemailerAppPassword
     } = req.body;
 
+    // **CRITICAL FIX**: Add a manual check to ensure adminEmail is provided.
+    // This prevents the 'E11000 duplicate key error' for a null email.
+    if (!adminEmail || adminEmail.trim() === '') {
+        return res.status(400).json({ message: 'Administrator Email is a required field.' });
+    }
+
     let savedClient = null; // Keep track of the saved client for potential rollback
 
     try {
@@ -68,7 +74,6 @@ exports.provisionNewClient = async (req, res) => {
         const newClient = new Client({
             tenantId: nextTenantId,
             name: clientName,
-            // **CRITICAL FIX**: The admin's email must be added here to satisfy the unique email constraint in the Client model.
             email: adminEmail.toLowerCase(),
             config: {
                 jwtSecret,
@@ -115,7 +120,7 @@ exports.provisionNewClient = async (req, res) => {
             await Client.findByIdAndDelete(savedClient._id);
         }
         
-        // **FIX**: Provide a more specific error message for duplicate key errors.
+        // Provide a more specific error message for duplicate key errors.
         if (error.code === 11000) { 
              const field = Object.keys(error.keyValue)[0]; // e.g., 'name' or 'email'
              return res.status(409).json({ message: `A client with this ${field} already exists. Please choose another.` });
