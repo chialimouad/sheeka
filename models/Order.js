@@ -41,8 +41,9 @@ const orderSchema = new mongoose.Schema({
             ref: 'Product',
             required: true
         },
-        name: { type: String },
+        name: { type: String, required: true }, // Snapshot of product name
         quantity: { type: Number, required: true },
+        priceAtPurchase: { type: Number, required: true }, // Snapshot of price per unit
         color: { type: String },
         size: { type: String }
     }],
