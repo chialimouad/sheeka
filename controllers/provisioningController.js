@@ -68,7 +68,7 @@ exports.provisionNewClient = async (req, res) => {
         const newClient = new Client({
             tenantId: nextTenantId,
             name: clientName,
-            // **FIX**: Added the admin's email to the client document to satisfy the unique email constraint.
+            // **CRITICAL FIX**: The admin's email must be added here to satisfy the unique email constraint in the Client model.
             email: adminEmail.toLowerCase(),
             config: {
                 jwtSecret,
