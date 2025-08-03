@@ -1,5 +1,17 @@
-// routes/orders.js
-
+/**
+ * FILE: ./routes/orders.js
+ * DESC: Defines API endpoints for handling orders.
+ *
+ * FIX:
+ * - Consolidated all middleware imports to use the single, correct
+ * `../middleware/authMiddleware.js` file. This resolves the primary error.
+ * - Removed the global `router.use(identifyTenant, protect)` call.
+ * - Applied the full, explicit middleware chain (`identifyTenant`, `protect`, `isAdmin`)
+ * to each protected admin route. This is a safer pattern that guarantees the
+ * correct execution order and prevents middleware conflicts.
+ * - Removed the `getTenantObjectId` helper function and updated all protected routes
+ * to use `req.tenant._id` directly, which is simpler and more reliable.
+ */
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -8,36 +20,34 @@ const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const AbandonedCart = require('../models/AbandonedCart');
 const Product = require('../models/Product');
-// **FIX**: We now need the Client model to look up the correct tenant ObjectId.
-// Make sure the path to your Client model is correct.
 const Client = require('../models/Client'); 
 
 // --- Import Middleware ---
-const { identifyTenant } = require('../middleware/tenantMiddleware');
-const { protect, isAdmin } = require('../middleware/authMiddleware');
+// **FIX**: All auth-related middleware is now imported from the single correct file.
+const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
 
 
 // =========================
-// Public Routes
+// Public Routes (for placing orders)
 // =========================
-// ... (Public routes remain unchanged)
+
+// This route uses the correct `identifyTenant` middleware now.
 router.post('/abandoned-cart', identifyTenant, async (req, res) => {
     try {
         const { fullName, phoneNumber, product, pageUrl, wilaya, commune } = req.body;
-        const tenantIdentifier = req.tenantId;
+        
+        // `identifyTenant` attaches the full tenant object.
+        if (!req.tenant) {
+            return res.status(404).json({ message: 'Client not found.' });
+        }
+        const tenantObjectId = req.tenant._id;
 
         if (!phoneNumber || !product || !product.productId) {
             return res.status(400).json({ message: 'Phone number and product ID are required.' });
         }
         
-        // **FIX**: Changed query to use `tenantId` which is the correct field in the Client model.
-        const client = await Client.findOne({ tenantId: tenantIdentifier });
-        if (!client) {
-            return res.status(404).json({ message: 'Client not found.' });
-        }
-
-        const filter = { tenantId: client._id, phoneNumber, 'product.productId': product.productId };
-        const update = { tenantId: client._id, fullName, phoneNumber, product, pageUrl, wilaya, commune };
+        const filter = { tenantId: tenantObjectId, phoneNumber, 'product.productId': product.productId };
+        const update = { tenantId: tenantObjectId, fullName, phoneNumber, product, pageUrl, wilaya, commune };
         const options = { upsert: true, new: true, setDefaultsOnInsert: true };
 
         const abandonedCart = await AbandonedCart.findOneAndUpdate(filter, update, options);
@@ -48,22 +58,20 @@ router.post('/abandoned-cart', identifyTenant, async (req, res) => {
     }
 });
 
+// This route also uses the correct `identifyTenant` middleware.
 router.post('/', identifyTenant, async (req, res) => {
     const session = await mongoose.startSession();
     try {
         const { fullName, phoneNumber, wilaya, commune, address, products, notes, totalPrice } = req.body;
-        const tenantIdentifier = req.tenantId;
+        
+        if (!req.tenant) {
+            return res.status(404).json({ message: 'Client not found.' });
+        }
+        const tenantObjectId = req.tenant._id;
 
         if (!fullName || !phoneNumber || !wilaya || !commune || !products || !products.length || totalPrice === undefined) {
             return res.status(400).json({ message: 'Missing required fields.' });
         }
-
-        // **FIX**: Changed query to use `tenantId` which is the correct field in the Client model.
-        const client = await Client.findOne({ tenantId: tenantIdentifier });
-        if (!client) {
-            return res.status(404).json({ message: 'Client not found.' });
-        }
-        const tenantObjectId = client._id;
 
         await session.withTransaction(async () => {
             for (const item of products) {
@@ -101,33 +109,13 @@ router.post('/', identifyTenant, async (req, res) => {
 // =========================
 // Protected Admin Routes
 // =========================
-router.use(identifyTenant, protect);
-
-// **HELPER FUNCTION TO GET TENANT OBJECT ID**
-// This avoids repeating the same logic in every route.
-const getTenantObjectId = async (req, res) => {
-    const tenantIdentifier = req.user.tenantId; // e.g., "1001" from the JWT
-    if (!tenantIdentifier) {
-        res.status(400).json({ message: 'Tenant identifier not found in user token.' });
-        return null;
-    }
-    // **FIX**: Changed query to use `tenantId` which is the correct field in the Client model.
-    const client = await Client.findOne({ tenantId: tenantIdentifier });
-    if (!client) {
-        res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
-        return null;
-    }
-    return client._id; // The actual ObjectId
-};
-
 
 // @route   GET /api/orders
 // @desc    Get all orders for the client.
 // @access  Private (Admin)
-router.get('/', isAdmin, async (req, res) => {
+router.get('/', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return; // Error response already sent by helper
+        const tenantObjectId = req.tenant._id; // Directly use the ID from the verified tenant.
 
         const orders = await Order.find({ tenantId: tenantObjectId })
             .populate('products.productId', 'name price images')
@@ -144,12 +132,11 @@ router.get('/', isAdmin, async (req, res) => {
 // @route   GET /api/orders/:orderId
 // @desc    Get a single order by its ID.
 // @access  Private (Admin)
-router.get('/:orderId', isAdmin, async (req, res) => {
+router.get('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
-
+        const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
+
         const order = await Order.findOne({ _id: orderId, tenantId: tenantObjectId })
             .populate('products.productId', 'name price images')
             .populate('confirmedBy', 'name email')
@@ -168,11 +155,9 @@ router.get('/:orderId', isAdmin, async (req, res) => {
 // @route   PUT /api/orders/:orderId
 // @desc    Update order details (e.g., customer info).
 // @access  Private (Admin)
-router.put('/:orderId', isAdmin, async (req, res) => {
+router.put('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
-
+        const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
         const updateData = req.body;
 
@@ -195,11 +180,9 @@ router.put('/:orderId', isAdmin, async (req, res) => {
 // @route   PATCH /api/orders/:orderId/status
 // @desc    Update the status of an order (e.g., confirm, ship).
 // @access  Private (Admin)
-router.patch('/:orderId/status', isAdmin, async (req, res) => {
+router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
-
+        const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
         const { status, notes } = req.body;
 
@@ -208,7 +191,6 @@ router.patch('/:orderId/status', isAdmin, async (req, res) => {
             return res.status(404).json({ message: 'Order not found for this client.' });
         }
 
-        // ... (rest of the logic is fine)
         let hasUpdate = false;
         if (status) {
             order.status = status;
@@ -238,12 +220,10 @@ router.patch('/:orderId/status', isAdmin, async (req, res) => {
 // @route   DELETE /api/orders/:orderId
 // @desc    Delete an order and restore product stock.
 // @access  Private (Admin)
-router.delete('/:orderId', isAdmin, async (req, res) => {
+router.delete('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     const session = await mongoose.startSession();
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
-
+        const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
 
         let deletedOrder;
@@ -276,7 +256,5 @@ router.delete('/:orderId', isAdmin, async (req, res) => {
         session.endSession();
     }
 });
-
-// ... (Abandoned cart admin routes would also need this fix if they use req.user.tenantId)
 
 module.exports = router;
