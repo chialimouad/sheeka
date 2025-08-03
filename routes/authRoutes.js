@@ -3,13 +3,13 @@
  * DESC: Defines API endpoints for authentication.
  *
  * FIX:
- * - Added a new local middleware `verifyTenantData` to the login route.
- * - This new middleware runs immediately after `identifyTenant` and ensures that the
- * tenant object and, crucially, the `tenant.jwtSecret` have been successfully
- * attached to the request.
- * - This prevents the request from reaching the controller with incomplete data,
- * providing a more robust and clearer error if the tenant's record in the
- * database is missing the required JWT secret.
+ * - The `verifyTenantData` middleware is now also applied to the `/register` route.
+ * - This is a proactive fix. If the registration process is designed to
+ * automatically log the user in and issue a JWT token, it will also require
+ * the `jwtSecret`. Adding this check prevents potential errors during registration
+ * if the tenant's data is incomplete.
+ * - This makes the routes more robust by ensuring any route that might create a
+ * token has the necessary data before proceeding.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
@@ -26,7 +26,7 @@ const router = express.Router();
 
 /**
  * @desc A local middleware to ensure the tenant object from `identifyTenant`
- * is complete before it reaches the controller.
+ * is complete before it reaches a controller that needs to generate a JWT.
  */
 const verifyTenantData = (req, res, next) => {
     // This check is crucial. It verifies that the `identifyTenant` middleware
@@ -53,7 +53,8 @@ router.post(
 
 router.post(
     '/register',
-    identifyTenant,
+    identifyTenant,   // 1. Identify the tenant.
+    verifyTenantData, // 2. Verify tenant has a JWT secret, in case of auto-login.
     [
         body('name', 'Name is required.').trim().not().isEmpty(),
         body('email', 'Please enter a valid email.').isEmail().normalizeEmail(),
@@ -65,7 +66,7 @@ router.post(
 router.post(
     '/login',
     identifyTenant,   // 1. Finds the tenant based on hostname or header.
-    verifyTenantData, // 2. NEW: Verifies the returned tenant object is valid.
+    verifyTenantData, // 2. Verifies the returned tenant object is valid for creating a token.
     [
         body('email', 'Please enter a valid email.').isEmail().normalizeEmail(),
         body('password', 'Password is required.').not().isEmpty()
@@ -75,6 +76,7 @@ router.post(
 
 // --- Protected Routes ---
 // These require tenant identification first, then a valid user token.
+// The `protect` middleware already contains its own check for the jwtSecret.
 router.get(
     '/users/:id/index',
     identifyTenant,
