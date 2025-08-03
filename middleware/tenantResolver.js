@@ -2,20 +2,20 @@
  * FILE: ./middleware/tenantResolver.js
  * DESC: This middleware identifies the tenant based on a custom HTTP header,
  * fetches the tenant's data from the database, and attaches it to the request object.
- * This must run before any routes that depend on a tenant context.
+ *
+ * MODIFIED: Now correctly attaches the jwtSecret from the client record to the
+ * request object as req.jwtSecret, which is required by the login controller.
  */
 const Client = require('../models/Client'); // Using Client model as per your logic
 
 const tenantResolver = async (req, res, next) => {
     try {
-        // The tenant ID is expected in the 'x-tenant-id' header.
         const tenantIdHeader = req.headers['x-tenant-id'];
 
         if (!tenantIdHeader) {
             return res.status(400).json({ message: 'Tenant ID header (x-tenant-id) is missing.' });
         }
 
-        // Find the client by the unique tenantId.
         const client = await Client.findOne({ tenantId: tenantIdHeader });
 
         if (!client) {
@@ -27,10 +27,13 @@ const tenantResolver = async (req, res, next) => {
         }
 
         // Attach client information to the request for use in subsequent middleware/controllers.
-        // We create both req.client and req.tenant for compatibility.
         req.client = client;
-        req.tenant = client; // For compatibility with authController
-        req.tenantId = client.tenantId; // For compatibility with protect middleware
+        req.tenant = client; 
+        req.tenantId = client.tenantId;
+        
+        // --- THIS IS THE FIX ---
+        // The login controller expects req.jwtSecret to be available directly.
+        req.jwtSecret = client.jwtSecret;
 
         next();
     } catch (error) {
