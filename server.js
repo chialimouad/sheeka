@@ -52,10 +52,10 @@ const { identifyTenant } = require('./middleware/authMiddleware');
 
 const provisioningRoutes = require('./routes/provisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
-const customerRoutes = require('./routes/customerRoutes'); // Standardized name
+const customerRoutes = require('./routes/authroutesuser'); // Standardized name
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
-const siteConfigRoutes = require('./routes/siteConfigRoutes');
+const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emails');
 
 // ========================
