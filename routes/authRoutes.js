@@ -10,6 +10,9 @@
  * if the tenant's data is incomplete.
  * - This makes the routes more robust by ensuring any route that might create a
  * token has the necessary data before proceeding.
+ * - **UPDATE**: Enhanced the `verifyTenantData` middleware to include the tenant's
+ * identifier in the error message. This makes it easier to diagnose which
+ * specific tenant record is missing its `jwtSecret` in the database.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
@@ -29,12 +32,17 @@ const router = express.Router();
  * is complete before it reaches a controller that needs to generate a JWT.
  */
 const verifyTenantData = (req, res, next) => {
-    // This check is crucial. It verifies that the `identifyTenant` middleware
-    // not only found a tenant but that the tenant's data includes a jwtSecret.
+    // This check verifies that the `identifyTenant` middleware found a tenant
+    // AND that the tenant's data includes a jwtSecret.
     if (!req.tenant || !req.tenant.jwtSecret) {
-        console.error('ROUTER-LEVEL CHECK FAILED: Tenant data is incomplete or missing jwtSecret.');
+        const tenantIdentifier = req.tenant?.customDomain || req.tenant?.tenantId || 'Unknown Tenant';
+        
+        // Log a more detailed error on the server for easier debugging.
+        console.error(`ROUTER-LEVEL CHECK FAILED: jwtSecret is missing for tenant: ${tenantIdentifier}.`);
+        
+        // Send a clear, specific error back to the client.
         return res.status(500).json({
-            message: 'Server configuration error: Tenant data is incomplete. Please contact support.'
+            message: `Server configuration error: The configuration for your account (${tenantIdentifier}) is incomplete. Please contact support.`
         });
     }
     // If the data is valid, proceed to the next middleware or controller.
