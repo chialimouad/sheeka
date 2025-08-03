@@ -6,6 +6,7 @@
  * MODIFIED: Refactored database queries to use a standard User model filtered
  * by a tenantId, removing the dependency on the problematic `req.tenant.model()`
  * method. This aligns with modern multi-tenancy practices and fixes the login logic.
+ * Added back the missing getUserIndex and updateIndex functions.
  */
 const { validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
@@ -150,5 +151,71 @@ exports.getUsers = async (req, res) => {
     } catch (error) {
         console.error('Get users error:', error);
         res.status(500).json({ message: 'Failed to get users' });
+    }
+};
+
+// Get a specific user's index
+exports.getUserIndex = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const user = await User.findOne(
+            { _id: req.params.id, tenantId: req.tenant._id },
+            'index' // Select only the index field
+        );
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.status(200).json({
+            index: user.index,
+            userId: user._id
+        });
+    } catch (error) {
+        console.error('Get user index error:', error);
+        res.status(500).json({ message: 'Failed to get user index' });
+    }
+};
+
+// Update a user's index
+exports.updateIndex = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const { newIndexValue } = req.body;
+        const { id } = req.params;
+        const { user: requester } = req; // `protect` middleware adds req.user
+
+        // Authorization: Only an admin or the user themselves can update the index.
+        if (requester.role !== 'admin' && requester.id.toString() !== id) {
+            return res.status(403).json({ 
+                message: 'Not authorized to update this user' 
+            });
+        }
+
+        const updatedUser = await User.findOneAndUpdate(
+            { _id: id, tenantId: req.tenant._id }, // Ensure user belongs to the tenant
+            { index: newIndexValue },
+            { new: true, select: '_id index role' } // Return the updated document
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.status(200).json({
+            message: 'Index updated successfully',
+            user: updatedUser
+        });
+    } catch (error) {
+        console.error('Update index error:', error);
+        res.status(500).json({ message: 'Failed to update index' });
     }
 };
