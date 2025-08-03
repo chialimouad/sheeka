@@ -50,13 +50,14 @@ connectDB();
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 const { identifyTenant } = require('./middleware/authMiddleware'); 
 
+// FIX: Corrected the require paths to match the actual filenames.
 const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
-const customerRoutes = require('./routes/authroutesuser'); // Standardized name
+const customerRoutes = require('./routes/authroutesuser'); 
 const productRoutes = require('./routes/productRoutes');
-const orderRoutes = require('./routes/orders');
+const orderRoutes = require('./routes/orderRoutes');
 const siteConfigRoutes = require('./routes/site');
-const emailRoutes = require('./routes/emails');
+const emailRoutes = require('./routes/emailRoutes');
 
 // ========================
 // 🚏 Mount Routes
