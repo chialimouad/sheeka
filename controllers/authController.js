@@ -2,6 +2,10 @@
  * FILE: ./controllers/authController.js
  * DESC: This file contains the business logic for authentication-related
  * operations. It is imported by the router file.
+ *
+ * MODIFIED: Added defensive checks to each function to ensure the `req.tenant`
+ * object is present before execution, preventing crashes if the tenant-finding
+ * middleware has not run.
  */
 const { validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
@@ -23,8 +27,24 @@ const generateToken = (userId, tenantId, role, jwtSecret) => {
     );
 };
 
+// A helper function to check for the tenant object. If it's missing,
+// it sends a 500 error and returns false.
+const checkTenant = (req, res) => {
+    if (!req.tenant) {
+        console.error('Error: Tenant object not found on request. Check that tenant-resolution middleware is running before this route.');
+        res.status(500).json({
+            message: 'Server configuration error. Unable to process request.'
+        });
+        return false;
+    }
+    return true;
+};
+
+
 // Check email availability
 exports.checkEmail = async (req, res) => {
+    if (!checkTenant(req, res)) return;
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -32,7 +52,6 @@ exports.checkEmail = async (req, res) => {
 
     try {
         const { email } = req.body;
-        // Assumes a 'tenant' object is attached to the request by prior middleware
         const existingUser = await req.tenant.model('User').findOne({ email });
         
         res.status(200).json({
@@ -50,6 +69,8 @@ exports.checkEmail = async (req, res) => {
 
 // Register new user
 exports.register = async (req, res) => {
+    if (!checkTenant(req, res)) return;
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -57,14 +78,13 @@ exports.register = async (req, res) => {
 
     try {
         const { name, email, password, role, index } = req.body;
-        // Assumes 'tenant' and 'jwtSecret' are attached to the request
         const { tenant, jwtSecret } = req;
 
         // Hash password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Create user within the tenant's context
+        // Create user
         const user = await tenant.model('User').create({
             name,
             email,
@@ -99,6 +119,8 @@ exports.register = async (req, res) => {
 
 // User login
 exports.login = async (req, res) => {
+    if (!checkTenant(req, res)) return;
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -145,6 +167,8 @@ exports.login = async (req, res) => {
 
 // Get all users for the current tenant
 exports.getUsers = async (req, res) => {
+    if (!checkTenant(req, res)) return;
+
     try {
         const users = await req.tenant.model('User').find(
             {},
@@ -162,6 +186,8 @@ exports.getUsers = async (req, res) => {
 
 // Get a specific user's index
 exports.getUserIndex = async (req, res) => {
+    if (!checkTenant(req, res)) return;
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -192,6 +218,8 @@ exports.getUserIndex = async (req, res) => {
 
 // Update a user's index
 exports.updateIndex = async (req, res) => {
+    if (!checkTenant(req, res)) return;
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -212,7 +240,7 @@ exports.updateIndex = async (req, res) => {
         const updatedUser = await tenant.model('User').findByIdAndUpdate(
             id,
             { index: newIndexValue },
-            { new: true, select: '_id index role' } // Return the updated document and select fields
+            { new: true, select: '_id index role' } // Return the updated document
         );
 
         if (!updatedUser) {
