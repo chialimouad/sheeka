@@ -3,8 +3,8 @@
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
-const { provisionNewClient } = require('../controllers/provisioningController');
-const { isSuperAdmin } = require('../middleware/superAdminMiddleware'); // ✅ Import protection middleware
+const { createClient } = require('../controllers/provisioningController'); // Adjusted to match controller export
+const { isSuperAdmin } = require('../middleware/superAdminMiddleware');
 
 /**
  * @route   POST /api/provision/client
@@ -13,12 +13,20 @@ const { isSuperAdmin } = require('../middleware/superAdminMiddleware'); // ✅ I
  */
 router.post(
     '/client',
-    isSuperAdmin, // ✅ Super Admin protection
+    isSuperAdmin,
     [
         body('clientName')
             .trim()
             .notEmpty()
             .withMessage('Client business name is required'),
+
+        // **FIX**: Added validation for the subdomain field.
+        body('subdomain')
+            .trim()
+            .notEmpty()
+            .withMessage('Subdomain is required')
+            .isSlug() // Ensures it's a URL-friendly string (e.g., "my-store")
+            .withMessage('Subdomain can only contain letters, numbers, and hyphens.'),
 
         body('adminEmail')
             .isEmail()
@@ -41,7 +49,7 @@ router.post(
             .notEmpty()
             .withMessage('Cloudinary API Secret is required')
     ],
-    provisionNewClient
+    createClient // Using the corrected controller function name
 );
 
 module.exports = router;
