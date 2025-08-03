@@ -3,13 +3,22 @@ const mongoose = require('mongoose');
 
 /**
  * @desc Defines the schema for a Client (Tenant).
- * This version removes the 'subdomain' field to align with the login-by-ID approach.
+ * This version includes the 'subdomain' field to support unique client sites.
  */
 const clientSchema = new mongoose.Schema({
     tenantId: {
         type: Number,
         required: true,
         unique: true,
+        index: true,
+    },
+    // **NEW**: Added the subdomain field for unique client URLs.
+    subdomain: {
+        type: String,
+        required: [true, 'Subdomain is required.'],
+        unique: true,
+        lowercase: true,
+        trim: true,
         index: true,
     },
     name: {
