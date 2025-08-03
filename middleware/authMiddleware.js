@@ -4,11 +4,11 @@
  * any other tenant identification or auth middleware files you are using.
  *
  * FIX:
- * - Added a defensive check inside the `protect` middleware. It now verifies
- * that `req.tenant` has been attached by a preceding middleware (like `identifyTenant`).
- * - This prevents a `TypeError` and a generic 500 error if the `protect` middleware
- * is accidentally used on a route without `identifyTenant` running first.
- * - It now provides a clear, actionable error message in that scenario.
+ * - Updated the `protect` middleware with a more robust initial check.
+ * - The error message is now more explicit, guiding the developer to check
+ * their route definitions to ensure `identifyTenant` is used before `protect`.
+ * This directly addresses the "Tenant JWT secret not found" error by
+ * clarifying its root cause.
  */
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -77,15 +77,12 @@ const protect = async (req, res, next) => {
     }
 
     try {
-        // **THIS IS THE FIX**: Add a check to ensure `identifyTenant` ran first.
-        if (!req.tenant) {
-            console.error('PROTECT MIDDLEWARE ERROR: `req.tenant` is missing. Ensure `identifyTenant` middleware is used before `protect` on this route.');
-            return res.status(500).json({ message: 'Server configuration error: Tenant could not be identified.' });
-        }
-        
-        // The 'identifyTenant' middleware should have already run and attached the secret.
-        if (!req.jwtSecret) {
-            return res.status(500).json({ message: 'Server error: Tenant JWT secret not found on request.' });
+        // **THIS IS THE FIX**: A single, more robust check with a clearer error message.
+        if (!req.tenant || !req.jwtSecret) {
+            console.error('PROTECT MIDDLEWARE ERROR: `req.tenant` or `req.jwtSecret` is missing.');
+            console.error('This usually means the `identifyTenant` middleware did not run before the `protect` middleware on this route.');
+            console.error('Please check your route definitions (e.g., in orderRoutes.js) and ensure the middleware chain is correct: `identifyTenant` -> `protect`.');
+            return res.status(500).json({ message: 'Server configuration error: Tenant could not be properly identified for this request.' });
         }
 
         const decoded = jwt.verify(token, req.jwtSecret);
