@@ -57,7 +57,7 @@ const customerRoutes = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
 const siteConfigRoutes = require('./routes/site');
-const emailRoutes = require('./routes/emailRoutes');
+const emailRoutes = require('./routes/emails');
 
 // ========================
 // 🚏 Mount Routes
