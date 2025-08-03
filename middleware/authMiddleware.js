@@ -2,16 +2,12 @@
  * FILE: ./middleware/authMiddleware.js
  * DESC: Centralized authentication and authorization middleware.
  *
- * UPDATE:
- * - Merged the new, more granular middleware for protecting different user types
- * (staff vs. customers) with the existing robust tenant identification logic.
- * - Kept the `identifyTenant` function, which is crucial for a multi-tenant setup.
- * It can identify tenants by hostname or by a request header.
- * - Added the `getTokenFromHeader` helper function for cleaner token extraction.
- * - Added the `protectCustomer` middleware to specifically handle customer authentication.
- * - Renamed `admin` to `isAdmin` for clarity as requested.
- * - Adjusted the new middleware to work with the `req.tenant` object that `identifyTenant`
- * attaches to the request, ensuring compatibility.
+ * FIX:
+ * - Updated the `protect` and `protectCustomer` functions to correctly access the
+ * jwtSecret from the nested `config` object (`req.tenant.config.jwtSecret`).
+ * - This aligns all middleware with your database structure, ensuring that both
+ * public routes (like /login) and protected routes can correctly find and
+ * use the tenant's JWT secret.
  */
 const jwt = require('jsonwebtoken');
 const User = require('../models/User'); // For staff/admin users
@@ -19,9 +15,6 @@ const Client = require('../models/Client'); // For tenants/customers
 
 /**
  * @desc Identifies the tenant from the request, attaching tenant data.
- * This middleware is critical and must run before any protected routes.
- * It first attempts to identify the tenant by the request hostname. If that fails,
- * it falls back to looking for an 'x-tenant-id' header.
  */
 const identifyTenant = async (req, res, next) => {
     let client;
@@ -29,29 +22,23 @@ const identifyTenant = async (req, res, next) => {
         const hostname = req.hostname;
         const tenantIdHeader = req.headers['x-tenant-id'];
 
-        // 1. Try to find the tenant by their custom domain (hostname)
         if (hostname) {
             client = await Client.findOne({ customDomain: hostname }).lean();
         }
 
-        // 2. If not found by hostname, fall back to the tenant ID header
         if (!client && tenantIdHeader) {
             client = await Client.findOne({ tenantId: tenantIdHeader }).lean();
         }
 
-        // 3. If no tenant could be identified, deny access.
         if (!client) {
             return res.status(404).json({ message: 'Tenant not found. Cannot process request.' });
         }
 
-        // 4. Check if the tenant's account is active.
         if (!client.isActive) {
             return res.status(403).json({ message: 'This client account is inactive.' });
         }
 
-        // 5. Success! Attach tenant info to the request for other middleware/controllers.
-        req.tenant = client; // Attach the full tenant object
-
+        req.tenant = client;
         next();
     } catch (error) {
         console.error('Tenant Identification Middleware Error:', error);
@@ -78,12 +65,12 @@ const protect = async (req, res, next) => {
     }
 
     try {
-        // This relies on `identifyTenant` running first to attach `req.tenant`
-        if (!req.tenant?.jwtSecret) {
+        // This now correctly checks for the secret inside the nested config object.
+        if (!req.tenant?.config?.jwtSecret) {
             return res.status(500).json({ message: 'Server error: Missing tenant JWT secret.' });
         }
 
-        const decoded = jwt.verify(token, req.tenant.jwtSecret);
+        const decoded = jwt.verify(token, req.tenant.config.jwtSecret);
 
         const user = await User.findOne({ _id: decoded.id, tenantId: req.tenant.tenantId }).select('-password');
 
@@ -121,12 +108,12 @@ const protectCustomer = async (req, res, next) => {
     }
 
     try {
-        // This also relies on `identifyTenant` running first
-        if (!req.tenant?.jwtSecret) {
+        // This also now correctly checks for the secret inside the nested config object.
+        if (!req.tenant?.config?.jwtSecret) {
             return res.status(500).json({ message: 'Server error: Missing tenant JWT secret.' });
         }
 
-        const decoded = jwt.verify(token, req.tenant.jwtSecret);
+        const decoded = jwt.verify(token, req.tenant.config.jwtSecret);
 
         if (decoded.role !== 'client') {
             return res.status(403).json({ message: 'Forbidden: Customer access only.' });
