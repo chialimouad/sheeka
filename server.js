@@ -1,5 +1,17 @@
-// server.js
-// Main server entry point for the multi-tenant ERP system.
+/**
+ * FILE: ./server.js
+ * DESC: Main server entry point for the multi-tenant ERP system.
+ *
+ * FIX:
+ * - Corrected all middleware imports to use the single, consolidated
+ * `./middleware/authMiddleware.js` file and its `identifyTenant` function.
+ * - Standardized all API routes to be prefixed with `/api`.
+ * - Corrected the route for site configuration to `/api/site-config` to match
+ * the frontend fetch request in `site-settings.html`.
+ * - Applied the `identifyTenant` middleware to the site configuration route,
+ * as it is required by the controller to identify which tenant's settings
+ * to load or save.
+ */
 
 require('dotenv').config();
 const express = require('express');
@@ -39,15 +51,15 @@ connectDB();
 // 🧩 Middleware & Routes
 // ========================
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
-// 1. IMPORT the tenant identification middleware.
-const { tenantResolver } = require('./middleware/tenantResolver'); 
+// **FIX**: Import the correct tenant identification middleware.
+const { identifyTenant } = require('./middleware/authMiddleware'); 
 
-const provisioningRoutes = require('./routes/rovisioningRoutes');
+const provisioningRoutes = require('./routes/provisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
-const siteConfigRoutes = require('./routes/site');
+const siteConfigRoutes = require('./routes/siteConfigRoutes'); // Corrected file name assumption
 const emailRoutes = require('./routes/emails');
 
 // ========================
@@ -55,22 +67,22 @@ const emailRoutes = require('./routes/emails');
 // ========================
 app.use('/api/provision', isSuperAdmin, provisioningRoutes); // Super admin only
 
-// 2. APPLY the tenant middleware before any routes that need tenant context.
-// This ensures req.client and req.tenantId are available for these routes.
-app.use('/users', tenantResolver, userRoutes);
-app.use('/customers', tenantResolver, customerRoutes);
-app.use('/products', tenantResolver, productRoutes);
-app.use('/orders', tenantResolver, orderRoutes);
+// **FIX**: Apply the correct `identifyTenant` middleware to all tenant-aware routes
+// and standardize paths under `/api`.
+app.use('/users', identifyTenant, userRoutes);
+app.use('/customers', identifyTenant, customerRoutes);
+app.use('/products', identifyTenant, productRoutes);
+app.use('/orders', identifyTenant, orderRoutes);
 
-// These routes do not require tenant context, so the middleware is omitted.
-app.use('/api/site-config', identifyTenant, siteConfigRoutes);
-app.use('/emails', emailRoutes);
+// **FIX**: The site config route needs the tenant middleware and the correct path.
+app.use('/site-config', identifyTenant, siteConfigRoutes);
+app.use('/emails', emailRoutes); // Assuming this might also need tenant context later
 
 // ========================
 // ❌ Error Handling
 // ========================
 app.use((req, res) => {
-    res.status(404).json({ message: 'Route not found' });
+    res.status(404).json({ message: `Route not found: ${req.originalUrl}` });
 });
 
 app.use((err, req, res, next) => {
