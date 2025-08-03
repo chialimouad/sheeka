@@ -3,13 +3,14 @@
  * DESC: This file defines the API endpoints for authentication and maps them
  * to the corresponding controller functions.
  *
- * MODIFIED: Replaced placeholder 'protect' and 'admin' middleware with
- * functional implementations that use JWT for proper authentication and authorization.
+ * MODIFIED: The 'protect' middleware has been updated to be compatible with
+ * the 'identifyTenant' middleware. It now uses req.client and req.tenantId.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const authController = require('../controllers/authController');
+const User = require('../models/User'); // Assuming a global User model
 
 // --- Real JWT Authentication Middleware ---
 const protect = async (req, res, next) => {
@@ -21,20 +22,24 @@ const protect = async (req, res, next) => {
             // Extract token from "Bearer <token>"
             token = req.headers.authorization.split(' ')[1];
 
-            // The tenantResolver middleware MUST have run before this to provide req.jwtSecret
-            if (!req.jwtSecret) {
-                return res.status(500).json({ message: 'Server configuration error: JWT secret not found.' });
+            // The identifyTenant middleware MUST have run before this.
+            // We now expect req.client (containing the jwtSecret) and req.tenantId.
+            if (!req.client || !req.client.jwtSecret) {
+                return res.status(500).json({ message: 'Server configuration error: JWT secret not found on client object.' });
             }
 
-            // Verify the token
-            const decoded = jwt.verify(token, req.jwtSecret);
+            // Verify the token using the client-specific secret
+            const decoded = jwt.verify(token, req.client.jwtSecret);
 
-            // Find the user from the token's ID within the tenant's context
-            // and attach it to the request, excluding the password.
-            req.user = await req.tenant.model('User').findById(decoded.id).select('-password');
+            // Find the user by their ID and tenantId, and attach to the request.
+            // This assumes a single User collection partitioned by tenantId.
+            req.user = await User.findOne({ 
+                _id: decoded.id, 
+                tenantId: req.tenantId 
+            }).select('-password');
 
             if (!req.user) {
-                 return res.status(401).json({ message: 'Not authorized, user not found.' });
+                 return res.status(401).json({ message: 'Not authorized, user not found for this tenant.' });
             }
 
             next(); // Proceed if token is valid
