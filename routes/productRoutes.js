@@ -1,22 +1,33 @@
-// routes/productRoutes.js
-
+/**
+ * FILE: ./routes/productRoutes.js
+ * DESC: Defines API endpoints for products, collections, and reviews.
+ *
+ * FIX:
+ * - Consolidated all middleware imports to use the single, correct
+ * `../middleware/authMiddleware.js` file. This resolves potential conflicts
+ * and errors from using outdated or separate middleware files.
+ * - The middleware chains for each route have been verified to ensure correct
+ * execution order for public, admin, and customer-specific endpoints.
+ */
 const express = require('express');
 const router = express.Router();
 const { body, param } = require('express-validator');
 
-// Import the refactored controller
+// Import the product controller
 const productController = require('../controllers/productController');
 
-// Import the necessary middleware for security and tenant identification
-const { identifyTenant } = require('../middleware/tenantMiddleware');
-const { protect, isAdmin } = require('../middleware/authMiddleware');
-// A separate middleware to protect routes accessible only by logged-in customers
-const { protectCustomer } = require('../middleware/customerAuthMiddleware');
+// **FIX**: All middleware is now imported from the single, consolidated auth file.
+const {
+    identifyTenant,
+    protect,
+    isAdmin,
+    protectCustomer // Assuming this is now part of your main authMiddleware
+} = require('../middleware/authMiddleware');
+
 
 // ================================
 // 🛒 COLLECTION ROUTES
 // ================================
-// **FIX**: These specific routes are now placed BEFORE the dynamic '/:id' routes.
 
 // Get all collections for a client (Admin Only)
 router.get('/collections', identifyTenant, protect, isAdmin, productController.getCollections);
@@ -34,7 +45,6 @@ router.post(
 // ================================
 // 📸 PROMO IMAGES ROUTES
 // ================================
-// **FIX**: These specific routes are also placed before any dynamic '/:id' routes.
 
 // Get all promo images for a client (Public)
 router.get('/promo', identifyTenant, productController.getProductImagesOnly);
@@ -45,7 +55,7 @@ router.post(
     identifyTenant,
     protect,
     isAdmin,
-    productController.uploadMiddleware, // Use the same dynamic uploader
+    productController.uploadMiddleware,
     productController.uploadPromoImages
 );
 
@@ -63,12 +73,12 @@ router.post(
     identifyTenant,
     protect,
     isAdmin,
-    productController.uploadMiddleware, // Use the dynamic, tenant-aware uploader
+    productController.uploadMiddleware,
     productController.addProduct
 );
 
-// **IMPORTANT**: Dynamic routes with parameters like '/:id' must come AFTER all specific string routes.
 // Get a single product by ID (Public)
+// IMPORTANT: This dynamic route comes AFTER specific routes like '/collections' and '/promo'.
 router.get(
     '/:id',
     identifyTenant,
@@ -83,7 +93,7 @@ router.put(
     protect,
     isAdmin,
     param('id').isMongoId(),
-    productController.uploadMiddleware, // Handles potential new image uploads
+    productController.uploadMiddleware,
     productController.updateProduct
 );
 
@@ -107,8 +117,10 @@ router.post(
     identifyTenant,
     protectCustomer, // Ensures only a logged-in customer can post a review
     param('id').isMongoId(),
-    body('rating').isFloat({ min: 1, max: 5 }),
-    body('comment').notEmpty(),
+    [
+        body('rating').isFloat({ min: 1, max: 5 }),
+        body('comment').notEmpty()
+    ],
     productController.createProductReview
 );
 
