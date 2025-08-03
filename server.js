@@ -50,7 +50,7 @@ connectDB();
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 const { identifyTenant } = require('./middleware/authMiddleware'); 
 
-const provisioningRoutes = require('./routes/provisioningRoutes');
+const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser'); // Standardized name
 const productRoutes = require('./routes/productRoutes');
