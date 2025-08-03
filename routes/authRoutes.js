@@ -3,10 +3,9 @@
  * DESC: Defines API endpoints for authentication.
  *
  * FIX:
- * - Removed the inline middleware definitions for `identifyTenant`, `protect`, and `admin`.
- * - Now imports the corrected and centralized middleware from `./middleware/authMiddleware.js`.
- * - The route definitions remain the same, but they are now cleaner and use the reliable,
- * imported middleware, ensuring the correct execution order.
+ * - Corrected the name of the imported admin middleware from `admin` to `isAdmin`
+ * to match what is exported from `authMiddleware.js`. This resolves the
+ * "Route.get() requires a callback function but got a [object Undefined]" error.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
@@ -16,7 +15,7 @@ const authController = require('../controllers/authController');
 const {
     identifyTenant,
     protect,
-    admin
+    isAdmin // Corrected from 'admin' to 'isAdmin'
 } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -78,7 +77,7 @@ router.get(
     '/users',
     identifyTenant, // 1. Identify Tenant
     protect,        // 2. Verify Token
-    admin,          // 3. Check for Admin Role
+    isAdmin,        // 3. Check for Admin Role (Corrected from 'admin')
     authController.getUsers
 );
 
