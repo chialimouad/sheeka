@@ -3,11 +3,9 @@
  * DESC: Main server entry point for the multi-tenant ERP system.
  *
  * FIX:
- * - Removed the `/api` prefix from all route definitions as requested.
- * - Corrected typos in the `require` statements for the route files to ensure
- * the server can find and load them correctly (e.g., 'provisioningRoutes').
- * - Confirmed the `identifyTenant` middleware is correctly applied to all
- * tenant-aware routes, including `/site-config`.
+ * - Updated all require() statements to use the correct filenames for the route
+ * modules as provided. This ensures that all routes, including `/site-config`,
+ * are properly loaded and registered by the Express app.
  */
 
 require('dotenv').config();
@@ -50,19 +48,19 @@ connectDB();
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 const { identifyTenant } = require('./middleware/authMiddleware'); 
 
-// FIX: Corrected the require paths to match the actual filenames.
-const provisioningRoutes = require('./routes/rovisioningRoutes');
+// FIX: Using the correct route filenames provided by the user.
+const provisioningRoutes = require('./routes/provisioningRoutes'); // Corrected typo from 'rovisioning'
 const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser'); 
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
-const siteConfigRoutes = require('./routes/site');
+const siteConfigRoutes = require('./routes/site'); // Corrected to 'site'
 const emailRoutes = require('./routes/emails');
+
 
 // ========================
 // 🚏 Mount Routes
 // ========================
-// **FIX**: Removed /api prefix from all routes.
 app.use('/provision', isSuperAdmin, provisioningRoutes);
 app.use('/users', identifyTenant, userRoutes);
 app.use('/customers', identifyTenant, customerRoutes);
