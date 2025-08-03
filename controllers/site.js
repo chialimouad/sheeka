@@ -1,5 +1,14 @@
-// controllers/siteConfigController.js
-
+/**
+ * FILE: ./controllers/siteConfigController.js
+ * DESC: Handles business logic for site and pixel configurations.
+ *
+ * FIX:
+ * - Standardized how the tenant ID is accessed. All handlers now reliably use
+ * `req.tenant`, which is attached by the `identifyTenant` middleware. This
+ * avoids confusion between `req.user.tenantId` and `req.tenantId`.
+ * - The code now consistently uses `req.tenant.tenantId` for queries, as this
+ * appears to be the numeric ID your models expect.
+ */
 const PixelModel = require('../models/pixel');
 const SiteConfig = require('../models/sitecontroll');
 const { validationResult, param } = require('express-validator');
@@ -10,14 +19,15 @@ const { validationResult, param } = require('express-validator');
 
 const PixelController = {
     /**
-     * @desc    Create a new Facebook or TikTok pixel ID entry.
-     * @route   POST /api/pixels
-     * @access  Private (Admin)
+     * @desc     Create a new Facebook or TikTok pixel ID entry.
+     * @route    POST /api/site-config/pixels
+     * @access   Private (Admin)
      */
     postPixel: async (req, res) => {
         try {
             const { fbPixelId, tiktokPixelId } = req.body;
-            const tenantId = req.user.tenantId; // From 'protect' middleware
+            // Use the tenant ID from the reliable `req.tenant` object.
+            const tenantId = req.tenant.tenantId;
 
             const newPixel = await PixelModel.createPixelForTenant({
                 fbPixelId,
@@ -36,13 +46,13 @@ const PixelController = {
     },
 
     /**
-     * @desc    Get all stored pixel entries for the current tenant.
-     * @route   GET /api/pixels
-     * @access  Private (Admin)
+     * @desc     Get all stored pixel entries for the current tenant.
+     * @route    GET /api/site-config/pixels
+     * @access   Private (Admin)
      */
     getPixels: async (req, res) => {
         try {
-            const tenantId = req.user.tenantId;
+            const tenantId = req.tenant.tenantId;
             const pixels = await PixelModel.getAllPixelsForTenant(tenantId);
             res.status(200).json({
                 message: 'Fetched all pixel IDs successfully!',
@@ -55,9 +65,9 @@ const PixelController = {
     },
 
     /**
-     * @desc    Delete a specific pixel entry by ID.
-     * @route   DELETE /api/pixels/:id
-     * @access  Private (Admin)
+     * @desc     Delete a specific pixel entry by ID.
+     * @route    DELETE /api/site-config/pixels/:id
+     * @access   Private (Admin)
      */
     deletePixel: [
         param('id').isMongoId().withMessage('Invalid Pixel ID format.'),
@@ -68,7 +78,7 @@ const PixelController = {
             }
             try {
                 const pixelId = req.params.id;
-                const tenantId = req.user.tenantId;
+                const tenantId = req.tenant.tenantId;
 
                 const deletedPixel = await PixelModel.deletePixelForTenant(pixelId, tenantId);
 
@@ -94,13 +104,14 @@ const PixelController = {
 
 const SiteConfigController = {
     /**
-     * @desc    Get the complete site configuration for the current tenant.
-     * @route   GET /api/site-config
-     * @access  Public
+     * @desc     Get the complete site configuration for the current tenant.
+     * @route    GET /api/site-config
+     * @access   Public
      */
     getSiteConfig: async (req, res) => {
         try {
-            const tenantId = req.tenantId; // From `identifyTenant` middleware
+            // `identifyTenant` runs on this public route and attaches `req.tenant`.
+            const tenantId = req.tenant.tenantId;
 
             // Fetch site config and pixel config in parallel for efficiency.
             const [siteConfig, pixelConfig] = await Promise.all([
@@ -123,13 +134,14 @@ const SiteConfigController = {
     },
 
     /**
-     * @desc    Update the site configuration for the current tenant.
-     * @route   PUT /api/site-config
-     * @access  Private (Admin)
+     * @desc     Update the site configuration for the current tenant.
+     * @route    PUT /api/site-config
+     * @access   Private (Admin)
      */
     updateSiteConfig: async (req, res) => {
         try {
-            const tenantId = req.user.tenantId; // From 'protect' middleware
+            // `identifyTenant` and `protect` run, so `req.tenant` is available.
+            const tenantId = req.tenant.tenantId;
             
             // Use findOneAndUpdate to update the document for the correct tenant.
             // The { new: true } option returns the updated document.
