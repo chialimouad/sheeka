@@ -1,38 +1,69 @@
-const Client = require('../models/Client');
-
 /**
- * @desc Identifies the client (tenant) based on the 'x-tenant-id' header.
- * Attaches the client's full document and tenantId to the request object.
+ * FILE: ./middleware/tenantMiddleware.js
+ * DESC: Middleware to resolve tenant information based on the request's hostname.
+ * This is the core of the multi-tenant logic.
  */
-const identifyTenant = async (req, res, next) => {
+const mongoose = require('mongoose');
+const Tenant = require('../models/Tenant'); // Assuming you have a Tenant model
+const User = require('../models/User'); // Assuming a generic User model schema
+
+// A cache to hold tenant-specific database connections
+const tenantConnections = {};
+
+const tenantResolver = async (req, res, next) => {
+    // Extract subdomain from hostname. e.g., 'acme' from 'acme.yourapp.com'
+    const subdomain = req.hostname.split('.')[0];
+
+    // For local development, you might pass a header instead
+    // const tenantId = req.headers['x-tenant-id']; 
+    
+    if (!subdomain) {
+        return res.status(400).json({ message: 'Missing tenant identifier.' });
+    }
+
     try {
-        // The tenant ID is expected in the 'x-tenant-id' header.
-        const tenantId = req.headers['x-tenant-id'];
-
-        if (!tenantId) {
-            return res.status(400).json({ message: 'Tenant ID header (x-tenant-id) is missing.' });
+        // Check if we already have a connection for this tenant in our cache
+        if (tenantConnections[subdomain]) {
+            console.log(`Using cached DB connection for tenant: ${subdomain}`);
+            req.tenantConnection = tenantConnections[subdomain];
+            return next();
         }
 
-        // Find the client by the unique numeric tenantId.
-        const client = await Client.findOne({ tenantId: tenantId }).lean();
-
-        if (!client) {
-            return res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
+        // If not cached, find the tenant in the main database
+        const tenant = await Tenant.findOne({ subdomain: subdomain });
+        
+        if (!tenant) {
+            return res.status(404).json({ message: `Tenant not found: ${subdomain}` });
         }
 
-        if (!client.isActive) {
-            return res.status(403).json({ message: 'This client account is inactive.' });
-        }
+        // Create a new database connection for this specific tenant
+        console.log(`Creating new DB connection for tenant: ${tenant.name}`);
+        const tenantDb = mongoose.createConnection(tenant.dbUri, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
 
-        // Attach client information to the request for use in subsequent middleware and controllers.
-        req.client = client;
-        req.tenantId = client.tenantId;
+        // Register models on the new tenant-specific connection
+        tenantDb.model('User', User.schema);
+        // Register other tenant-specific models here...
+        // tenantDb.model('Product', require('../models/Product').schema);
+        // tenantDb.model('Order', require('../models/Order').schema);
+
+        // Store the connection in our cache for future requests
+        tenantConnections[subdomain] = tenantDb;
+
+        // Attach the tenant-specific connection to the request object
+        req.tenantConnection = tenantDb;
+
+        // Attach other tenant info, like the JWT secret, to the request
+        req.jwtSecret = tenant.jwtSecret;
 
         next();
+
     } catch (error) {
-        console.error('Tenant Identification Error:', error);
-        res.status(500).json({ message: 'Server error during client identification.' });
+        console.error('Tenant resolution error:', error);
+        return res.status(500).json({ message: 'Error resolving tenant.' });
     }
 };
 
-module.exports = { identifyTenant };
+module.exports = tenantResolver;
