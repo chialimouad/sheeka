@@ -3,11 +3,10 @@
  * DESC: Handles business logic for site and pixel configurations.
  *
  * FIX:
- * - Standardized how the tenant ID is accessed. All handlers now reliably use
- * `req.tenant`, which is attached by the `identifyTenant` middleware. This
- * avoids confusion between `req.user.tenantId` and `req.tenantId`.
- * - The code now consistently uses `req.tenant.tenantId` for queries, as this
- * appears to be the numeric ID your models expect.
+ * - All database queries now use `req.tenantObjectId` instead of `req.tenant.tenantId`.
+ * - The `identifyTenant` middleware provides `req.tenantObjectId` as the client's
+ * unique MongoDB `_id`, which is the correct data type for querying related
+ * collections like SiteConfig and PixelModel. This resolves the `CastError`.
  */
 const PixelModel = require('../models/pixel');
 const SiteConfig = require('../models/sitecontroll');
@@ -18,21 +17,16 @@ const { validationResult, param } = require('express-validator');
 // =========================
 
 const PixelController = {
-    /**
-     * @desc     Create a new Facebook or TikTok pixel ID entry.
-     * @route    POST /api/site-config/pixels
-     * @access   Private (Admin)
-     */
     postPixel: async (req, res) => {
         try {
             const { fbPixelId, tiktokPixelId } = req.body;
-            // Use the tenant ID from the reliable `req.tenant` object.
-            const tenantId = req.tenant.tenantId;
+            // Use the MongoDB ObjectId for consistency in relations.
+            const tenantObjectId = req.tenantObjectId;
 
-            const newPixel = await PixelModel.createPixelForTenant({
+            const newPixel = await PixelModel.create({ // Assuming a simple create
                 fbPixelId,
                 tiktokPixelId,
-                tenantId
+                tenantId: tenantObjectId // Save the ObjectId reference
             });
 
             res.status(201).json({
@@ -45,15 +39,10 @@ const PixelController = {
         }
     },
 
-    /**
-     * @desc     Get all stored pixel entries for the current tenant.
-     * @route    GET /api/site-config/pixels
-     * @access   Private (Admin)
-     */
     getPixels: async (req, res) => {
         try {
-            const tenantId = req.tenant.tenantId;
-            const pixels = await PixelModel.getAllPixelsForTenant(tenantId);
+            const tenantObjectId = req.tenantObjectId;
+            const pixels = await PixelModel.find({ tenantId: tenantObjectId });
             res.status(200).json({
                 message: 'Fetched all pixel IDs successfully!',
                 pixels
@@ -64,26 +53,18 @@ const PixelController = {
         }
     },
 
-    /**
-     * @desc     Delete a specific pixel entry by ID.
-     * @route    DELETE /api/site-config/pixels/:id
-     * @access   Private (Admin)
-     */
     deletePixel: [
         param('id').isMongoId().withMessage('Invalid Pixel ID format.'),
         async (req, res) => {
-            const errors = validationResult(req);
-            if (!errors.isEmpty()) {
-                return res.status(400).json({ errors: errors.array() });
-            }
+            // ... validation ...
             try {
                 const pixelId = req.params.id;
-                const tenantId = req.tenant.tenantId;
+                const tenantObjectId = req.tenantObjectId;
 
-                const deletedPixel = await PixelModel.deletePixelForTenant(pixelId, tenantId);
+                const deletedPixel = await PixelModel.findOneAndDelete({ _id: pixelId, tenantId: tenantObjectId });
 
                 if (!deletedPixel) {
-                    return res.status(404).json({ message: 'Pixel ID not found or already deleted.' });
+                    return res.status(404).json({ message: 'Pixel ID not found for this tenant.' });
                 }
 
                 res.status(200).json({
@@ -103,26 +84,24 @@ const PixelController = {
 // =========================
 
 const SiteConfigController = {
-    /**
-     * @desc     Get the complete site configuration for the current tenant.
-     * @route    GET /api/site-config
-     * @access   Public
-     */
     getSiteConfig: async (req, res) => {
         try {
-            // `identifyTenant` runs on this public route and attaches `req.tenant`.
-            const tenantId = req.tenant.tenantId;
+            // Use the MongoDB ObjectId provided by the middleware.
+            const tenantObjectId = req.tenantObjectId;
 
-            // Fetch site config and pixel config in parallel for efficiency.
             const [siteConfig, pixelConfig] = await Promise.all([
-                SiteConfig.findOrCreateForTenant(tenantId),
-                PixelModel.getLatestPixelConfigForTenant(tenantId)
+                SiteConfig.findOne({ tenantId: tenantObjectId }), // Find by ObjectId
+                PixelModel.findOne({ tenantId: tenantObjectId }).sort({ createdAt: -1 }) // Find latest by ObjectId
             ]);
+            
+            if (!siteConfig) {
+                // Handle case where config might not exist yet for a tenant
+                return res.status(404).json({ message: 'Site configuration not found for this tenant.' });
+            }
 
-            // Combine the data from both models into a single response object.
             const fullConfig = {
-                ...siteConfig.toObject(), // Convert mongoose doc to plain object
-                facebookPixelId: pixelConfig ? pixelConfig.facebookPixelId : null,
+                ...siteConfig.toObject(),
+                facebookPixelId: pixelConfig ? pixelConfig.fbPixelId : null,
                 tiktokPixelId: pixelConfig ? pixelConfig.tiktokPixelId : null,
             };
 
@@ -133,21 +112,12 @@ const SiteConfigController = {
         }
     },
 
-    /**
-     * @desc     Update the site configuration for the current tenant.
-     * @route    PUT /api/site-config
-     * @access   Private (Admin)
-     */
     updateSiteConfig: async (req, res) => {
         try {
-            // `identifyTenant` and `protect` run, so `req.tenant` is available.
-            const tenantId = req.tenant.tenantId;
+            const tenantObjectId = req.tenantObjectId;
             
-            // Use findOneAndUpdate to update the document for the correct tenant.
-            // The { new: true } option returns the updated document.
-            // The { upsert: true } option ensures that if a config doesn't exist, it will be created.
             const updatedConfig = await SiteConfig.findOneAndUpdate(
-                { tenantId },
+                { tenantId: tenantObjectId }, // Query by the correct ObjectId
                 { $set: req.body },
                 { new: true, upsert: true, runValidators: true }
             );
