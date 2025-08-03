@@ -39,6 +39,7 @@ connectDB();
 // 🧩 Middleware & Routes
 // ========================
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
+const tenantResolver = require('./middleware/tenantResolver'); // <-- 1. IMPORTED the new middleware
 
 const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
@@ -52,10 +53,15 @@ const emailRoutes = require('./routes/emails');
 // 🚏 Mount Routes
 // ========================
 app.use('/api/provision', isSuperAdmin, provisioningRoutes); // Super admin only
-app.use('/users', userRoutes);
-app.use('/customers', customerRoutes);
-app.use('/products', productRoutes);
-app.use('/orders', orderRoutes);
+
+// <-- 2. APPLY the tenantResolver middleware before any routes that need it.
+// This ensures that req.tenant is populated for every request to these paths.
+app.use('/users', tenantResolver, userRoutes);
+app.use('/customers', tenantResolver, customerRoutes);
+app.use('/products', tenantResolver, productRoutes);
+app.use('/orders', tenantResolver, orderRoutes);
+
+// These routes may not need tenant context, so the middleware is omitted.
 app.use('/config', siteConfigRoutes);
 app.use('/emails', emailRoutes);
 
