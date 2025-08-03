@@ -54,7 +54,7 @@ const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 // **FIX**: Import the correct tenant identification middleware.
 const { identifyTenant } = require('./middleware/authMiddleware'); 
 
-const provisioningRoutes = require('./routes/provisioningRoutes');
+const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
