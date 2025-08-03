@@ -3,10 +3,10 @@
  * DESC: Handles business logic for site and pixel configurations.
  *
  * FIX:
- * - All database queries now use `req.tenantObjectId` instead of `req.tenant.tenantId`.
- * - The `identifyTenant` middleware provides `req.tenantObjectId` as the client's
- * unique MongoDB `_id`, which is the correct data type for querying related
- * collections like SiteConfig and PixelModel. This resolves the `CastError`.
+ * - Modified `getSiteConfig` to be more resilient. If a `SiteConfig` document
+ * does not exist for a given tenant, a new default configuration is
+ * created and returned automatically. This prevents 404 errors on the
+ * frontend for new tenants and simplifies client-side logic.
  */
 const PixelModel = require('../models/pixel');
 const SiteConfig = require('../models/sitecontroll');
@@ -86,17 +86,30 @@ const PixelController = {
 const SiteConfigController = {
     getSiteConfig: async (req, res) => {
         try {
-            // Use the MongoDB ObjectId provided by the middleware.
             const tenantObjectId = req.tenantObjectId;
 
-            const [siteConfig, pixelConfig] = await Promise.all([
-                SiteConfig.findOne({ tenantId: tenantObjectId }), // Find by ObjectId
-                PixelModel.findOne({ tenantId: tenantObjectId }).sort({ createdAt: -1 }) // Find latest by ObjectId
-            ]);
+            let siteConfig = await SiteConfig.findOne({ tenantId: tenantObjectId });
+            const pixelConfig = await PixelModel.findOne({ tenantId: tenantObjectId }).sort({ createdAt: -1 });
             
+            // **FIX**: If no config exists, create a default one and save it.
             if (!siteConfig) {
-                // Handle case where config might not exist yet for a tenant
-                return res.status(404).json({ message: 'Site configuration not found for this tenant.' });
+                console.log(`No site config found for tenant ${tenantObjectId}. Creating a default one.`);
+                siteConfig = new SiteConfig({
+                    tenantId: tenantObjectId,
+                    // Add any other default values your schema requires
+                    siteName: "My New Site",
+                    slogan: "Welcome!",
+                    primaryColor: "#4F46E5",
+                    secondaryColor: "#EC4899",
+                    tertiaryColor: "#10B981",
+                    generalTextColor: "#1F2937",
+                    footerBgColor: "#111827",
+                    footerTextColor: "#F9FAFB",
+                    footerLinkColor: "#9CA3AF",
+                    aboutUsText: "This is the default about us text. Please update it in the settings.",
+                    currentDataIndex: 0
+                });
+                await siteConfig.save();
             }
 
             const fullConfig = {
