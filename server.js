@@ -3,11 +3,11 @@
  * DESC: Main server entry point for the multi-tenant ERP system.
  *
  * FIX:
+ * - Removed the `/api` prefix from all route definitions as requested.
  * - Corrected typos in the `require` statements for the route files to ensure
  * the server can find and load them correctly (e.g., 'provisioningRoutes').
- * - Standardized all API routes to be prefixed with `/api`.
  * - Confirmed the `identifyTenant` middleware is correctly applied to all
- * tenant-aware routes, including `/api/site-config`.
+ * tenant-aware routes, including `/site-config`.
  */
 
 require('dotenv').config();
@@ -50,25 +50,23 @@ connectDB();
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 const { identifyTenant } = require('./middleware/authMiddleware'); 
 
-// **FIX**: Corrected typos in the require paths for the route files.
-const provisioningRoutes = require('./routes/rovisioningRoutes');
+const provisioningRoutes = require('./routes/provisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
-const customerRoutes = require('./routes/authroutesuser'); // Standardized name
+const customerRoutes = require('./routes/customerRoutes'); // Standardized name
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
-const siteConfigRoutes = require('./routes/site');
+const siteConfigRoutes = require('./routes/siteConfigRoutes');
 const emailRoutes = require('./routes/emails');
 
 // ========================
 // 🚏 Mount Routes
 // ========================
-app.use('/api/provision', isSuperAdmin, provisioningRoutes);
-
-// Apply the correct `identifyTenant` middleware to all tenant-aware routes.
+// **FIX**: Removed /api prefix from all routes.
+app.use('/provision', isSuperAdmin, provisioningRoutes);
 app.use('/users', identifyTenant, userRoutes);
 app.use('/customers', identifyTenant, customerRoutes);
 app.use('/products', identifyTenant, productRoutes);
-app.use('/api/orders', identifyTenant, orderRoutes);
+app.use('/orders', identifyTenant, orderRoutes);
 app.use('/site-config', identifyTenant, siteConfigRoutes);
 app.use('/emails', emailRoutes);
 
