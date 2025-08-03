@@ -3,16 +3,11 @@
  * DESC: Defines API endpoints for authentication.
  *
  * FIX:
- * - The `verifyTenantData` middleware is now also applied to the `/register` route.
- * - This is a proactive fix. If the registration process is designed to
- * automatically log the user in and issue a JWT token, it will also require
- * the `jwtSecret`. Adding this check prevents potential errors during registration
- * if the tenant's data is incomplete.
- * - This makes the routes more robust by ensuring any route that might create a
- * token has the necessary data before proceeding.
- * - **UPDATE**: Enhanced the `verifyTenantData` middleware to include the tenant's
- * identifier in the error message. This makes it easier to diagnose which
- * specific tenant record is missing its `jwtSecret` in the database.
+ * - Updated the `verifyTenantData` middleware to correctly check for the jwtSecret
+ * inside the nested `config` object (`req.tenant.config.jwtSecret`).
+ * - This change aligns the code with the structure of your tenant document in the
+ * database, resolving the "jwtSecret is missing" error.
+ * - The error message has also been updated for clarity.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
@@ -32,13 +27,12 @@ const router = express.Router();
  * is complete before it reaches a controller that needs to generate a JWT.
  */
 const verifyTenantData = (req, res, next) => {
-    // This check verifies that the `identifyTenant` middleware found a tenant
-    // AND that the tenant's data includes a jwtSecret.
-    if (!req.tenant || !req.tenant.jwtSecret) {
+    // This check now correctly looks for the jwtSecret inside the nested 'config' object.
+    if (!req.tenant || !req.tenant.config || !req.tenant.config.jwtSecret) {
         const tenantIdentifier = req.tenant?.customDomain || req.tenant?.tenantId || 'Unknown Tenant';
         
         // Log a more detailed error on the server for easier debugging.
-        console.error(`ROUTER-LEVEL CHECK FAILED: jwtSecret is missing for tenant: ${tenantIdentifier}.`);
+        console.error(`ROUTER-LEVEL CHECK FAILED: jwtSecret is missing from the 'config' object for tenant: ${tenantIdentifier}.`);
         
         // Send a clear, specific error back to the client.
         return res.status(500).json({
