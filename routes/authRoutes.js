@@ -4,16 +4,52 @@
  * to the corresponding controller functions.
  *
  * MODIFIED:
- * - Replaced the previous middleware with the new `identifyTenant` middleware.
- * - Updated the `protect` middleware to be compatible with `identifyTenant`,
- * using `req.client` for the tenant object and `req.tenantId` for the ID.
+ * - Moved the `identifyTenant` middleware function directly into this file to
+ * resolve the 'MODULE_NOT_FOUND' error.
+ * - Removed the external require statement for the middleware.
+ * - Ensured all middleware (`identifyTenant`, `protect`, `admin`) are self-contained.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const authController = require('../controllers/authController');
 const User = require('../models/User'); // Assuming a global User model
-const { identifyTenant } = require('../middleware/identifyTenant'); // <-- CRITICAL: Using your new tenant middleware
+const Client = require('../models/Client'); // Assuming a global Client model
+
+// --- Tenant Identification Middleware ---
+const identifyTenant = async (req, res, next) => {
+    try {
+        // The tenant ID is expected in the 'x-tenant-id' header.
+        const tenantId = req.headers['x-tenant-id'];
+
+        if (!tenantId) {
+            return res.status(400).json({ message: 'Tenant ID header (x-tenant-id) is missing.' });
+        }
+
+        // Find the client by the unique numeric tenantId.
+        const client = await Client.findOne({ tenantId: tenantId }).lean();
+
+        if (!client) {
+            return res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
+        }
+
+        if (!client.isActive) {
+            return res.status(403).json({ message: 'This client account is inactive.' });
+        }
+
+        // Attach client information to the request for use in subsequent middleware and controllers.
+        // This is where req.client and req.tenantId are set.
+        req.client = client;
+        req.tenantId = client.tenantId; // Pass the numeric tenantId
+        req.jwtSecret = client.jwtSecret; // Pass the secret for token operations
+
+        next();
+    } catch (error) {
+        console.error('Tenant Identification Error:', error);
+        res.status(500).json({ message: 'Server error during client identification.' });
+    }
+};
+
 
 // --- Real JWT Authentication Middleware ---
 const protect = async (req, res, next) => {
