@@ -3,10 +3,9 @@
  * DESC: This file contains the business logic for authentication-related
  * operations.
  *
- * MODIFIED: Refactored database queries to use a standard User model filtered
- * by a tenantId, removing the dependency on the problematic `req.tenant.model()`
- * method. This aligns with modern multi-tenancy practices and fixes the login logic.
- * Added back the missing getUserIndex and updateIndex functions.
+ * MODIFIED: Corrected all database queries to use `req.tenant.tenantId` (a Number)
+ * instead of `req.tenant._id` (an ObjectId) to match the User schema and
+ * resolve the CastError.
  */
 const { validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
@@ -42,8 +41,8 @@ exports.checkEmail = async (req, res) => {
 
     try {
         const { email } = req.body;
-        // Query the global User model, but scope it to the current tenant
-        const existingUser = await User.findOne({ email, tenantId: req.tenant._id });
+        // FIX: Use the numeric tenantId from the tenant object
+        const existingUser = await User.findOne({ email, tenantId: req.tenant.tenantId });
         
         res.status(200).json({
             available: !existingUser,
@@ -69,17 +68,17 @@ exports.register = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Create the user with the tenantId to scope it correctly
+        // FIX: Use the numeric tenantId to associate the user
         const user = await User.create({
             name,
             email,
             password: hashedPassword,
             role: role || 'user',
             index: index || 0,
-            tenantId: tenant._id // Associate user with the tenant
+            tenantId: tenant.tenantId 
         });
 
-        const token = generateToken(user._id, tenant._id, user.role, jwtSecret);
+        const token = generateToken(user._id, tenant.tenantId, user.role, jwtSecret);
 
         res.status(201).json({
             message: 'Registration successful',
@@ -109,8 +108,8 @@ exports.login = async (req, res) => {
         const { email, password } = req.body;
         const { tenant, jwtSecret } = req;
 
-        // Find user by email, ensuring they belong to the correct tenant
-        const user = await User.findOne({ email, tenantId: tenant._id });
+        // FIX: Find user by email and the numeric tenantId
+        const user = await User.findOne({ email, tenantId: tenant.tenantId });
         if (!user) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -120,7 +119,7 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
-        const token = generateToken(user._id, tenant._id, user.role, jwtSecret);
+        const token = generateToken(user._id, tenant.tenantId, user.role, jwtSecret);
 
         res.status(200).json({
             message: 'Login successful',
@@ -142,9 +141,9 @@ exports.login = async (req, res) => {
 // Get all users for the current tenant
 exports.getUsers = async (req, res) => {
     try {
-        // Find all users that match the current tenant's ID
+        // FIX: Find all users that match the current tenant's numeric ID
         const users = await User.find(
-            { tenantId: req.tenant._id },
+            { tenantId: req.tenant.tenantId },
             'name email role index createdAt'
         );
         res.status(200).json(users);
@@ -162,8 +161,9 @@ exports.getUserIndex = async (req, res) => {
     }
 
     try {
+        // FIX: Find user by their ID and the numeric tenantId
         const user = await User.findOne(
-            { _id: req.params.id, tenantId: req.tenant._id },
+            { _id: req.params.id, tenantId: req.tenant.tenantId },
             'index' // Select only the index field
         );
 
@@ -200,8 +200,9 @@ exports.updateIndex = async (req, res) => {
             });
         }
 
+        // FIX: Ensure the update operation is scoped to the numeric tenantId
         const updatedUser = await User.findOneAndUpdate(
-            { _id: id, tenantId: req.tenant._id }, // Ensure user belongs to the tenant
+            { _id: id, tenantId: req.tenant.tenantId }, 
             { index: newIndexValue },
             { new: true, select: '_id index role' } // Return the updated document
         );
