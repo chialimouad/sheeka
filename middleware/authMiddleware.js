@@ -1,14 +1,15 @@
 /**
  * FILE: ./middleware/authMiddleware.js
- * DESC: This is the master authentication middleware file, now with subdomain support.
+ * DESC: This is the master authentication middleware file with robust tenant identification.
  *
- * NEW FEATURE:
- * - The `identifyTenant` function is now much more powerful. It first tries to
- * identify the tenant by the request's hostname (e.g., 'client1.waqti.pro').
- * - To make this work, your `Client` model in the database MUST have a field
- * named `subdomain` that stores the unique part (e.g., 'client1').
- * - If it can't find a tenant by hostname, it falls back to checking for the
- * `x-tenant-id` header. This ensures your existing dashboard API calls still work.
+ * FIX:
+ * - The `identifyTenant` function has been upgraded to handle both numeric IDs
+ * and string-based subdomains when checking the `x-tenant-id` header.
+ * - It now checks if the header value is a number. If it is, it queries by the
+ * `tenantId` field. If it's not a number (e.g., "mouad"), it queries by the
+ * `subdomain` field.
+ * - This resolves the "Cast to Number failed" error and makes the middleware
+ * compatible with both the public site (hostname) and the admin dashboard (header).
  */
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -19,23 +20,31 @@ const Client = require('../models/Client');
  */
 const identifyTenant = async (req, res, next) => {
     try {
-        const hostname = req.hostname; // e.g., 'client1.waqti.pro'
-        const tenantIdHeader = req.headers['x-tenant-id'];
+        const hostname = req.hostname;
+        const tenantIdentifier = req.headers['x-tenant-id'];
         let client = null;
 
-        // 1. Try to find the tenant by subdomain first.
-        if (hostname && hostname.endsWith('.waqti.pro')) {
-            const subdomain = hostname.split('.')[0]; // Extracts 'client1'
-            // Your Client model needs a 'subdomain' field for this query to work.
+        // 1. Try to find the tenant by subdomain from the hostname.
+        if (hostname && hostname.includes('.waqti.pro')) {
+            const subdomain = hostname.split('.')[0];
             client = await Client.findOne({ subdomain: subdomain }).lean();
         }
 
-        // 2. If not found by subdomain, fall back to the header (for API calls).
-        if (!client && tenantIdHeader) {
-            client = await Client.findOne({ tenantId: tenantIdHeader }).lean();
+        // 2. If not found, fall back to the 'x-tenant-id' header.
+        if (!client && tenantIdentifier) {
+            // **THIS IS THE FIX**: Check if the identifier is numeric or a string.
+            const isNumeric = !isNaN(parseFloat(tenantIdentifier)) && isFinite(tenantIdentifier);
+            
+            if (isNumeric) {
+                // If it's a number, query by the numeric tenantId field.
+                client = await Client.findOne({ tenantId: Number(tenantIdentifier) }).lean();
+            } else {
+                // If it's a string (like a subdomain), query by the subdomain field.
+                client = await Client.findOne({ subdomain: tenantIdentifier }).lean();
+            }
         }
 
-        // 3. If no tenant is found by either method, deny access.
+        // 3. If no tenant is found, deny access.
         if (!client) {
             return res.status(404).json({ message: 'Tenant could not be identified.' });
         }
@@ -49,7 +58,7 @@ const identifyTenant = async (req, res, next) => {
         if (client.config && client.config.jwtSecret) {
             req.jwtSecret = client.config.jwtSecret;
         } else {
-            console.error(`CONFIG ERROR: jwtSecret is missing for tenant: ${client.tenantId}.`);
+            console.error(`CONFIG ERROR: jwtSecret is missing for tenant: ${client.tenantId || client.subdomain}.`);
             return res.status(500).json({ message: 'Server configuration error for this tenant.' });
         }
 
