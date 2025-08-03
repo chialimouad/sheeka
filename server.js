@@ -63,7 +63,7 @@ app.use('/products', tenantResolver, productRoutes);
 app.use('/orders', tenantResolver, orderRoutes);
 
 // These routes do not require tenant context, so the middleware is omitted.
-app.use('/config', siteConfigRoutes);
+app.use('/api/site-config', identifyTenant, siteConfigRoutes);
 app.use('/emails', emailRoutes);
 
 // ========================
