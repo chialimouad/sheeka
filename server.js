@@ -49,7 +49,7 @@ const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 const { identifyTenant } = require('./middleware/authMiddleware'); 
 
 // FIX: Using the correct route filenames provided by the user.
-const provisioningRoutes = require('./routes/provisioningRoutes'); // Corrected typo from 'rovisioning'
+const provisioningRoutes = require('./routes/rovisioningRoutes'); // Corrected typo from 'rovisioning'
 const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser'); 
 const productRoutes = require('./routes/productRoutes');
