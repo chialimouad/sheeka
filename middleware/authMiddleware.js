@@ -8,8 +8,10 @@
  * - It now checks if the header value is a number. If it is, it queries by the
  * `tenantId` field. If it's not a number (e.g., "mouad"), it queries by the
  * `subdomain` field.
- * - This resolves the "Cast to Number failed" error and makes the middleware
- * compatible with both the public site (hostname) and the admin dashboard (header).
+ * - **CRITICAL FIX**: It now explicitly attaches the client's MongoDB `_id` to the
+ * request as `req.tenantObjectId`. This resolves the "Cast to ObjectId failed"
+ * error by providing the correct data type for querying related collections
+ * like SiteConfig, Products, and Orders.
  */
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -32,7 +34,6 @@ const identifyTenant = async (req, res, next) => {
 
         // 2. If not found, fall back to the 'x-tenant-id' header.
         if (!client && tenantIdentifier) {
-            // **THIS IS THE FIX**: Check if the identifier is numeric or a string.
             const isNumeric = !isNaN(parseFloat(tenantIdentifier)) && isFinite(tenantIdentifier);
             
             if (isNumeric) {
@@ -55,6 +56,9 @@ const identifyTenant = async (req, res, next) => {
 
         // 4. Success! Attach tenant data to the request.
         req.tenant = client;
+        // **FIX**: Add the MongoDB ObjectId for querying related collections.
+        req.tenantObjectId = client._id; 
+        
         if (client.config && client.config.jwtSecret) {
             req.jwtSecret = client.config.jwtSecret;
         } else {
