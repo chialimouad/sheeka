@@ -4,11 +4,11 @@
  * any other tenant identification or auth middleware files you are using.
  *
  * FIX:
- * - Provides a single, definitive `identifyTenant` function that correctly reads
- * the jwtSecret from the nested `config` object (i.e., `client.config.jwtSecret`).
- * - It attaches this secret to `req.jwtSecret` so the login controller can find it.
- * - The `protect` and `protectCustomer` functions have also been updated to look for
- * the secret in the correct nested location, ensuring protected routes work.
+ * - Added a defensive check inside the `protect` middleware. It now verifies
+ * that `req.tenant` has been attached by a preceding middleware (like `identifyTenant`).
+ * - This prevents a `TypeError` and a generic 500 error if the `protect` middleware
+ * is accidentally used on a route without `identifyTenant` running first.
+ * - It now provides a clear, actionable error message in that scenario.
  */
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -41,9 +41,7 @@ const identifyTenant = async (req, res, next) => {
         // Attach the full tenant object to the request.
         req.tenant = client;
 
-        // **THIS IS THE CRITICAL FIX**
         // Attach the jwtSecret from the nested 'config' object.
-        // The login controller and other middleware will now be able to find it.
         if (client.config && client.config.jwtSecret) {
             req.jwtSecret = client.config.jwtSecret;
         } else {
@@ -79,6 +77,12 @@ const protect = async (req, res, next) => {
     }
 
     try {
+        // **THIS IS THE FIX**: Add a check to ensure `identifyTenant` ran first.
+        if (!req.tenant) {
+            console.error('PROTECT MIDDLEWARE ERROR: `req.tenant` is missing. Ensure `identifyTenant` middleware is used before `protect` on this route.');
+            return res.status(500).json({ message: 'Server configuration error: Tenant could not be identified.' });
+        }
+        
         // The 'identifyTenant' middleware should have already run and attached the secret.
         if (!req.jwtSecret) {
             return res.status(500).json({ message: 'Server error: Tenant JWT secret not found on request.' });
@@ -89,7 +93,7 @@ const protect = async (req, res, next) => {
         const user = await User.findOne({ _id: decoded.id, tenantId: req.tenant.tenantId }).select('-password');
 
         if (!user) {
-            return res.status(401).json({ message: 'Unauthorized: User not found.' });
+            return res.status(401).json({ message: 'Unauthorized: User not found for this tenant.' });
         }
 
         req.user = user;
