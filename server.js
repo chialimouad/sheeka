@@ -55,7 +55,7 @@ const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser'); 
 const productRoutes = require('./routes/productRoutes');
-const orderRoutes = require('./routes/orderRoutes');
+const orderRoutes = require('./routes/orders');
 const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emailRoutes');
 
