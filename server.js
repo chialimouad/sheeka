@@ -59,7 +59,7 @@ const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
-const siteConfigRoutes = require('./routes/siteConfigRoutes'); // Corrected file name assumption
+const siteConfigRoutes = require('./routes/site'); // Corrected file name assumption
 const emailRoutes = require('./routes/emails');
 
 // ========================
