@@ -4,18 +4,17 @@
  * to the corresponding controller functions.
  *
  * MODIFIED:
- * - Imported and applied the `identifyTenant` middleware to ALL routes to
- * resolve the "Tenant identification failed" error.
+ * - Replaced `identifyTenant` with `tenantMiddleware` to match the project's
+ * actual middleware implementation.
  * - Updated the `protect` middleware to use `req.tenant.tenantId` and `req.jwtSecret`
- * which are provided by the `identifyTenant` middleware, ensuring consistency
- * with the controllers.
+ * which are provided by the `tenantMiddleware`, ensuring consistency.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const authController = require('../controllers/authController');
 const User = require('../models/User'); // Assuming a global User model
-const identifyTenant = require('../middleware/identifyTenant'); // <-- CRITICAL: Import the tenant middleware
+const tenantMiddleware = require('../middleware/tenantMiddleware'); // <-- CRITICAL: Using your tenant middleware
 
 // --- Real JWT Authentication Middleware ---
 const protect = async (req, res, next) => {
@@ -27,10 +26,10 @@ const protect = async (req, res, next) => {
             // Extract token from "Bearer <token>"
             token = req.headers.authorization.split(' ')[1];
 
-            // The identifyTenant middleware MUST have run before this.
+            // The tenantMiddleware MUST have run before this.
             // It provides req.tenant and req.jwtSecret.
             if (!req.tenant || !req.jwtSecret) {
-                console.error('PROTECT ERROR: Tenant/JWT Secret not found on request. `identifyTenant` may have failed.');
+                console.error('PROTECT ERROR: Tenant/JWT Secret not found on request. `tenantMiddleware` may have failed.');
                 return res.status(500).json({ message: 'Server configuration error: JWT secret not found.' });
             }
 
@@ -74,28 +73,28 @@ const admin = (req, res, next) => {
 const router = express.Router();
 
 // --- Public Routes (but require tenant identification) ---
-router.post('/check-email', identifyTenant, [body('email', 'Please enter a valid email.').isEmail().normalizeEmail()], authController.checkEmail);
+router.post('/check-email', tenantMiddleware, [body('email', 'Please enter a valid email.').isEmail().normalizeEmail()], authController.checkEmail);
 
-router.post('/register', identifyTenant, [
+router.post('/register', tenantMiddleware, [
     body('name', 'Name is required.').trim().not().isEmpty(),
     body('email', 'Please enter a valid email.').isEmail().normalizeEmail(),
     body('password', 'Password must be at least 6 characters.').isLength({ min: 6 })
 ], authController.register);
 
-router.post('/login', identifyTenant, [
+router.post('/login', tenantMiddleware, [
     body('email', 'Please enter a valid email.').isEmail().normalizeEmail(),
     body('password', 'Password is required.').not().isEmpty()
 ], authController.login);
 
 // --- Protected Routes (require tenant ID, then a valid token) ---
-router.get('/users/:id/index', identifyTenant, protect, [param('id', 'Invalid user ID').isMongoId()], authController.getUserIndex);
+router.get('/users/:id/index', tenantMiddleware, protect, [param('id', 'Invalid user ID').isMongoId()], authController.getUserIndex);
 
-router.put('/users/:id/index', identifyTenant, protect, [
+router.put('/users/:id/index', tenantMiddleware, protect, [
     param('id', 'Invalid user ID').isMongoId(),
     body('newIndexValue', 'Index value must be a number.').isNumeric()
 ], authController.updateIndex);
 
 // --- Admin-only Routes (require tenant ID, token, and admin role) ---
-router.get('/users', identifyTenant, protect, admin, authController.getUsers);
+router.get('/users', tenantMiddleware, protect, admin, authController.getUsers);
 
 module.exports = router;
