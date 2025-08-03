@@ -3,14 +3,19 @@
  * DESC: This file defines the API endpoints for authentication and maps them
  * to the corresponding controller functions.
  *
- * MODIFIED: The 'protect' middleware has been updated to be compatible with
- * the 'identifyTenant' middleware. It now uses req.client and req.tenantId.
+ * MODIFIED:
+ * - Imported and applied the `identifyTenant` middleware to ALL routes to
+ * resolve the "Tenant identification failed" error.
+ * - Updated the `protect` middleware to use `req.tenant.tenantId` and `req.jwtSecret`
+ * which are provided by the `identifyTenant` middleware, ensuring consistency
+ * with the controllers.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const authController = require('../controllers/authController');
 const User = require('../models/User'); // Assuming a global User model
+const identifyTenant = require('../middleware/identifyTenant'); // <-- CRITICAL: Import the tenant middleware
 
 // --- Real JWT Authentication Middleware ---
 const protect = async (req, res, next) => {
@@ -23,23 +28,24 @@ const protect = async (req, res, next) => {
             token = req.headers.authorization.split(' ')[1];
 
             // The identifyTenant middleware MUST have run before this.
-            // We now expect req.client (containing the jwtSecret) and req.tenantId.
-            if (!req.client || !req.client.jwtSecret) {
-                return res.status(500).json({ message: 'Server configuration error: JWT secret not found on client object.' });
+            // It provides req.tenant and req.jwtSecret.
+            if (!req.tenant || !req.jwtSecret) {
+                console.error('PROTECT ERROR: Tenant/JWT Secret not found on request. `identifyTenant` may have failed.');
+                return res.status(500).json({ message: 'Server configuration error: JWT secret not found.' });
             }
 
-            // Verify the token using the client-specific secret
-            const decoded = jwt.verify(token, req.client.jwtSecret);
+            // Verify the token using the tenant-specific secret
+            const decoded = jwt.verify(token, req.jwtSecret);
 
-            // Find the user by their ID and tenantId, and attach to the request.
-            // This assumes a single User collection partitioned by tenantId.
-            req.user = await User.findOne({ 
-                _id: decoded.id, 
-                tenantId: req.tenantId 
+            // Find the user by their ID and the tenant's numeric ID.
+            // This ensures the token is valid for the specific tenant.
+            req.user = await User.findOne({
+                _id: decoded.id,
+                tenantId: req.tenant.tenantId // <-- Use the ID from the tenant object
             }).select('-password');
 
             if (!req.user) {
-                 return res.status(401).json({ message: 'Not authorized, user not found for this tenant.' });
+                return res.status(401).json({ message: 'Not authorized, user not found for this tenant.' });
             }
 
             next(); // Proceed if token is valid
@@ -67,27 +73,29 @@ const admin = (req, res, next) => {
 // Create a new router instance
 const router = express.Router();
 
-// Public routes (no 'protect' middleware)
-router.post('/check-email', [body('email', 'Please enter a valid email.').isEmail().normalizeEmail()], authController.checkEmail);
-router.post('/register', [
+// --- Public Routes (but require tenant identification) ---
+router.post('/check-email', identifyTenant, [body('email', 'Please enter a valid email.').isEmail().normalizeEmail()], authController.checkEmail);
+
+router.post('/register', identifyTenant, [
     body('name', 'Name is required.').trim().not().isEmpty(),
     body('email', 'Please enter a valid email.').isEmail().normalizeEmail(),
     body('password', 'Password must be at least 6 characters.').isLength({ min: 6 })
 ], authController.register);
-router.post('/login', [
+
+router.post('/login', identifyTenant, [
     body('email', 'Please enter a valid email.').isEmail().normalizeEmail(),
     body('password', 'Password is required.').not().isEmpty()
 ], authController.login);
 
-// Protected routes (require a valid token)
-router.get('/users/:id/index', [param('id', 'Invalid user ID').isMongoId()], protect, authController.getUserIndex);
-router.put('/users/:id/index', [
+// --- Protected Routes (require tenant ID, then a valid token) ---
+router.get('/users/:id/index', identifyTenant, protect, [param('id', 'Invalid user ID').isMongoId()], authController.getUserIndex);
+
+router.put('/users/:id/index', identifyTenant, protect, [
     param('id', 'Invalid user ID').isMongoId(),
     body('newIndexValue', 'Index value must be a number.').isNumeric()
-], protect, authController.updateIndex);
+], authController.updateIndex);
 
-// Admin-only routes (require admin role)
-router.get('/users', protect, admin, authController.getUsers);
-
+// --- Admin-only Routes (require tenant ID, token, and admin role) ---
+router.get('/users', identifyTenant, protect, admin, authController.getUsers);
 
 module.exports = router;
