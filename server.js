@@ -40,7 +40,7 @@ connectDB();
 // ========================
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 // 1. IMPORT the tenant identification middleware.
-const { identifyTenant } = require('./middleware/identifyTenant'); 
+const { tenantResolver } = require('./middleware/tenantResolver'); 
 
 const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
@@ -57,10 +57,10 @@ app.use('/api/provision', isSuperAdmin, provisioningRoutes); // Super admin only
 
 // 2. APPLY the tenant middleware before any routes that need tenant context.
 // This ensures req.client and req.tenantId are available for these routes.
-app.use('/users', identifyTenant, userRoutes);
-app.use('/customers', identifyTenant, customerRoutes);
-app.use('/products', identifyTenant, productRoutes);
-app.use('/orders', identifyTenant, orderRoutes);
+app.use('/users', tenantResolver, userRoutes);
+app.use('/customers', tenantResolver, customerRoutes);
+app.use('/products', tenantResolver, productRoutes);
+app.use('/orders', tenantResolver, orderRoutes);
 
 // These routes do not require tenant context, so the middleware is omitted.
 app.use('/config', siteConfigRoutes);
