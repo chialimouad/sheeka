@@ -3,21 +3,21 @@
  * DESC: Defines API endpoints for site and pixel configuration.
  *
  * FIX:
- * - Corrected the middleware import path. All auth middleware (`identifyTenant`,
+ * - Corrected the controller import path. All auth middleware (`identifyTenant`,
  * `protect`, `isAdmin`) is now imported from the single, correct
  * `../middleware/authMiddleware.js` file.
- * - Corrected the controller import path to logically point to the
+ * - Corrected the controller import path to point to the
  * `siteConfigController.js` file.
  */
 const express = require('express');
 const router = express.Router();
 const { param } = require('express-validator');
 
-// Import the refactored controllers
+// FIX: Corrected the import path for the controller.
 const {
     SiteConfigController,
     PixelController
-} = require('../controllers/site');
+} = require('../controllers/siteConfigController');
 
 // Import the necessary middleware from the single source of truth
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
