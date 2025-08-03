@@ -17,7 +17,7 @@ const { param } = require('express-validator');
 const {
     SiteConfigController,
     PixelController
-} = require('../controllers/siteConfigController');
+} = require('../controllers/site');
 
 // Import the necessary middleware from the single source of truth
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
