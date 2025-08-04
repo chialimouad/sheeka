@@ -3,6 +3,9 @@
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
  * FIX:
+ * - Removed the redundant `identifyTenant` middleware from all route definitions.
+ * This middleware is already applied globally to the `/products` route group
+ * in `server.js`, and applying it twice was causing a `400 Bad Request` error.
  * - Removed the duplicated middleware code that was pasted at the top of this file.
  * - Temporarily commented out the `protectCustomer` middleware in the review route.
  * This middleware was causing a server crash because it is not yet exported from
@@ -17,8 +20,8 @@ const { body, param } = require('express-validator');
 const productController = require('../controllers/productController');
 
 // All middleware is now correctly imported from the single, consolidated auth file.
+// NOTE: We no longer need to import `identifyTenant` here as it's handled in server.js
 const {
-    identifyTenant,
     protect,
     isAdmin,
     protectCustomer // This will be undefined if not exported from authMiddleware.js
@@ -30,12 +33,13 @@ const {
 // ================================
 
 // Get all collections for a client (Admin Only)
-router.get('/collections', identifyTenant, protect, isAdmin, productController.getCollections);
+// FIX: Removed redundant `identifyTenant`
+router.get('/collections', protect, isAdmin, productController.getCollections);
 
 // Create a new collection (Admin Only)
+// FIX: Removed redundant `identifyTenant`
 router.post(
     '/collections',
-    identifyTenant,
     protect,
     isAdmin,
     body('name').notEmpty(),
@@ -47,12 +51,13 @@ router.post(
 // ================================
 
 // Get all promo images for a client (Public)
-router.get('/promo', identifyTenant, productController.getProductImagesOnly);
+// FIX: Removed redundant `identifyTenant`
+router.get('/promo', productController.getProductImagesOnly);
 
 // Upload new promo images (Admin Only)
+// FIX: Removed redundant `identifyTenant`
 router.post(
     '/promo',
-    identifyTenant,
     protect,
     isAdmin,
     productController.uploadMiddleware,
@@ -65,12 +70,14 @@ router.post(
 // ================================
 
 // Get all products for a client (Public)
-router.get('/', identifyTenant, productController.getProducts);
+// FIX: Removed redundant `identifyTenant`. This route is now correctly public
+// within the scope of the tenant identified in server.js.
+router.get('/', productController.getProducts);
 
 // Create a new product (Admin Only)
+// FIX: Removed redundant `identifyTenant`
 router.post(
     '/',
-    identifyTenant,
     protect,
     isAdmin,
     productController.uploadMiddleware,
@@ -79,17 +86,17 @@ router.post(
 
 // Get a single product by ID (Public)
 // IMPORTANT: This dynamic route comes AFTER specific routes like '/collections' and '/promo'.
+// FIX: Removed redundant `identifyTenant`
 router.get(
     '/:id',
-    identifyTenant,
     param('id').isMongoId(),
     productController.getProductById
 );
 
 // Update a product (Admin Only)
+// FIX: Removed redundant `identifyTenant`
 router.put(
     '/:id',
-    identifyTenant,
     protect,
     isAdmin,
     param('id').isMongoId(),
@@ -98,9 +105,9 @@ router.put(
 );
 
 // Delete a product (Admin Only)
+// FIX: Removed redundant `identifyTenant`
 router.delete(
     '/:id',
-    identifyTenant,
     protect,
     isAdmin,
     param('id').isMongoId(),
@@ -112,9 +119,9 @@ router.delete(
 // ================================
 
 // Create a new review for a product (Logged-in Customers Only)
+// FIX: Removed redundant `identifyTenant`
 router.post(
     '/:id/reviews',
-    identifyTenant,
     // **NOTE**: The middleware below was causing a crash because `protectCustomer` is
     // not being exported from your `middleware/authMiddleware.js` file. It has been
     // temporarily commented out to allow the server to run.
@@ -134,3 +141,4 @@ router.post(
 
 
 module.exports = router;
+
