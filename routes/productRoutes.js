@@ -3,10 +3,9 @@
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
  * FIX:
- * - Added a new public route `GET /collections/public` for storefronts to fetch collections
- * without authentication, using the `getPublicCollections` controller.
- * - Imported the `getPublicCollections` function from the controller.
- * - Ensured all admin and protected routes remain unchanged.
+ * - Imported the `getProductByBarcode` controller function.
+ * - Added a new route `GET /barcode/:barcode` to fetch a product by its barcode,
+ * which resolves the error seen on the frontend.
  */
 const express = require('express');
 const router = express.Router();
@@ -16,6 +15,8 @@ const { body, param } = require('express-validator');
 const {
     getProducts,
     getProductById,
+    // NEW: Import the barcode handler
+    getProductByBarcode,
     addProduct,
     updateProduct,
     deleteProduct,
@@ -28,7 +29,7 @@ const {
     uploadPromoImages,
     uploadMiddleware,
     getPublicProducts,
-    getPublicCollections // Import the new public collections function
+    getPublicCollections
 } = require('../controllers/productController');
 
 
@@ -112,6 +113,13 @@ router.post(
     isAdmin,
     uploadMiddleware,
     addProduct
+);
+
+// NEW: Get a single product by its barcode
+router.get(
+    '/barcode/:barcode',
+    param('barcode').notEmpty().withMessage('Barcode parameter cannot be empty.'),
+    getProductByBarcode
 );
 
 // Get a single product by ID (Publicly accessible for storefronts)
