@@ -3,28 +3,25 @@
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
  * FIX:
- * - Added the `protect` middleware to the `GET /` route. This endpoint should
- * not be public; it requires an authenticated user. This change ensures
- * the user is verified before attempting to fetch the product list,
- * resolving the `400 Bad Request` error.
- * - Removed the redundant `identifyTenant` middleware from all route definitions.
- * This middleware is already applied globally to the `/products` route group
- * in `server.js`.
- * - Temporarily commented out the `protectCustomer` middleware in the review route.
+ * - Re-enabled the `protectCustomer` middleware on the review creation route.
+ * This assumes `protectCustomer` is correctly defined and exported from your auth middleware.
+ * - Added `update` and `delete` routes for collections.
+ * - Ensured all admin-only routes are protected by both `protect` and `isAdmin` middleware.
+ * - Maintained the `protect` middleware on the GET /products route to ensure only authenticated
+ * users of a tenant can view its products.
  */
 const express = require('express');
 const router = express.Router();
 const { body, param } = require('express-validator');
 
-// Import the product controller
 const productController = require('../controllers/productController');
 
-// All middleware is now correctly imported from the single, consolidated auth file.
-// NOTE: We no longer need to import `identifyTenant` here as it's handled in server.js
+// Import all necessary middleware from the centralized auth file.
+// The global `identifyTenant` middleware in server.js handles req.tenantId.
 const {
     protect,
     isAdmin,
-    protectCustomer // This will be undefined if not exported from authMiddleware.js
+    protectCustomer // Ensure this is defined and exported from authMiddleware.js
 } = require('../middleware/authMiddleware');
 
 
@@ -40,15 +37,34 @@ router.post(
     '/collections',
     protect,
     isAdmin,
-    body('name').notEmpty(),
+    body('name').notEmpty().withMessage('Collection name is required.'),
     productController.addCollection
 );
 
+// Update a collection (Admin Only)
+router.put(
+    '/collections/:id',
+    protect,
+    isAdmin,
+    param('id').isMongoId(),
+    productController.updateCollection
+);
+
+// Delete a collection (Admin Only)
+router.delete(
+    '/collections/:id',
+    protect,
+    isAdmin,
+    param('id').isMongoId(),
+    productController.deleteCollection
+);
+
+
 // ================================
 // 📸 PROMO IMAGES ROUTES
-// ================================
+// =========================
 
-// Get all promo images for a client (Public)
+// Get all promo images for a client (Publicly accessible for storefronts)
 router.get('/promo', productController.getProductImagesOnly);
 
 // Upload new promo images (Admin Only)
@@ -66,7 +82,7 @@ router.post(
 // ================================
 
 // Get all products for a client (Authenticated Users)
-// FIX: Added `protect` middleware. The request must come from a logged-in user.
+// This route is protected to ensure req.user is available for tenant identification.
 router.get('/', protect, productController.getProducts);
 
 // Create a new product (Admin Only)
@@ -78,8 +94,8 @@ router.post(
     productController.addProduct
 );
 
-// Get a single product by ID (Public)
-// IMPORTANT: This dynamic route comes AFTER specific routes like '/collections' and '/promo'.
+// Get a single product by ID (Publicly accessible for storefronts)
+// This dynamic route must come AFTER specific routes like '/collections' and '/promo'.
 router.get(
     '/:id',
     param('id').isMongoId(),
@@ -112,19 +128,11 @@ router.delete(
 // Create a new review for a product (Logged-in Customers Only)
 router.post(
     '/:id/reviews',
-    // **NOTE**: The middleware below was causing a crash because `protectCustomer` is
-    // not being exported from your `middleware/authMiddleware.js` file. It has been
-    // temporarily commented out to allow the server to run.
-    //
-    // **TO FIX PERMANENTLY**:
-    // 1. Add the `protectCustomer` function to `middleware/authMiddleware.js`.
-    // 2. Add `protectCustomer` to the `module.exports` object in that file.
-    // 3. Uncomment the line below.
-    // protectCustomer,
+    protectCustomer, // FIX: Re-enabled. Ensures only logged-in customers can post reviews.
     param('id').isMongoId(),
     [
-        body('rating').isFloat({ min: 1, max: 5 }),
-        body('comment').notEmpty()
+        body('rating').isFloat({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5.'),
+        body('comment').notEmpty().withMessage('Comment cannot be empty.')
     ],
     productController.createProductReview
 );
