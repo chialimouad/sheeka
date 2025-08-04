@@ -8,6 +8,8 @@
  * - Refactored `getTenantObjectId` to be more resilient. It now checks for the
  * 'x-tenant-id' header directly as a fallback, fixing the 400 error when the
  * identifyTenant middleware does not populate req.tenantId.
+ * - UPDATED: Integrated 'barcode' field into product creation and updates.
+ * - UPDATED: Added specific error handling for duplicate barcode entries.
  */
 
 const Product = require('../models/Product');
@@ -141,6 +143,8 @@ const addProduct = [
     body('description').trim().notEmpty().withMessage('Description is required.'),
     body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
     body('price').isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
+    // NEW: Add validation for the optional barcode field.
+    body('barcode').optional().trim().notEmpty().withMessage('Barcode cannot be an empty string.'),
     async (req, res) => {
         try {
             const errors = validationResult(req);
@@ -153,7 +157,8 @@ const addProduct = [
                 return res.status(400).json({ message: 'Tenant could not be identified.' });
             }
 
-            const { name, description, quantity, price, olprice, variants } = req.body;
+            // UPDATED: Destructure barcode from the request body.
+            const { name, description, quantity, price, olprice, variants, barcode } = req.body;
 
             if (!req.files || req.files.length === 0) {
                 return res.status(400).json({ error: 'At least one image is required.' });
@@ -175,6 +180,8 @@ const addProduct = [
                 quantity,
                 price,
                 olprice,
+                // NEW: Add barcode to the new product object.
+                barcode,
                 images: req.files.map(file => file.path),
                 variants: parsedVariants,
             });
@@ -182,6 +189,10 @@ const addProduct = [
             await newProduct.save();
             res.status(201).json(newProduct);
         } catch (error) {
+            // NEW: Handle duplicate key errors for the barcode.
+            if (error.code === 11000 && error.keyPattern && error.keyPattern.barcode) {
+                return res.status(409).json({ message: 'A product with this barcode already exists for this tenant.' });
+            }
             console.error('Error adding product:', error);
             res.status(500).json({ message: 'Server error while adding product.' });
         }
@@ -254,6 +265,8 @@ const getProductById = [
 
 const updateProduct = [
     param('id').isMongoId(),
+    // NEW: Add validation for the optional barcode field on update.
+    body('barcode').optional().trim().notEmpty().withMessage('Barcode cannot be an empty string.'),
     async (req, res) => {
         try {
             const tenantObjectId = await getTenantObjectId(req);
@@ -267,12 +280,15 @@ const updateProduct = [
                 return res.status(404).json({ message: 'Product not found for this client.' });
             }
 
-            const { name, description, quantity, price, olprice, variants } = req.body;
+            // UPDATED: Destructure barcode from the request body.
+            const { name, description, quantity, price, olprice, variants, barcode } = req.body;
             if (name) product.name = name;
             if (description) product.description = description;
             if (quantity) product.quantity = quantity;
             if (price) product.price = price;
             if (olprice) product.olprice = olprice;
+            // NEW: Update barcode if provided.
+            if (barcode) product.barcode = barcode;
             
             if (variants) {
                 try {
@@ -290,6 +306,10 @@ const updateProduct = [
             const updatedProduct = await product.save();
             res.json({ message: 'Product updated successfully', product: updatedProduct });
         } catch (error) {
+            // NEW: Handle duplicate key errors for the barcode on update.
+            if (error.code === 11000 && error.keyPattern && error.keyPattern.barcode) {
+                return res.status(409).json({ message: 'A product with this barcode already exists for this tenant.' });
+            }
             console.error('Error updating product:', error);
             res.status(500).json({ message: 'Server error while updating product.' });
         }
