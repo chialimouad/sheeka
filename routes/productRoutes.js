@@ -3,14 +3,14 @@
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
  * FIX:
+ * - Added the `protect` middleware to the `GET /` route. This endpoint should
+ * not be public; it requires an authenticated user. This change ensures
+ * the user is verified before attempting to fetch the product list,
+ * resolving the `400 Bad Request` error.
  * - Removed the redundant `identifyTenant` middleware from all route definitions.
  * This middleware is already applied globally to the `/products` route group
- * in `server.js`, and applying it twice was causing a `400 Bad Request` error.
- * - Removed the duplicated middleware code that was pasted at the top of this file.
+ * in `server.js`.
  * - Temporarily commented out the `protectCustomer` middleware in the review route.
- * This middleware was causing a server crash because it is not yet exported from
- * your main `authMiddleware.js` file. A detailed note has been added for the
- * permanent fix.
  */
 const express = require('express');
 const router = express.Router();
@@ -33,11 +33,9 @@ const {
 // ================================
 
 // Get all collections for a client (Admin Only)
-// FIX: Removed redundant `identifyTenant`
 router.get('/collections', protect, isAdmin, productController.getCollections);
 
 // Create a new collection (Admin Only)
-// FIX: Removed redundant `identifyTenant`
 router.post(
     '/collections',
     protect,
@@ -51,11 +49,9 @@ router.post(
 // ================================
 
 // Get all promo images for a client (Public)
-// FIX: Removed redundant `identifyTenant`
 router.get('/promo', productController.getProductImagesOnly);
 
 // Upload new promo images (Admin Only)
-// FIX: Removed redundant `identifyTenant`
 router.post(
     '/promo',
     protect,
@@ -69,13 +65,11 @@ router.post(
 // 📦 PRODUCT ROUTES
 // ================================
 
-// Get all products for a client (Public)
-// FIX: Removed redundant `identifyTenant`. This route is now correctly public
-// within the scope of the tenant identified in server.js.
-router.get('/', productController.getProducts);
+// Get all products for a client (Authenticated Users)
+// FIX: Added `protect` middleware. The request must come from a logged-in user.
+router.get('/', protect, productController.getProducts);
 
 // Create a new product (Admin Only)
-// FIX: Removed redundant `identifyTenant`
 router.post(
     '/',
     protect,
@@ -86,7 +80,6 @@ router.post(
 
 // Get a single product by ID (Public)
 // IMPORTANT: This dynamic route comes AFTER specific routes like '/collections' and '/promo'.
-// FIX: Removed redundant `identifyTenant`
 router.get(
     '/:id',
     param('id').isMongoId(),
@@ -94,7 +87,6 @@ router.get(
 );
 
 // Update a product (Admin Only)
-// FIX: Removed redundant `identifyTenant`
 router.put(
     '/:id',
     protect,
@@ -105,7 +97,6 @@ router.put(
 );
 
 // Delete a product (Admin Only)
-// FIX: Removed redundant `identifyTenant`
 router.delete(
     '/:id',
     protect,
@@ -119,7 +110,6 @@ router.delete(
 // ================================
 
 // Create a new review for a product (Logged-in Customers Only)
-// FIX: Removed redundant `identifyTenant`
 router.post(
     '/:id/reviews',
     // **NOTE**: The middleware below was causing a crash because `protectCustomer` is
@@ -141,4 +131,3 @@ router.post(
 
 
 module.exports = router;
-
