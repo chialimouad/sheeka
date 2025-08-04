@@ -6,6 +6,9 @@
  * - Removed the 'express-async-handler' dependency to resolve the "Cannot find module" error.
  * - Replaced the asyncHandler wrapper with standard try...catch blocks in all async functions
  * to ensure robust error handling.
+ * - Refactored `getTenantObjectId` to no longer send HTTP responses directly.
+ * - Updated all functions calling `getTenantObjectId` to handle a null return value and
+ * send a proper 400 or 404 response, making error handling more explicit.
  */
 
 const Product = require('../models/Product');
@@ -67,23 +70,24 @@ const uploadMiddleware = async (req, res, next) => {
 
 
 // **HELPER FUNCTION TO GET TENANT OBJECT ID**
-const getTenantObjectId = async (req, res) => {
+// FIX: This helper no longer sends responses. It returns the ID or null.
+const getTenantObjectId = async (req) => {
     const tenantIdentifier = req.user ? req.user.tenantId : req.tenantId;
     
     if (!tenantIdentifier) {
-        if (!res.headersSent) res.status(400).json({ message: 'Tenant identifier not found in request.' });
         return null;
     }
     
+    // Reuse the client object if it was already fetched by middleware.
     if (req.client && req.client.tenantId == tenantIdentifier) {
         return req.client._id;
     }
 
     const client = await Client.findOne({ tenantId: tenantIdentifier }).lean();
     if (!client) {
-        if (!res.headersSent) res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
         return null;
     }
+    // Attach for potential later use in the same request lifecycle
     req.client = client;
     return client._id;
 };
@@ -95,8 +99,10 @@ const getTenantObjectId = async (req, res) => {
 
 const getProductImagesOnly = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
+        const tenantObjectId = await getTenantObjectId(req);
+        if (!tenantObjectId) {
+            return res.status(400).json({ message: 'Tenant could not be identified.' });
+        }
 
         const promos = await PromoImage.find({ tenantId: tenantObjectId }, 'images').lean();
         const allImages = promos.flatMap(p => p.images || []);
@@ -112,8 +118,10 @@ const uploadPromoImages = async (req, res) => {
         if (!req.files || req.files.length === 0) {
             return res.status(400).json({ error: 'No images uploaded' });
         }
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
+        const tenantObjectId = await getTenantObjectId(req);
+        if (!tenantObjectId) {
+            return res.status(400).json({ message: 'Tenant could not be identified.' });
+        }
 
         const images = req.files.map(file => file.path);
         const newPromo = new PromoImage({ images, tenantId: tenantObjectId });
@@ -142,8 +150,10 @@ const addProduct = [
                 return res.status(400).json({ errors: errors.array() });
             }
             
-            const tenantObjectId = await getTenantObjectId(req, res);
-            if (!tenantObjectId) return;
+            const tenantObjectId = await getTenantObjectId(req);
+            if (!tenantObjectId) {
+                return res.status(400).json({ message: 'Tenant could not be identified.' });
+            }
 
             const { name, description, quantity, price, olprice, variants } = req.body;
 
@@ -182,8 +192,10 @@ const addProduct = [
 
 const getProducts = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
+        const tenantObjectId = await getTenantObjectId(req);
+        if (!tenantObjectId) {
+            return res.status(400).json({ message: 'Tenant could not be identified.' });
+        }
 
         const products = await Product.find({ tenantId: tenantObjectId }).sort({ createdAt: -1 }).lean();
         res.json(products);
@@ -195,8 +207,10 @@ const getProducts = async (req, res) => {
 
 const getPublicProducts = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
+        const tenantObjectId = await getTenantObjectId(req);
+        if (!tenantObjectId) {
+            return res.status(400).json({ message: 'Tenant could not be identified.' });
+        }
 
         const lang = req.query.lang || 'en';
         const products = await Product.find({ tenantId: tenantObjectId }).sort({ createdAt: -1 }).lean();
@@ -223,8 +237,10 @@ const getProductById = [
     param('id').isMongoId(),
     async (req, res) => {
         try {
-            const tenantObjectId = await getTenantObjectId(req, res);
-            if (!tenantObjectId) return;
+            const tenantObjectId = await getTenantObjectId(req);
+            if (!tenantObjectId) {
+                return res.status(400).json({ message: 'Tenant could not be identified.' });
+            }
 
             const product = await Product.findOne({ _id: req.params.id, tenantId: tenantObjectId }).lean();
             if (!product) {
@@ -242,8 +258,10 @@ const updateProduct = [
     param('id').isMongoId(),
     async (req, res) => {
         try {
-            const tenantObjectId = await getTenantObjectId(req, res);
-            if (!tenantObjectId) return;
+            const tenantObjectId = await getTenantObjectId(req);
+            if (!tenantObjectId) {
+                return res.status(400).json({ message: 'Tenant could not be identified.' });
+            }
 
             const product = await Product.findOne({ _id: req.params.id, tenantId: tenantObjectId });
 
@@ -284,8 +302,10 @@ const deleteProduct = [
     param('id').isMongoId(),
     async (req, res) => {
         try {
-            const tenantObjectId = await getTenantObjectId(req, res);
-            if (!tenantObjectId) return;
+            const tenantObjectId = await getTenantObjectId(req);
+            if (!tenantObjectId) {
+                return res.status(400).json({ message: 'Tenant could not be identified.' });
+            }
 
             const product = await Product.findOneAndDelete({ _id: req.params.id, tenantId: tenantObjectId });
 
@@ -332,8 +352,10 @@ const addCollection = [
                 return res.status(400).json({ errors: errors.array() });
             }
             
-            const tenantObjectId = await getTenantObjectId(req, res);
-            if (!tenantObjectId) return;
+            const tenantObjectId = await getTenantObjectId(req);
+            if (!tenantObjectId) {
+                return res.status(400).json({ message: 'Tenant could not be identified.' });
+            }
 
             const { name, thumbnailUrl, productIds } = req.body;
             const newCollection = new Collection({
@@ -353,8 +375,10 @@ const addCollection = [
 
 const getCollections = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
+        const tenantObjectId = await getTenantObjectId(req);
+        if (!tenantObjectId) {
+            return res.status(400).json({ message: 'Tenant could not be identified.' });
+        }
 
         const collections = await Collection.find({ tenantId: tenantObjectId })
             .populate({ path: 'productIds', select: 'name images price' })
@@ -368,8 +392,10 @@ const getCollections = async (req, res) => {
 
 const getPublicCollections = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req, res);
-        if (!tenantObjectId) return;
+        const tenantObjectId = await getTenantObjectId(req);
+        if (!tenantObjectId) {
+            return res.status(400).json({ message: 'Tenant could not be identified.' });
+        }
 
         const lang = req.query.lang || 'en';
         const collections = await Collection.find({ tenantId: tenantObjectId }).lean();
@@ -406,8 +432,10 @@ const updateCollection = [
                 return res.status(400).json({ errors: errors.array() });
             }
             
-            const tenantObjectId = await getTenantObjectId(req, res);
-            if (!tenantObjectId) return;
+            const tenantObjectId = await getTenantObjectId(req);
+            if (!tenantObjectId) {
+                return res.status(400).json({ message: 'Tenant could not be identified.' });
+            }
 
             const { name, thumbnailUrl, productIds } = req.body;
 
@@ -433,8 +461,10 @@ const deleteCollection = [
     param('id').isMongoId(),
     async (req, res) => {
         try {
-            const tenantObjectId = await getTenantObjectId(req, res);
-            if (!tenantObjectId) return;
+            const tenantObjectId = await getTenantObjectId(req);
+            if (!tenantObjectId) {
+                return res.status(400).json({ message: 'Tenant could not be identified.' });
+            }
             
             const collection = await Collection.findOneAndDelete({ _id: req.params.id, tenantId: tenantObjectId });
 
