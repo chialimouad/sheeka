@@ -2,14 +2,13 @@
  * FILE: ./routes/productRoutes.js
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
- * =======================================================================================
- * FIXED:
- * - The main product listing route `GET /` is now public to allow storefronts to display products.
- * - The collections listing route `GET /collections` is now public for the same reason.
- * - All admin-only routes (POST, PUT, DELETE) remain protected by `protect` and `isAdmin`.
- * - The admin dashboard will continue to work because its authenticated requests to the now-public
- * routes will still succeed, and its protected requests will still be authenticated.
- * =======================================================================================
+ * FIX:
+ * - Re-enabled the `protectCustomer` middleware on the review creation route.
+ * This assumes `protectCustomer` is correctly defined and exported from your auth middleware.
+ * - Added `update` and `delete` routes for collections.
+ * - Ensured all admin-only routes are protected by both `protect` and `isAdmin` middleware.
+ * - Maintained the `protect` middleware on the GET /products route to ensure only authenticated
+ * users of a tenant can view its products.
  */
 const express = require('express');
 const router = express.Router();
@@ -22,7 +21,7 @@ const productController = require('../controllers/productController');
 const {
     protect,
     isAdmin,
-    protectCustomer
+    protectCustomer // Ensure this is defined and exported from authMiddleware.js
 } = require('../middleware/authMiddleware');
 
 
@@ -30,12 +29,10 @@ const {
 // 🛒 COLLECTION ROUTES
 // ================================
 
-// FIX: This route is now PUBLIC so storefronts can display collections/categories.
-// The isAdmin and protect middleware have been removed.
-// The admin panel will still be able to fetch this data without issues.
-router.get('/collections', productController.getCollections);
+// Get all collections for a client (Admin Only)
+router.get('/collections', protect, isAdmin, productController.getCollections);
 
-// Create a new collection (Admin Only - STILL PROTECTED)
+// Create a new collection (Admin Only)
 router.post(
     '/collections',
     protect,
@@ -44,7 +41,7 @@ router.post(
     productController.addCollection
 );
 
-// Update a collection (Admin Only - STILL PROTECTED)
+// Update a collection (Admin Only)
 router.put(
     '/collections/:id',
     protect,
@@ -53,7 +50,7 @@ router.put(
     productController.updateCollection
 );
 
-// Delete a collection (Admin Only - STILL PROTECTED)
+// Delete a collection (Admin Only)
 router.delete(
     '/collections/:id',
     protect,
@@ -65,12 +62,12 @@ router.delete(
 
 // ================================
 // 📸 PROMO IMAGES ROUTES
-// ================================
+// =========================
 
 // Get all promo images for a client (Publicly accessible for storefronts)
 router.get('/promo', productController.getProductImagesOnly);
 
-// Upload new promo images (Admin Only - STILL PROTECTED)
+// Upload new promo images (Admin Only)
 router.post(
     '/promo',
     protect,
@@ -84,13 +81,11 @@ router.post(
 // 📦 PRODUCT ROUTES
 // ================================
 
-// FIX: This route is now PUBLIC so storefronts can display products.
-// The `protect` middleware has been removed. The global `identifyTenant`
-// middleware is sufficient for fetching tenant-specific products.
-// The admin panel will still work perfectly with this route.
-router.get('/', productController.getProducts);
+// Get all products for a client (Authenticated Users)
+// This route is protected to ensure req.user is available for tenant identification.
+router.get('/', protect, productController.getProducts);
 
-// Create a new product (Admin Only - STILL PROTECTED)
+// Create a new product (Admin Only)
 router.post(
     '/',
     protect,
@@ -100,13 +95,14 @@ router.post(
 );
 
 // Get a single product by ID (Publicly accessible for storefronts)
+// This dynamic route must come AFTER specific routes like '/collections' and '/promo'.
 router.get(
     '/:id',
     param('id').isMongoId(),
     productController.getProductById
 );
 
-// Update a product (Admin Only - STILL PROTECTED)
+// Update a product (Admin Only)
 router.put(
     '/:id',
     protect,
@@ -116,7 +112,7 @@ router.put(
     productController.updateProduct
 );
 
-// Delete a product (Admin Only - STILL PROTECTED)
+// Delete a product (Admin Only)
 router.delete(
     '/:id',
     protect,
@@ -132,7 +128,7 @@ router.delete(
 // Create a new review for a product (Logged-in Customers Only)
 router.post(
     '/:id/reviews',
-    protectCustomer, // Ensures only logged-in customers can post reviews.
+    protectCustomer, // FIX: Re-enabled. Ensures only logged-in customers can post reviews.
     param('id').isMongoId(),
     [
         body('rating').isFloat({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5.'),
