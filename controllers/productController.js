@@ -3,12 +3,11 @@
  * DESC: Controller for all product, collection, and promo image logic.
  *
  * FIX:
- * - Removed the 'express-async-handler' dependency to resolve the "Cannot find module" error.
- * - Replaced the asyncHandler wrapper with standard try...catch blocks in all async functions
- * to ensure robust error handling.
- * - Refactored `getTenantObjectId` to no longer send HTTP responses directly.
- * - Updated all functions calling `getTenantObjectId` to handle a null return value and
- * send a proper 400 or 404 response, making error handling more explicit.
+ * - Removed the 'express-async-handler' dependency.
+ * - Replaced asyncHandler with standard try...catch blocks for error handling.
+ * - Refactored `getTenantObjectId` to be more resilient. It now checks for the
+ * 'x-tenant-id' header directly as a fallback, fixing the 400 error when the
+ * identifyTenant middleware does not populate req.tenantId.
  */
 
 const Product = require('../models/Product');
@@ -25,7 +24,7 @@ const { body, param, validationResult } = require('express-validator');
 // =========================
 const uploadMiddleware = async (req, res, next) => {
     try {
-        const tenantIdentifier = req.user ? req.user.tenantId : req.tenantId;
+        const tenantIdentifier = req.user ? req.user.tenantId : (req.headers['x-tenant-id'] || req.tenantId);
 
         if (!tenantIdentifier) {
             return res.status(400).json({ message: 'Could not identify the tenant for the upload.' });
@@ -70,15 +69,15 @@ const uploadMiddleware = async (req, res, next) => {
 
 
 // **HELPER FUNCTION TO GET TENANT OBJECT ID**
-// FIX: This helper no longer sends responses. It returns the ID or null.
+// FIX: This helper now checks the header as a fallback.
 const getTenantObjectId = async (req) => {
-    const tenantIdentifier = req.user ? req.user.tenantId : req.tenantId;
+    // Priority: 1. Authenticated user, 2. Middleware-set ID, 3. Header fallback
+    const tenantIdentifier = req.user?.tenantId || req.tenantId || req.headers['x-tenant-id'];
     
     if (!tenantIdentifier) {
         return null;
     }
     
-    // Reuse the client object if it was already fetched by middleware.
     if (req.client && req.client.tenantId == tenantIdentifier) {
         return req.client._id;
     }
@@ -87,7 +86,6 @@ const getTenantObjectId = async (req) => {
     if (!client) {
         return null;
     }
-    // Attach for potential later use in the same request lifecycle
     req.client = client;
     return client._id;
 };
@@ -209,7 +207,7 @@ const getPublicProducts = async (req, res) => {
     try {
         const tenantObjectId = await getTenantObjectId(req);
         if (!tenantObjectId) {
-            return res.status(400).json({ message: 'Tenant could not be identified.' });
+            return res.status(400).json({ message: 'Tenant could not be identified from request.' });
         }
 
         const lang = req.query.lang || 'en';
@@ -394,7 +392,7 @@ const getPublicCollections = async (req, res) => {
     try {
         const tenantObjectId = await getTenantObjectId(req);
         if (!tenantObjectId) {
-            return res.status(400).json({ message: 'Tenant could not be identified.' });
+            return res.status(400).json({ message: 'Tenant could not be identified from request.' });
         }
 
         const lang = req.query.lang || 'en';
