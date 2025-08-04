@@ -12,15 +12,13 @@ const { body, param, validationResult } = require('express-validator');
 // =========================
 // 📦 Dynamic Multer & Cloudinary Setup
 // =========================
+// FIX: This middleware now fetches the client configuration directly
+// to ensure the Cloudinary keys are always available.
 exports.uploadMiddleware = async (req, res, next) => {
     try {
-        // FIX: Ensure tenantId is treated as a number, as it comes from a header as a string.
-        const tenantIdNum = parseInt(req.tenantId, 10);
-        if (isNaN(tenantIdNum)) {
-            return res.status(400).json({ message: 'Invalid Tenant ID format.' });
-        }
-
-        const client = await Client.findOne({ tenantId: tenantIdNum }).lean();
+        // Explicitly fetch the client using the tenantId from the request.
+        // This guarantees we have the complete document, including the 'config' field.
+        const client = await Client.findOne({ tenantId: req.tenantId }).lean();
 
         if (!client || !client.config || !client.config.cloudinary) {
             return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
@@ -46,6 +44,7 @@ exports.uploadMiddleware = async (req, res, next) => {
                 console.error('Multer upload error for tenant ' + req.tenantId, err);
                 return res.status(400).json({ message: 'Image upload failed.', error: err.message });
             }
+            // Attach the fetched client to the request for other controllers to use
             req.client = client; 
             next();
         });
@@ -65,23 +64,18 @@ const getTenantObjectId = async (req, res) => {
         return null;
     }
     
-    // FIX: Ensure the identifier is parsed as a number before querying.
-    const tenantIdNum = parseInt(tenantIdentifier, 10);
-    if (isNaN(tenantIdNum)) {
-        if (!res.headersSent) res.status(400).json({ message: 'Invalid tenant ID format.' });
-        return null;
-    }
-    
-    if (req.client && req.client.tenantId === tenantIdNum) {
+    // If the client was already fetched by the uploadMiddleware, use it.
+    if (req.client && req.client.tenantId == tenantIdentifier) {
         return req.client._id;
     }
 
-    const client = await Client.findOne({ tenantId: tenantIdNum });
+    // Otherwise, fetch it.
+    const client = await Client.findOne({ tenantId: tenantIdentifier });
     if (!client) {
         if (!res.headersSent) res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
         return null;
     }
-    req.client = client;
+    req.client = client; // Attach for potential later use
     return client._id;
 };
 
