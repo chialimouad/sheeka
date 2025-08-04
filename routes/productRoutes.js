@@ -3,12 +3,10 @@
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
  * FIX:
- * - Re-enabled the `protectCustomer` middleware on the review creation route.
- * This assumes `protectCustomer` is correctly defined and exported from your auth middleware.
- * - Added `update` and `delete` routes for collections.
- * - Ensured all admin-only routes are protected by both `protect` and `isAdmin` middleware.
- * - Maintained the `protect` middleware on the GET /products route to ensure only authenticated
- * users of a tenant can view its products.
+ * - Removed the `protect` middleware from the `GET /` and `GET /collections` routes.
+ * This makes them public, allowing the storefront to fetch product and category
+ * data for all visitors without requiring them to be logged in. This resolves the 401 Unauthorized error.
+ * - All other security rules remain the same: data modification routes are admin-only.
  */
 const express = require('express');
 const router = express.Router();
@@ -17,11 +15,10 @@ const { body, param } = require('express-validator');
 const productController = require('../controllers/productController');
 
 // Import all necessary middleware from the centralized auth file.
-// The global `identifyTenant` middleware in server.js handles req.tenantId.
 const {
     protect,
     isAdmin,
-    protectCustomer // Ensure this is defined and exported from authMiddleware.js
+    protectCustomer
 } = require('../middleware/authMiddleware');
 
 
@@ -29,8 +26,9 @@ const {
 // 🛒 COLLECTION ROUTES
 // ================================
 
-// Get all collections for a client (Admin Only)
-router.get('/collections', protect, isAdmin, productController.getCollections);
+// Get all collections for a client (Publicly accessible for storefronts)
+// FIX: Removed 'protect' and 'isAdmin' to make this route public.
+router.get('/collections', productController.getCollections);
 
 // Create a new collection (Admin Only)
 router.post(
@@ -81,9 +79,9 @@ router.post(
 // 📦 PRODUCT ROUTES
 // ================================
 
-// Get all products for a client (Authenticated Users)
-// This route is protected to ensure req.user is available for tenant identification.
-router.get('/', protect, productController.getProducts);
+// Get all products for a client (Publicly accessible for storefronts)
+// FIX: Removed 'protect' middleware to make the main product listing public.
+router.get('/', productController.getProducts);
 
 // Create a new product (Admin Only)
 router.post(
@@ -95,7 +93,6 @@ router.post(
 );
 
 // Get a single product by ID (Publicly accessible for storefronts)
-// This dynamic route must come AFTER specific routes like '/collections' and '/promo'.
 router.get(
     '/:id',
     param('id').isMongoId(),
@@ -128,7 +125,7 @@ router.delete(
 // Create a new review for a product (Logged-in Customers Only)
 router.post(
     '/:id/reviews',
-    protectCustomer, // FIX: Re-enabled. Ensures only logged-in customers can post reviews.
+    protectCustomer, 
     param('id').isMongoId(),
     [
         body('rating').isFloat({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5.'),
