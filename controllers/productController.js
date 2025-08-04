@@ -16,12 +16,20 @@ const { body, param, validationResult } = require('express-validator');
 // based on the tenant's specific API keys stored in the database.
 exports.uploadMiddleware = async (req, res, next) => {
     try {
-        // Fetch the client configuration using the tenantId from the request.
-        // This ensures we always have the correct, up-to-date Cloudinary keys.
-        const client = await Client.findOne({ tenantId: req.tenantId }).lean();
+        // FIX: Use the same logic as getTenantObjectId to correctly identify the tenant.
+        // This prioritizes the tenant ID from the authenticated user (`req.user`), which is
+        // available after the `protect` middleware runs.
+        const tenantIdentifier = req.user ? req.user.tenantId : req.tenantId;
+
+        if (!tenantIdentifier) {
+            return res.status(400).json({ message: 'Could not identify the tenant for the upload.' });
+        }
+
+        // Fetch the client configuration using the identified tenantId.
+        const client = await Client.findOne({ tenantId: tenantIdentifier }).lean();
 
         if (!client || !client.config || !client.config.cloudinary || !client.config.cloudinary.cloud_name) {
-            console.error('Cloudinary configuration missing or incomplete for tenant:', req.tenantId);
+            console.error('Cloudinary configuration missing or incomplete for tenant:', tenantIdentifier);
             return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
         }
         
@@ -33,7 +41,7 @@ exports.uploadMiddleware = async (req, res, next) => {
         const storage = new CloudinaryStorage({
             cloudinary: cloudinary,
             params: {
-                folder: `tenant_${req.tenantId}/products`,
+                folder: `tenant_${tenantIdentifier}/products`, // Use the identified tenant ID
                 allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
                 transformation: [{ width: 1024, crop: 'limit' }],
             },
@@ -43,12 +51,12 @@ exports.uploadMiddleware = async (req, res, next) => {
         
         upload(req, res, (err) => {
             if (err) {
-                console.error('Multer upload error for tenant ' + req.tenantId, err);
+                console.error('Multer upload error for tenant ' + tenantIdentifier, err);
                 return res.status(400).json({ message: 'Image upload failed.', error: err.message });
             }
-            // Attach the fetched client to the request for other controllers to use,
-            // preventing duplicate database calls.
+            // Attach the fetched client and the correct tenantId to the request for other controllers to use.
             req.client = client; 
+            req.tenantId = tenantIdentifier; // Ensure req.tenantId is set for subsequent functions
             next();
         });
     } catch (error) {
