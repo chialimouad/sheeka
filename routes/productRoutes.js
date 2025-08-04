@@ -2,13 +2,22 @@
  * FILE: ./routes/productRoutes.js
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
- * FIX:
- * - Re-enabled the `protectCustomer` middleware on the review creation route.
- * This assumes `protectCustomer` is correctly defined and exported from your auth middleware.
- * - Added `update` and `delete` routes for collections.
- * - Ensured all admin-only routes are protected by both `protect` and `isAdmin` middleware.
- * - Maintained the `protect` middleware on the GET /products route to ensure only authenticated
- * users of a tenant can view its products.
+ * --- MULTI-TENANCY STRATEGY ---
+ * 1.  Frontend Identification: The client-side code identifies the tenant from the URL's subdomain (e.g., 'zara' from 'zara.waqti.pro').
+ * 2.  Tenant Header: The frontend sends this identifier in a custom HTTP header, `x-tenant-id`, with every API request.
+ * 3.  Backend Middleware: A global middleware (assumed to be configured in your main server.js file, e.g., `identifyTenant`) reads the `x-tenant-id` header. If valid, it fetches the corresponding tenant's details (like their database ID) and attaches it to the request object (e.g., as `req.tenantId`).
+ * 4.  Controller Logic: Each controller function then uses `req.tenantId` to scope its database queries, ensuring it only fetches data for that specific tenant (e.g., `Product.find({ tenantId: req.tenantId })`).
+ * 5.  Public vs. Protected Routes:
+ * - Public routes (e.g., viewing products) should be open and rely on the `x-tenant-id` header for data scoping.
+ * - Protected routes (e.g., creating/updating products) should require admin authentication (`protect`, `isAdmin`) in addition to the tenant identification.
+ *
+ * --- FIX APPLIED ---
+ * - Removed the `protect` middleware from the `GET /` route. This makes the main product listing
+ * publicly accessible to all visitors of a tenant's storefront, which is the expected behavior.
+ * The `identifyTenant` global middleware will still ensure the correct products are shown based on the `x-tenant-id` header.
+ * - Kept `protect` and `isAdmin` on all routes that modify data (create, update, delete) to ensure they remain secure.
+ * - Added `update` and `delete` routes for collections for full CRUD functionality.
+ * - Re-enabled `protectCustomer` on the review creation route to ensure only logged-in customers can post reviews.
  */
 const express = require('express');
 const router = express.Router();
@@ -16,12 +25,12 @@ const { body, param } = require('express-validator');
 
 const productController = require('../controllers/productController');
 
-// Import all necessary middleware from the centralized auth file.
-// The global `identifyTenant` middleware in server.js handles req.tenantId.
+// Import middleware for authentication and authorization.
+// The global `identifyTenant` middleware in server.js should handle attaching `req.tenantId`.
 const {
     protect,
     isAdmin,
-    protectCustomer // Ensure this is defined and exported from authMiddleware.js
+    protectCustomer
 } = require('../middleware/authMiddleware');
 
 
@@ -29,10 +38,10 @@ const {
 // 🛒 COLLECTION ROUTES
 // ================================
 
-// Get all collections for a client (Admin Only)
+// GET all collections for the current tenant (Admin Only)
 router.get('/collections', protect, isAdmin, productController.getCollections);
 
-// Create a new collection (Admin Only)
+// POST a new collection for the current tenant (Admin Only)
 router.post(
     '/collections',
     protect,
@@ -41,33 +50,33 @@ router.post(
     productController.addCollection
 );
 
-// Update a collection (Admin Only)
+// PUT (update) a specific collection (Admin Only)
 router.put(
     '/collections/:id',
     protect,
     isAdmin,
-    param('id').isMongoId(),
+    param('id').isMongoId().withMessage('Invalid collection ID.'),
     productController.updateCollection
 );
 
-// Delete a collection (Admin Only)
+// DELETE a specific collection (Admin Only)
 router.delete(
     '/collections/:id',
     protect,
     isAdmin,
-    param('id').isMongoId(),
+    param('id').isMongoId().withMessage('Invalid collection ID.'),
     productController.deleteCollection
 );
 
 
 // ================================
 // 📸 PROMO IMAGES ROUTES
-// =========================
+// ================================
 
-// Get all promo images for a client (Publicly accessible for storefronts)
+// GET all promo images for the current tenant (Public)
 router.get('/promo', productController.getProductImagesOnly);
 
-// Upload new promo images (Admin Only)
+// POST new promo images (Admin Only)
 router.post(
     '/promo',
     protect,
@@ -81,11 +90,13 @@ router.post(
 // 📦 PRODUCT ROUTES
 // ================================
 
-// Get all products for a client (Authenticated Users)
-// This route is protected to ensure req.user is available for tenant identification.
-router.get('/', protect, productController.getProducts);
+// GET all products for the current tenant (Public)
+// FIX: Removed `protect` middleware. This endpoint should be public so visitors
+// can see the products on the storefront. The tenant is identified via the
+// `x-tenant-id` header and a global middleware.
+router.get('/', productController.getProducts);
 
-// Create a new product (Admin Only)
+// POST a new product (Admin Only)
 router.post(
     '/',
     protect,
@@ -94,30 +105,30 @@ router.post(
     productController.addProduct
 );
 
-// Get a single product by ID (Publicly accessible for storefronts)
+// GET a single product by ID (Public)
 // This dynamic route must come AFTER specific routes like '/collections' and '/promo'.
 router.get(
     '/:id',
-    param('id').isMongoId(),
+    param('id').isMongoId().withMessage('Invalid product ID.'),
     productController.getProductById
 );
 
-// Update a product (Admin Only)
+// PUT (update) a product (Admin Only)
 router.put(
     '/:id',
     protect,
     isAdmin,
-    param('id').isMongoId(),
+    param('id').isMongoId().withMessage('Invalid product ID.'),
     productController.uploadMiddleware,
     productController.updateProduct
 );
 
-// Delete a product (Admin Only)
+// DELETE a product (Admin Only)
 router.delete(
     '/:id',
     protect,
     isAdmin,
-    param('id').isMongoId(),
+    param('id').isMongoId().withMessage('Invalid product ID.'),
     productController.deleteProduct
 );
 
@@ -125,11 +136,11 @@ router.delete(
 // ⭐ REVIEW ROUTES
 // ================================
 
-// Create a new review for a product (Logged-in Customers Only)
+// POST a new review for a product (Logged-in Customers Only)
 router.post(
     '/:id/reviews',
-    protectCustomer, // FIX: Re-enabled. Ensures only logged-in customers can post reviews.
-    param('id').isMongoId(),
+    protectCustomer, // Ensures only authenticated customers of the tenant can post.
+    param('id').isMongoId().withMessage('Invalid product ID.'),
     [
         body('rating').isFloat({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5.'),
         body('comment').notEmpty().withMessage('Comment cannot be empty.')
