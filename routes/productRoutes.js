@@ -4,8 +4,9 @@
  *
  * FIX:
  * - Imported the `getProductByBarcode` controller function.
- * - Added a new route `GET /barcode/:barcode` to fetch a product by its barcode,
- * which resolves the error seen on the frontend.
+ * - Added a new route `GET /barcode/:barcode` to fetch a product by its barcode.
+ * - ADDED: Included the `protect` middleware in the new barcode route to ensure
+ * the controller has the necessary authenticated user context.
  */
 const express = require('express');
 const router = express.Router();
@@ -15,7 +16,6 @@ const { body, param } = require('express-validator');
 const {
     getProducts,
     getProductById,
-    // NEW: Import the barcode handler
     getProductByBarcode,
     addProduct,
     updateProduct,
@@ -115,9 +115,10 @@ router.post(
     addProduct
 );
 
-// NEW: Get a single product by its barcode
+// Get a single product by its barcode
 router.get(
     '/barcode/:barcode',
+    protect, // FIX: Added protect middleware
     param('barcode').notEmpty().withMessage('Barcode parameter cannot be empty.'),
     getProductByBarcode
 );
