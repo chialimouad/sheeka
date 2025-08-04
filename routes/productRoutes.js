@@ -3,12 +3,12 @@
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
  * FIX:
+ * - Removed the `protect` middleware from the public GET /products route. The `identifyTenant`
+ * middleware in server.js is sufficient for identifying the store, and this route
+ * needs to be accessible to non-authenticated storefront visitors.
  * - Re-enabled the `protectCustomer` middleware on the review creation route.
- * This assumes `protectCustomer` is correctly defined and exported from your auth middleware.
  * - Added `update` and `delete` routes for collections.
  * - Ensured all admin-only routes are protected by both `protect` and `isAdmin` middleware.
- * - Maintained the `protect` middleware on the GET /products route to ensure only authenticated
- * users of a tenant can view its products.
  */
 const express = require('express');
 const router = express.Router();
@@ -29,8 +29,8 @@ const {
 // 🛒 COLLECTION ROUTES
 // ================================
 
-// Get all collections for a client (Admin Only)
-router.get('/collections', protect, isAdmin, productController.getCollections);
+// Get all collections for a client (Publicly accessible for storefronts)
+router.get('/collections', productController.getCollections);
 
 // Create a new collection (Admin Only)
 router.post(
@@ -81,9 +81,10 @@ router.post(
 // 📦 PRODUCT ROUTES
 // ================================
 
-// Get all products for a client (Authenticated Users)
-// This route is protected to ensure req.user is available for tenant identification.
-router.get('/', protect, productController.getProducts);
+// Get all products for a client (Publicly accessible for storefronts)
+// FIX: Removed `protect` middleware. This allows public visitors to see products.
+// The `identifyTenant` middleware in server.js handles which tenant's products to show.
+router.get('/', productController.getProducts);
 
 // Create a new product (Admin Only)
 router.post(
