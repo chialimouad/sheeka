@@ -3,7 +3,6 @@
 const Product = require('../models/Product');
 const PromoImage = require('../models/imagespromo');
 const Collection = require('../models/Collection');
-// **FIX**: Import the Client model to translate tenantId to ObjectId
 const Client = require('../models/Client'); 
 const multer = require('multer');
 const { v2: cloudinary } = require('cloudinary');
@@ -13,39 +12,51 @@ const { body, param, validationResult } = require('express-validator');
 // =========================
 // 📦 Dynamic Multer & Cloudinary Setup
 // =========================
-exports.uploadMiddleware = (req, res, next) => {
-    if (!req.client || !req.client.config || !req.client.config.cloudinary) {
-        return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
-    }
-    const tenantCloudinaryConfig = req.client.config.cloudinary;
-    
-    // FIX: Configure the global cloudinary object directly.
-    cloudinary.config(tenantCloudinaryConfig);
+// FIX: This middleware now fetches the client configuration directly
+// to ensure the Cloudinary keys are always available.
+exports.uploadMiddleware = async (req, res, next) => {
+    try {
+        // Explicitly fetch the client using the tenantId from the request.
+        // This guarantees we have the complete document, including the 'config' field.
+        const client = await Client.findOne({ tenantId: req.tenantId }).lean();
 
-    const storage = new CloudinaryStorage({
-        // FIX: Pass the configured cloudinary object itself, not the result of config().
-        cloudinary: cloudinary, 
-        params: {
-            folder: `tenant_${req.tenantId}/products`,
-            allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-            transformation: [{ width: 1024, crop: 'limit' }],
-        },
-    });
-    const upload = multer({ storage }).array('images', 10);
-    upload(req, res, (err) => {
-        if (err) {
-            console.error('Multer upload error for tenant ' + req.tenantId, err);
-            return res.status(400).json({ message: 'Image upload failed.', error: err.message });
+        if (!client || !client.config || !client.config.cloudinary) {
+            return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
         }
-        next();
-    });
+        
+        const tenantCloudinaryConfig = client.config.cloudinary;
+        
+        cloudinary.config(tenantCloudinaryConfig);
+
+        const storage = new CloudinaryStorage({
+            cloudinary: cloudinary, 
+            params: {
+                folder: `tenant_${req.tenantId}/products`,
+                allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+                transformation: [{ width: 1024, crop: 'limit' }],
+            },
+        });
+
+        const upload = multer({ storage }).array('images', 10);
+        
+        upload(req, res, (err) => {
+            if (err) {
+                console.error('Multer upload error for tenant ' + req.tenantId, err);
+                return res.status(400).json({ message: 'Image upload failed.', error: err.message });
+            }
+            // Attach the fetched client to the request for other controllers to use
+            req.client = client; 
+            next();
+        });
+    } catch (error) {
+        console.error('Error in uploadMiddleware:', error);
+        res.status(500).json({ message: 'Server error during upload setup.' });
+    }
 };
 
 
 // **HELPER FUNCTION TO GET TENANT OBJECT ID**
-// This centralizes the logic for converting a tenant identifier (e.g., "1001") into a MongoDB ObjectId.
 const getTenantObjectId = async (req, res) => {
-    // For protected routes, the tenantId is on req.user. For public routes, it's on req.tenantId.
     const tenantIdentifier = req.user ? req.user.tenantId : req.tenantId;
     
     if (!tenantIdentifier) {
@@ -53,12 +64,19 @@ const getTenantObjectId = async (req, res) => {
         return null;
     }
     
+    // If the client was already fetched by the uploadMiddleware, use it.
+    if (req.client && req.client.tenantId == tenantIdentifier) {
+        return req.client._id;
+    }
+
+    // Otherwise, fetch it.
     const client = await Client.findOne({ tenantId: tenantIdentifier });
     if (!client) {
         if (!res.headersSent) res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
         return null;
     }
-    return client._id; // The actual ObjectId
+    req.client = client; // Attach for potential later use
+    return client._id;
 };
 
 
@@ -224,14 +242,15 @@ exports.deleteProduct = [
             }
 
             if (product.images && product.images.length > 0) {
-                const cloudinaryInstance = new cloudinary.config(req.client.config.cloudinary);
+                // Re-configure cloudinary for this specific tenant before deleting
+                cloudinary.config(req.client.config.cloudinary);
                 const publicIds = product.images.map(url => {
                     const match = url.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
                     return match ? match[1] : null;
                 }).filter(Boolean);
 
                 if (publicIds.length > 0) {
-                    await cloudinaryInstance.api.delete_resources(publicIds);
+                    await cloudinary.api.delete_resources(publicIds);
                 }
             }
 
@@ -292,11 +311,9 @@ exports.getCollections = async (req, res) => {
     }
 };
 
-// **FIX**: Added placeholder functions for update and delete to prevent server crashes
 exports.updateCollection = [
     param('id').isMongoId(),
     async (req, res) => {
-        // Placeholder - Implement your update logic here
         res.status(501).json({ message: 'Update collection not implemented yet.' });
     }
 ];
@@ -304,7 +321,6 @@ exports.updateCollection = [
 exports.deleteCollection = [
     param('id').isMongoId(),
     async (req, res) => {
-        // Placeholder - Implement your delete logic here
         res.status(501).json({ message: 'Delete collection not implemented yet.' });
     }
 ];
@@ -330,7 +346,7 @@ exports.createProductReview = [
                 return res.status(401).json({ message: 'Not authorized. Please log in as a customer.' });
             }
             
-            const tenantObjectId = customer.tenantId; // Assumes customer model has tenantId ObjectId
+            const tenantObjectId = customer.tenantId;
             if (!tenantObjectId) {
                  return res.status(400).json({ message: 'Customer is not associated with a tenant.' });
             }
