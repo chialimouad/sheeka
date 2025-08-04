@@ -3,30 +3,26 @@
  * DESC: Handles the creation of new Clients (Tenants) and their first admin user.
  *
  * MODIFIED:
- * - Integrated the more robust logic for creating clients, including atomic
- * tenant ID generation using a Counter model.
- * - Re-integrated the `subdomain` field, which is received from the form,
- * validated for uniqueness, and saved to the new client document.
- * - Added more detailed validation and error handling, including a rollback
- * mechanism if part of the process fails.
+ * - Added comprehensive validation to check for existing clients by name, email, phone, or subdomain.
+ * - Ensured the rollback mechanism properly deletes a created client if the subsequent admin user creation fails.
+ * - Standardized error responses for better client-side handling.
  */
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 const { validationResult } = require('express-validator');
 const Client = require('../models/Client');
 const User = require('../models/User');
-const Counter = require('../models/Counter'); // You must create this model
+const Counter = require('../models/Counter'); // This model is required for atomic ID generation.
 
 /**
- * @desc    Atomically finds and updates a counter sequence to get the next ID.
- * @param   {string} sequenceName The name of the sequence (e.g., 'tenantId').
- * @returns {Promise<number>} The next unique ID in the sequence.
+ * @desc     Atomically finds and updates a counter sequence to get the next ID.
+ * @param    {string} sequenceName The name of the sequence (e.g., 'tenantId').
+ * @returns  {Promise<number>} The next unique ID in the sequence.
  */
 async function getNextSequenceValue(sequenceName) {
     const sequenceDocument = await Counter.findByIdAndUpdate(
         sequenceName,
         { $inc: { seq: 1 } },
-        { new: true, upsert: true }
+        { new: true, upsert: true } // upsert: true creates the document if it doesn't exist
     );
     return sequenceDocument.seq;
 }
@@ -45,7 +41,7 @@ const ProvisioningController = {
 
         const {
             clientName,
-            subdomain, // <-- Field for the unique subdomain
+            subdomain,
             adminEmail,
             adminPassword,
             adminPhoneNumber,
@@ -64,35 +60,40 @@ const ProvisioningController = {
         let savedClient = null;
 
         try {
-            // 1. Check for uniqueness of all critical fields.
-            const query = { $or: [
-                { name: clientName }, 
-                { email: adminEmail.toLowerCase() },
-                { phoneNumber: adminPhoneNumber },
-                { subdomain: subdomain.toLowerCase() }
-            ]};
-            const existingClient = await Client.findOne(query);
+            // 1. Check for uniqueness of all critical fields to provide clear error messages.
+            const lowerSubdomain = subdomain.toLowerCase();
+            const lowerAdminEmail = adminEmail.toLowerCase();
+
+            const existingClient = await Client.findOne({
+                $or: [
+                    { name: clientName }, 
+                    { subdomain: lowerSubdomain },
+                    { email: lowerAdminEmail },
+                    { phoneNumber: adminPhoneNumber }
+                ]
+            }).lean();
+
             if (existingClient) {
                 let field = 'details';
                 if (existingClient.name === clientName) field = 'name';
-                if (existingClient.email === adminEmail.toLowerCase()) field = 'email';
+                if (existingClient.subdomain === lowerSubdomain) field = 'subdomain';
+                if (existingClient.email === lowerAdminEmail) field = 'email';
                 if (existingClient.phoneNumber === adminPhoneNumber) field = 'phone number';
-                if (existingClient.subdomain === subdomain.toLowerCase()) field = 'subdomain';
                 return res.status(409).json({ message: `A client with this ${field} already exists.` });
             }
 
             // 2. Get the next tenantId atomically.
             const nextTenantId = await getNextSequenceValue('tenantId');
 
-            // 3. Generate a unique JWT secret.
+            // 3. Generate a unique JWT secret for the tenant.
             const jwtSecret = crypto.randomBytes(32).toString('hex');
 
             // 4. Create the new Client document.
             const newClient = new Client({
                 tenantId: nextTenantId,
                 name: clientName,
-                subdomain: subdomain.toLowerCase(), // Save the sanitized subdomain
-                email: adminEmail.toLowerCase(),
+                subdomain: lowerSubdomain, // Save the sanitized subdomain
+                email: lowerAdminEmail,
                 phoneNumber: adminPhoneNumber,
                 config: {
                     jwtSecret,
@@ -113,9 +114,9 @@ const ProvisioningController = {
             // 5. Create the initial administrator user for the new client.
             const adminUser = new User({
                 tenantId: savedClient.tenantId,
-                name: 'Administrator',
-                email: adminEmail.toLowerCase(),
-                password: adminPassword, // The User model's pre-save hook should handle hashing
+                name: 'Administrator', // Default name for the first admin
+                email: lowerAdminEmail,
+                password: adminPassword, // The User model's pre-save hook will handle hashing
                 role: 'admin',
             });
 
@@ -132,9 +133,9 @@ const ProvisioningController = {
             });
 
         } catch (error) {
-            console.error('Failed to provision new client:', error.message);
+            console.error('Failed to provision new client:', error);
 
-            // If the client was saved but user creation failed, roll back.
+            // If the client was saved but user creation failed, roll back by deleting the client.
             if (savedClient) {
                 await Client.findByIdAndDelete(savedClient._id);
             }
