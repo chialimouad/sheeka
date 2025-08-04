@@ -37,6 +37,11 @@ const productSchema = new mongoose.Schema({
         ref: 'Client',
         index: true,
     },
+    // NEW: Added barcode field for product identification.
+    barcode: {
+        type: String,
+        required: false // Set to true if a barcode is mandatory for every product.
+    },
     name: {
         type: String,
         required: true
@@ -93,5 +98,11 @@ const productSchema = new mongoose.Schema({
 }, {
     timestamps: true
 });
+
+// NEW: This compound index ensures that the 'barcode' is unique per 'tenantId'.
+// The 'sparse' option means it will only enforce uniqueness for documents that have a barcode value.
+// This allows you to have multiple products without a barcode.
+productSchema.index({ tenantId: 1, barcode: 1 }, { unique: true, sparse: true });
+
 
 module.exports = mongoose.model('Product', productSchema);
