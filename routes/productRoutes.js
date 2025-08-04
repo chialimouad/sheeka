@@ -3,25 +3,41 @@
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
  * FIX:
+ * - Added a new public route `GET /public` for storefronts to fetch products
+ * without authentication. This route uses the new `getPublicProducts` controller.
+ * - The original `GET /` route remains protected for authenticated admin use.
  * - Re-enabled the `protectCustomer` middleware on the review creation route.
- * This assumes `protectCustomer` is correctly defined and exported from your auth middleware.
  * - Added `update` and `delete` routes for collections.
  * - Ensured all admin-only routes are protected by both `protect` and `isAdmin` middleware.
- * - Maintained the `protect` middleware on the GET /products route to ensure only authenticated
- * users of a tenant can view its products.
  */
 const express = require('express');
 const router = express.Router();
 const { body, param } = require('express-validator');
 
-const productController = require('../controllers/productController');
+// Import all necessary controller functions
+const {
+    getProducts,
+    getProductById,
+    addProduct,
+    updateProduct,
+    deleteProduct,
+    createProductReview,
+    getCollections,
+    addCollection,
+    updateCollection,
+    deleteCollection,
+    getProductImagesOnly,
+    uploadPromoImages,
+    uploadMiddleware,
+    getPublicProducts // Import the new controller function
+} = require('../controllers/productController');
+
 
 // Import all necessary middleware from the centralized auth file.
-// The global `identifyTenant` middleware in server.js handles req.tenantId.
 const {
     protect,
     isAdmin,
-    protectCustomer // Ensure this is defined and exported from authMiddleware.js
+    protectCustomer
 } = require('../middleware/authMiddleware');
 
 
@@ -81,8 +97,11 @@ router.post(
 // 📦 PRODUCT ROUTES
 // ================================
 
-// Get all products for a client (Authenticated Users)
-// This route is protected to ensure req.user is available for tenant identification.
+// Get all products for the public storefront (Publicly Accessible)
+// This relies on the global `identifyTenant` middleware.
+router.get('/public', productController.getPublicProducts);
+
+// Get all products for a client (Authenticated Users - for an admin panel)
 router.get('/', protect, productController.getProducts);
 
 // Create a new product (Admin Only)
@@ -95,7 +114,7 @@ router.post(
 );
 
 // Get a single product by ID (Publicly accessible for storefronts)
-// This dynamic route must come AFTER specific routes like '/collections' and '/promo'.
+// This dynamic route must come AFTER specific routes.
 router.get(
     '/:id',
     param('id').isMongoId(),
