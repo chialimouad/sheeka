@@ -3,7 +3,7 @@
 const Product = require('../models/Product');
 const PromoImage = require('../models/imagespromo');
 const Collection = require('../models/Collection');
-const Client = require('../models/Client'); 
+const Client = require('../models/Client');
 const multer = require('multer');
 const { v2: cloudinary } = require('cloudinary');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -12,24 +12,26 @@ const { body, param, validationResult } = require('express-validator');
 // =========================
 // 📦 Dynamic Multer & Cloudinary Setup
 // =========================
-// FIX: This middleware now fetches the client configuration directly
-// to ensure the Cloudinary keys are always available.
+// This middleware dynamically configures multer and Cloudinary for file uploads
+// based on the tenant's specific API keys stored in the database.
 exports.uploadMiddleware = async (req, res, next) => {
     try {
-        // Explicitly fetch the client using the tenantId from the request.
-        // This guarantees we have the complete document, including the 'config' field.
+        // Fetch the client configuration using the tenantId from the request.
+        // This ensures we always have the correct, up-to-date Cloudinary keys.
         const client = await Client.findOne({ tenantId: req.tenantId }).lean();
 
-        if (!client || !client.config || !client.config.cloudinary) {
+        if (!client || !client.config || !client.config.cloudinary || !client.config.cloudinary.cloud_name) {
+            console.error('Cloudinary configuration missing or incomplete for tenant:', req.tenantId);
             return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
         }
         
         const tenantCloudinaryConfig = client.config.cloudinary;
         
+        // Configure the Cloudinary instance with the tenant's credentials.
         cloudinary.config(tenantCloudinaryConfig);
 
         const storage = new CloudinaryStorage({
-            cloudinary: cloudinary, 
+            cloudinary: cloudinary,
             params: {
                 folder: `tenant_${req.tenantId}/products`,
                 allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
@@ -44,7 +46,8 @@ exports.uploadMiddleware = async (req, res, next) => {
                 console.error('Multer upload error for tenant ' + req.tenantId, err);
                 return res.status(400).json({ message: 'Image upload failed.', error: err.message });
             }
-            // Attach the fetched client to the request for other controllers to use
+            // Attach the fetched client to the request for other controllers to use,
+            // preventing duplicate database calls.
             req.client = client; 
             next();
         });
@@ -56,7 +59,9 @@ exports.uploadMiddleware = async (req, res, next) => {
 
 
 // **HELPER FUNCTION TO GET TENANT OBJECT ID**
+// This helper centralizes the logic for retrieving the tenant's database _id.
 const getTenantObjectId = async (req, res) => {
+    // Prioritize the tenantId from an authenticated user session.
     const tenantIdentifier = req.user ? req.user.tenantId : req.tenantId;
     
     if (!tenantIdentifier) {
@@ -64,13 +69,13 @@ const getTenantObjectId = async (req, res) => {
         return null;
     }
     
-    // If the client was already fetched by the uploadMiddleware, use it.
+    // Reuse the client object if it was already fetched by middleware.
     if (req.client && req.client.tenantId == tenantIdentifier) {
         return req.client._id;
     }
 
-    // Otherwise, fetch it.
-    const client = await Client.findOne({ tenantId: tenantIdentifier });
+    // Otherwise, fetch the client from the database.
+    const client = await Client.findOne({ tenantId: tenantIdentifier }).lean();
     if (!client) {
         if (!res.headersSent) res.status(404).json({ message: 'Client not found for the provided tenant ID.' });
         return null;
@@ -81,7 +86,7 @@ const getTenantObjectId = async (req, res) => {
 
 
 // =========================
-// 📸 Promo Image Handlers (Tenant-Aware)
+// 📸 Promo Image Handlers
 // =========================
 
 exports.getProductImagesOnly = async (req, res) => {
@@ -118,14 +123,14 @@ exports.uploadPromoImages = async (req, res) => {
 
 
 // =========================
-// 🏢 Product Handlers (Tenant-Aware)
+// 🏢 Product Handlers
 // =========================
 
 exports.addProduct = [
-    body('name').trim().notEmpty(),
-    body('description').trim().notEmpty(),
-    body('quantity').isInt({ min: 0 }),
-    body('price').isFloat({ min: 0 }),
+    body('name').trim().notEmpty().withMessage('Product name is required.'),
+    body('description').trim().notEmpty().withMessage('Description is required.'),
+    body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
+    body('price').isFloat({ min: 0 }).withMessage('Price must be a non-negative number.'),
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -140,6 +145,15 @@ exports.addProduct = [
             if (!req.files || req.files.length === 0) {
                 return res.status(400).json({ error: 'At least one image is required.' });
             }
+            
+            let parsedVariants = [];
+            if (variants) {
+                try {
+                    parsedVariants = JSON.parse(variants);
+                } catch (e) {
+                    return res.status(400).json({ message: 'Invalid format for variants. Must be a valid JSON string.' });
+                }
+            }
 
             const newProduct = new Product({
                 tenantId: tenantObjectId,
@@ -149,7 +163,7 @@ exports.addProduct = [
                 price,
                 olprice,
                 images: req.files.map(file => file.path),
-                variants: variants ? JSON.parse(variants) : [],
+                variants: parsedVariants,
             });
 
             await newProduct.save();
@@ -214,10 +228,19 @@ exports.updateProduct = [
             if (quantity) product.quantity = quantity;
             if (price) product.price = price;
             if (olprice) product.olprice = olprice;
-            if (variants) product.variants = JSON.parse(variants);
+            
+            if (variants) {
+                try {
+                    product.variants = JSON.parse(variants);
+                } catch (e) {
+                    return res.status(400).json({ message: 'Invalid format for variants. Must be a valid JSON string.' });
+                }
+            }
 
             const newImageUrls = req.files ? req.files.map(file => file.path) : [];
-            product.images = [...product.images, ...newImageUrls];
+            if (newImageUrls.length > 0) {
+                product.images = [...product.images, ...newImageUrls];
+            }
 
             const updatedProduct = await product.save();
             res.json({ message: 'Product updated successfully', product: updatedProduct });
@@ -241,16 +264,25 @@ exports.deleteProduct = [
                 return res.status(404).json({ error: 'Product not found for this client.' });
             }
 
+            // Important: Ensure client config is loaded for Cloudinary deletion
             if (product.images && product.images.length > 0) {
-                // Re-configure cloudinary for this specific tenant before deleting
-                cloudinary.config(req.client.config.cloudinary);
-                const publicIds = product.images.map(url => {
-                    const match = url.match(/\/v\d+\/(.+?)(?:\.\w{3,4})?$/);
-                    return match ? match[1] : null;
-                }).filter(Boolean);
+                if (!req.client || !req.client.config || !req.client.config.cloudinary) {
+                    // Fetch client if not already on req object
+                    req.client = await Client.findById(tenantObjectId).lean();
+                }
+                
+                if (req.client && req.client.config && req.client.config.cloudinary) {
+                    // Re-configure cloudinary for this specific tenant before deleting
+                    cloudinary.config(req.client.config.cloudinary);
+                    const publicIds = product.images.map(url => {
+                        // Improved Regex to extract public_id from various Cloudinary URL formats
+                        const match = url.match(/(?:v\d+\/)?(tenant_\d+\/.+?)(?:\.\w{3,4})?$/);
+                        return match ? match[1] : null;
+                    }).filter(Boolean);
 
-                if (publicIds.length > 0) {
-                    await cloudinary.api.delete_resources(publicIds);
+                    if (publicIds.length > 0) {
+                        await cloudinary.api.delete_resources(publicIds);
+                    }
                 }
             }
 
@@ -263,7 +295,7 @@ exports.deleteProduct = [
 ];
 
 // =========================
-// 🛒 Collection Handlers (Tenant-Aware)
+// 🛒 Collection Handlers
 // =========================
 
 exports.addCollection = [
@@ -313,21 +345,61 @@ exports.getCollections = async (req, res) => {
 
 exports.updateCollection = [
     param('id').isMongoId(),
+    body('name').optional().trim().notEmpty(),
+    body('productIds').optional().isArray(),
     async (req, res) => {
-        res.status(501).json({ message: 'Update collection not implemented yet.' });
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+        try {
+            const tenantObjectId = await getTenantObjectId(req, res);
+            if (!tenantObjectId) return;
+
+            const { name, thumbnailUrl, productIds } = req.body;
+
+            const collection = await Collection.findOneAndUpdate(
+                { _id: req.params.id, tenantId: tenantObjectId },
+                { $set: { name, thumbnailUrl, productIds } },
+                { new: true, runValidators: true }
+            );
+
+            if (!collection) {
+                return res.status(404).json({ message: 'Collection not found.' });
+            }
+            
+            res.json({ message: 'Collection updated successfully', collection });
+        } catch (error) {
+            console.error('Error updating collection:', error);
+            res.status(500).json({ message: 'Server error updating collection.' });
+        }
     }
 ];
 
 exports.deleteCollection = [
     param('id').isMongoId(),
     async (req, res) => {
-        res.status(501).json({ message: 'Delete collection not implemented yet.' });
+        try {
+            const tenantObjectId = await getTenantObjectId(req, res);
+            if (!tenantObjectId) return;
+            
+            const collection = await Collection.findOneAndDelete({ _id: req.params.id, tenantId: tenantObjectId });
+
+            if (!collection) {
+                return res.status(404).json({ message: 'Collection not found.' });
+            }
+
+            res.json({ message: 'Collection deleted successfully.' });
+        } catch (error) {
+            console.error('Error deleting collection:', error);
+            res.status(500).json({ message: 'Server error deleting collection.' });
+        }
     }
 ];
 
 
 // =========================
-// ⭐ Product Review Handlers (Tenant-Aware & Secure)
+// ⭐ Product Review Handlers
 // =========================
 
 exports.createProductReview = [
@@ -341,6 +413,7 @@ exports.createProductReview = [
         }
 
         try {
+            // The protectCustomer middleware should have attached the customer object
             const customer = req.customer;
             if (!customer) {
                 return res.status(401).json({ message: 'Not authorized. Please log in as a customer.' });
