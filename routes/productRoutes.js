@@ -2,11 +2,8 @@
  * FILE: ./routes/productRoutes.js
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
- * FIX:
- * - Imported the `getProductByBarcode` controller function.
- * - Added a new route `GET /barcode/:barcode` to fetch a product by its barcode.
- * - ADDED: Included the `protect` middleware in the new barcode route to ensure
- * the controller has the necessary authenticated user context.
+ * UPDATE: Added the `identifyTenant` middleware to all public-facing and admin
+ * routes to ensure all database operations are scoped to the correct tenant.
  */
 const express = require('express');
 const router = express.Router();
@@ -35,6 +32,7 @@ const {
 
 // Import all necessary middleware from the centralized auth file.
 const {
+    identifyTenant, // <-- IMPORT THE NEW MIDDLEWARE
     protect,
     isAdmin,
     protectCustomer
@@ -45,33 +43,40 @@ const {
 // 🛒 COLLECTION ROUTES
 // ================================
 
-// NEW: Public route for storefronts to fetch collections
-router.get('/collections/public', getPublicCollections);
+// Public route for storefronts to fetch collections for a specific tenant
+router.get(
+    '/collections/public',
+    identifyTenant, // <-- ADD THIS
+    getPublicCollections
+);
 
-// Get all collections for a client (Admin Only)
-router.get('/collections', protect, isAdmin, getCollections);
+// Get all collections for a client's tenant (Admin Only)
+router.get('/collections', identifyTenant, protect, isAdmin, getCollections);
 
-// Create a new collection (Admin Only)
+// Create a new collection for a tenant (Admin Only)
 router.post(
     '/collections',
+    identifyTenant,
     protect,
     isAdmin,
     body('name').notEmpty().withMessage('Collection name is required.'),
     addCollection
 );
 
-// Update a collection (Admin Only)
+// Update a collection for a tenant (Admin Only)
 router.put(
     '/collections/:id',
+    identifyTenant,
     protect,
     isAdmin,
     param('id').isMongoId(),
     updateCollection
 );
 
-// Delete a collection (Admin Only)
+// Delete a collection for a tenant (Admin Only)
 router.delete(
     '/collections/:id',
+    identifyTenant,
     protect,
     isAdmin,
     param('id').isMongoId(),
@@ -81,14 +86,19 @@ router.delete(
 
 // ================================
 // 📸 PROMO IMAGES ROUTES
-// =========================
+// ================================
 
-// Get all promo images for a client (Publicly accessible for storefronts)
-router.get('/promo', getProductImagesOnly);
+// Get all promo images for a tenant (Publicly accessible for storefronts)
+router.get(
+    '/promo',
+    identifyTenant, // <-- ADD THIS
+    getProductImagesOnly
+);
 
-// Upload new promo images (Admin Only)
+// Upload new promo images for a tenant (Admin Only)
 router.post(
     '/promo',
+    identifyTenant,
     protect,
     isAdmin,
     uploadMiddleware,
@@ -100,39 +110,47 @@ router.post(
 // 📦 PRODUCT ROUTES
 // ================================
 
-// Get all products for the public storefront (Publicly Accessible)
-router.get('/public', getPublicProducts);
+// Get all products for the public storefront for a specific tenant
+router.get(
+    '/public',
+    identifyTenant, // <-- ADD THIS
+    getPublicProducts
+);
 
-// Get all products for a client (Authenticated Users - for an admin panel)
-router.get('/', protect, getProducts);
+// Get all products for a client's tenant (Authenticated Users - for an admin panel)
+router.get('/', identifyTenant, protect, getProducts);
 
-// Create a new product (Admin Only)
+// Create a new product for a tenant (Admin Only)
 router.post(
     '/',
+    identifyTenant,
     protect,
     isAdmin,
     uploadMiddleware,
     addProduct
 );
 
-// Get a single product by its barcode
+// Get a single product by its barcode for a tenant
 router.get(
     '/barcode/:barcode',
-    protect, // FIX: Added protect middleware
+    identifyTenant, // <-- ADD THIS
+    protect,
     param('barcode').notEmpty().withMessage('Barcode parameter cannot be empty.'),
     getProductByBarcode
 );
 
-// Get a single product by ID (Publicly accessible for storefronts)
+// Get a single product by ID for a tenant (Publicly accessible)
 router.get(
     '/:id',
+    identifyTenant, // <-- ADD THIS
     param('id').isMongoId(),
     getProductById
 );
 
-// Update a product (Admin Only)
+// Update a product for a tenant (Admin Only)
 router.put(
     '/:id',
+    identifyTenant,
     protect,
     isAdmin,
     param('id').isMongoId(),
@@ -140,9 +158,10 @@ router.put(
     updateProduct
 );
 
-// Delete a product (Admin Only)
+// Delete a product for a tenant (Admin Only)
 router.delete(
     '/:id',
+    identifyTenant,
     protect,
     isAdmin,
     param('id').isMongoId(),
@@ -153,9 +172,10 @@ router.delete(
 // ⭐ REVIEW ROUTES
 // ================================
 
-// Create a new review for a product (Logged-in Customers Only)
+// Create a new review for a product (which belongs to a tenant)
 router.post(
     '/:id/reviews',
+    identifyTenant, // <-- ADD THIS
     protectCustomer,
     param('id').isMongoId(),
     [
