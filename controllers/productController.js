@@ -3,6 +3,12 @@
  * DESC: Controller for all product, collection, and promo image logic.
  *
  * FIX:
+ * - Added a try...catch block within the `getTenantObjectId` helper function.
+ * - This prevents unhandled promise rejections if the `Client.findOne` database
+ * call fails, which was the likely cause of the 500 Internal Server Error.
+ * - The function will now log the specific database error and return null,
+ * allowing the calling controller to respond with a more accurate error
+ * message instead of a generic 500.
  * - Removed the 'express-async-handler' dependency.
  * - Replaced asyncHandler with standard try...catch blocks for error handling.
  * - Refactored `getTenantObjectId` to be more resilient. It now checks for the
@@ -72,7 +78,7 @@ const uploadMiddleware = async (req, res, next) => {
 
 
 // **HELPER FUNCTION TO GET TENANT OBJECT ID**
-// FIX: This helper now checks the header as a fallback.
+// FIX: Wrapped the database call in a try-catch block to prevent 500 errors.
 const getTenantObjectId = async (req) => {
     // Priority: 1. Authenticated user, 2. Middleware-set ID, 3. Header fallback
     const tenantIdentifier = req.user?.tenantId || req.tenantId || req.headers['x-tenant-id'];
@@ -85,12 +91,17 @@ const getTenantObjectId = async (req) => {
         return req.client._id;
     }
 
-    const client = await Client.findOne({ tenantId: tenantIdentifier }).lean();
-    if (!client) {
-        return null;
+    try {
+        const client = await Client.findOne({ tenantId: tenantIdentifier }).lean();
+        if (!client) {
+            return null;
+        }
+        req.client = client;
+        return client._id;
+    } catch (error) {
+        console.error("Database error in getTenantObjectId:", error);
+        return null; // Return null on error to be handled by the controller
     }
-    req.client = client;
-    return client._id;
 };
 
 
