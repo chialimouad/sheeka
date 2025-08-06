@@ -40,7 +40,12 @@ const uploadMiddleware = async (req, res, next) => {
         }
 
         // Find the client by their unique subdomain or numeric ID
-        const query = isNaN(tenantIdentifier) ? { subdomain: tenantIdentifier.toLowerCase() } : { tenantId: tenantIdentifier };
+        let query;
+        if (typeof tenantIdentifier === 'string' && isNaN(tenantIdentifier)) {
+            query = { subdomain: tenantIdentifier.toLowerCase() };
+        } else {
+            query = { tenantId: Number(tenantIdentifier) };
+        }
         const client = await Client.findOne(query).lean();
 
         if (!client || !client.config || !client.config.cloudinary || !client.config.cloudinary.cloud_name) {
@@ -92,18 +97,19 @@ const getTenantObjectId = async (req) => {
         let client = null;
         let query;
 
-        // If the identifier is numeric, query by tenantId. This is typical for authenticated users.
-        if (!isNaN(identifier)) {
-            query = { tenantId: identifier };
-            if (req.client && req.client.tenantId === identifier) {
+        // If the identifier is a non-numeric string, query by subdomain. This is for public requests.
+        if (typeof identifier === 'string' && isNaN(identifier)) {
+            const subdomain = identifier.toLowerCase();
+            query = { subdomain: subdomain };
+            if (req.client && req.client.subdomain === subdomain) {
                 return req.client._id;
             }
         } 
-        // Otherwise, treat it as a subdomain string. This is for public requests.
+        // Otherwise, treat it as a numeric tenantId. This is typical for authenticated users.
         else {
-            const subdomain = String(identifier).toLowerCase();
-            query = { subdomain: subdomain };
-            if (req.client && req.client.subdomain === subdomain) {
+            const numericTenantId = Number(identifier);
+            query = { tenantId: numericTenantId };
+            if (req.client && req.client.tenantId === numericTenantId) {
                 return req.client._id;
             }
         }
