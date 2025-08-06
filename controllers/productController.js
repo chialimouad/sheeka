@@ -17,6 +17,8 @@
  * - UPDATED: Integrated 'barcode' field into product creation and updates.
  * - UPDATED: Added specific error handling for duplicate barcode entries.
  * - NEW: Added `getProductByBarcode` to fetch a product using its barcode.
+ * - FIX: Corrected `getPublicProducts` and `getPublicCollections` to properly use the `getTenantObjectId` helper, resolving the 400 Bad Request error.
+ * - UPDATE: Changed tenant lookup logic to use the subdomain from the request header (`x-tenant-id`) instead of the internal numeric `tenantId`. This makes tenant identification more robust and intuitive.
  */
 
 const Product = require('../models/Product');
@@ -33,16 +35,18 @@ const { body, param, validationResult } = require('express-validator');
 // =========================
 const uploadMiddleware = async (req, res, next) => {
     try {
-        const tenantIdentifier = req.user ? req.user.tenantId : (req.headers['x-tenant-id'] || req.tenantId);
+        // The identifier is now the subdomain from the URL.
+        const tenantSubdomain = req.user ? req.user.tenantId : (req.headers['x-tenant-id'] || req.tenantId);
 
-        if (!tenantIdentifier) {
+        if (!tenantSubdomain) {
             return res.status(400).json({ message: 'Could not identify the tenant for the upload.' });
         }
 
-        const client = await Client.findOne({ tenantId: tenantIdentifier }).lean();
+        // Find the client by their unique subdomain.
+        const client = await Client.findOne({ subdomain: tenantSubdomain.toLowerCase() }).lean();
 
         if (!client || !client.config || !client.config.cloudinary || !client.config.cloudinary.cloud_name) {
-            console.error('Cloudinary configuration missing or incomplete for tenant:', tenantIdentifier);
+            console.error('Cloudinary configuration missing or incomplete for tenant:', tenantSubdomain);
             return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
         }
         
@@ -53,7 +57,7 @@ const uploadMiddleware = async (req, res, next) => {
         const storage = new CloudinaryStorage({
             cloudinary: cloudinary,
             params: {
-                folder: `tenant_${tenantIdentifier}/products`,
+                folder: `tenant_${tenantSubdomain}/products`,
                 allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
                 transformation: [{ width: 1024, crop: 'limit' }],
             },
@@ -63,11 +67,11 @@ const uploadMiddleware = async (req, res, next) => {
         
         upload(req, res, (err) => {
             if (err) {
-                console.error('Multer upload error for tenant ' + tenantIdentifier, err);
+                console.error('Multer upload error for tenant ' + tenantSubdomain, err);
                 return res.status(400).json({ message: 'Image upload failed.', error: err.message });
             }
             req.client = client; 
-            req.tenantId = tenantIdentifier;
+            req.tenantId = client.tenantId; // Keep internal tenantId for consistency if needed elsewhere
             next();
         });
     } catch (error) {
@@ -78,26 +82,29 @@ const uploadMiddleware = async (req, res, next) => {
 
 
 // **HELPER FUNCTION TO GET TENANT OBJECT ID**
-// FIX: Wrapped the database call in a try-catch block to prevent 500 errors.
+// UPDATE: This function now finds the tenant using the subdomain.
 const getTenantObjectId = async (req) => {
-    // Priority: 1. Authenticated user, 2. Middleware-set ID, 3. Header fallback
-    const tenantIdentifier = req.user?.tenantId || req.tenantId || req.headers['x-tenant-id'];
+    // The identifier from the header is expected to be the subdomain.
+    const tenantSubdomain = req.user?.tenantId || req.tenantId || req.headers['x-tenant-id'];
     
-    if (!tenantIdentifier) {
+    if (!tenantSubdomain) {
         return null;
     }
     
-    if (req.client && req.client.tenantId == tenantIdentifier) {
+    // If a client object is already attached to the request and its subdomain matches, use it.
+    if (req.client && req.client.subdomain === tenantSubdomain.toLowerCase()) {
         return req.client._id;
     }
 
     try {
-        const client = await Client.findOne({ tenantId: tenantIdentifier }).lean();
+        // Find the client by their unique subdomain.
+        const client = await Client.findOne({ subdomain: tenantSubdomain.toLowerCase() }).lean();
         if (!client) {
             return null;
         }
+        // Attach the full client object to the request for potential reuse in the same request lifecycle.
         req.client = client;
-        return client._id;
+        return client._id; // Return the MongoDB ObjectId for querying.
     } catch (error) {
         console.error("Database error in getTenantObjectId:", error);
         return null; // Return null on error to be handled by the controller
@@ -191,7 +198,7 @@ const addProduct = [
                 price,
                 olprice,
                 barcode,
-                images: req.files.map(file => file.path),
+                images: req.files.map(file => ({ url: file.path, public_id: file.filename })),
                 variants: parsedVariants,
             });
 
@@ -271,7 +278,6 @@ const getProductById = [
     }
 ];
 
-// NEW: Handler to get a product by its barcode.
 const getProductByBarcode = [
     param('barcode').notEmpty().withMessage('Barcode is required.'),
     async (req, res) => {
@@ -329,9 +335,9 @@ const updateProduct = [
                 }
             }
 
-            const newImageUrls = req.files ? req.files.map(file => file.path) : [];
-            if (newImageUrls.length > 0) {
-                product.images = [...product.images, ...newImageUrls];
+            if (req.files && req.files.length > 0) {
+                const newImages = req.files.map(file => ({ url: file.path, public_id: file.filename }));
+                product.images.push(...newImages);
             }
 
             const updatedProduct = await product.save();
@@ -368,10 +374,7 @@ const deleteProduct = [
                 
                 if (req.client && req.client.config && req.client.config.cloudinary) {
                     cloudinary.config(req.client.config.cloudinary);
-                    const publicIds = product.images.map(url => {
-                        const match = url.match(/(?:v\d+\/)?(tenant_\w+\/.+?)(?:\.\w{3,4})?$/);
-                        return match ? match[1] : null;
-                    }).filter(Boolean);
+                    const publicIds = product.images.map(image => image.public_id).filter(Boolean);
 
                     if (publicIds.length > 0) {
                         await cloudinary.api.delete_resources(publicIds);
@@ -595,7 +598,6 @@ module.exports = {
     getProducts,
     getPublicProducts,
     getProductById,
-    // NEW: Export the new handler.
     getProductByBarcode,
     updateProduct,
     deleteProduct,
