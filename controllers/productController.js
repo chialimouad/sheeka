@@ -17,6 +17,7 @@
  * - FIX: Corrected `getPublicProducts` and `getPublicCollections` to properly use the `getTenantObjectId` helper, resolving the 400 Bad Request error.
  * - UPDATE: Changed tenant lookup logic to use the subdomain from the request header (`x-tenant-id`) instead of the internal numeric `tenantId`. This makes tenant identification more robust and intuitive.
  * - FIX: Resolved `TypeError` by making the `getTenantObjectId` helper handle both numeric `tenantId` (from authenticated users) and string `subdomain` (from public headers).
+ * - FIX: Added data transformation in `addProduct` to handle the mismatch between the frontend form's variant structure and the updated backend model, resolving the 'Product validation failed' error.
  */
 
 const Product = require('../models/Product');
@@ -207,6 +208,19 @@ const addProduct = [
                 }
             }
 
+            // ** FIX **: Transform the frontend variant structure to match the backend schema.
+            const formattedVariants = [];
+            if (Array.isArray(parsedVariants)) {
+                parsedVariants.forEach(variant => {
+                    if (variant.colors && variant.colors.length > 0) {
+                        formattedVariants.push({ name: 'Color', options: variant.colors });
+                    }
+                    if (variant.sizes && variant.sizes.length > 0) {
+                        formattedVariants.push({ name: 'Size', options: variant.sizes });
+                    }
+                });
+            }
+
             const newProduct = new Product({
                 tenantId: tenantObjectId,
                 name,
@@ -216,7 +230,7 @@ const addProduct = [
                 olprice,
                 barcode,
                 images: req.files.map(file => ({ url: file.path, public_id: file.filename })),
-                variants: parsedVariants,
+                variants: formattedVariants, // Use the transformed variants
             });
 
             await newProduct.save();
@@ -225,7 +239,7 @@ const addProduct = [
             if (error.code === 11000 && error.keyPattern && error.keyPattern.barcode) {
                 return res.status(409).json({ message: 'A product with this barcode already exists for this tenant.' });
             }
-            console.error('Error adding product:', error);
+            console.warn('Error adding product:', error); // Use warn to see the validation error object
             res.status(500).json({ message: 'Server error while adding product.' });
         }
     }
