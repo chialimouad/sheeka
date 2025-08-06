@@ -70,19 +70,15 @@ const productSchema = new mongoose.Schema({
         type: String,
         required: false
     },
-    images: {
-        type: [String],
-        required: true
-    },
+    // UPDATE: Storing image URL and public_id for robust deletion.
+    images: [{
+        url: { type: String, required: true },
+        public_id: { type: String, required: true }
+    }],
+    // UPDATE: Switched to a more flexible, generalized variants schema.
     variants: [{
-        colors: {
-            type: [String],
-            required: true
-        },
-        sizes: {
-            type: [String],
-            required: true
-        }
+        name: { type: String, required: true }, // e.g., "Color", "Size", "Material"
+        options: { type: [String], required: true } // e.g., ["Red", "Blue"], ["S", "M"], ["Cotton", "Polyester"]
     }],
     reviews: [reviewSchema],
     rating: {
@@ -99,7 +95,7 @@ const productSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// NEW: This compound index ensures that the 'barcode' is unique per 'tenantId'.
+// This compound index ensures that the 'barcode' is unique per 'tenantId'.
 // The 'sparse' option means it will only enforce uniqueness for documents that have a barcode value.
 // This allows you to have multiple products without a barcode.
 productSchema.index({ tenantId: 1, barcode: 1 }, { unique: true, sparse: true });
