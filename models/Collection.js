@@ -2,32 +2,38 @@ const mongoose = require('mongoose');
 
 // Define the schema for a Collection
 const collectionSchema = new mongoose.Schema({
+    // FIX: Added tenantId to associate collections with a specific store.
+    // This is a critical part of the multi-tenant architecture.
+    tenantId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: [true, 'A tenant ID is required for every collection.'],
+        ref: 'Client', // Or 'Tenant', depending on your tenant model's name
+        index: true, // Index this field for faster queries
+    },
     // Name of the collection (e.g., "Summer Sale", "New Arrivals")
-    // It's required and must be unique to prevent duplicate collection names.
     name: { 
         type: String, 
         required: true, 
-        unique: true 
+        // The 'unique' constraint is now handled by the compound index below
     },
     // Optional URL for a thumbnail image representing the collection.
-    // This can be used to display a preview of the collection in the app.
     thumbnailUrl: { 
         type: String 
     },
-    // An array of MongoDB ObjectId references to products included in this collection.
-    // The 'ref: 'Product'' tells Mongoose that these ObjectIds refer to documents
-    // in the 'Product' collection.
+    // An array of MongoDB ObjectId references to products in this collection.
     productIds: [{ 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'Product' 
     }]
 }, { 
-    // timestamps: true automatically adds createdAt and updatedAt fields to documents.
-    // createdAt: Records the time the document was first created.
-    // updatedAt: Records the time the document was last modified.
+    // Automatically adds createdAt and updatedAt fields
     timestamps: true 
 });
 
-// Export the Mongoose model based on the collectionSchema.
-// The model name 'Collection' will correspond to a 'collections' collection in MongoDB.
+// FIX: Added a compound index.
+// This ensures that the 'name' of a collection is unique PER tenant,
+// allowing different stores to have a collection named "Summer Sale".
+collectionSchema.index({ tenantId: 1, name: 1 }, { unique: true });
+
+// Export the Mongoose model.
 module.exports = mongoose.model('Collection', collectionSchema);
