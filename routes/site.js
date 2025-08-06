@@ -2,39 +2,32 @@
  * FILE: ./routes/siteConfigRoutes.js
  * DESC: Defines API endpoints for site and pixel configuration.
  *
- * FIX:
- * - Corrected the controller import path. All auth middleware (`identifyTenant`,
- * `protect`, `isAdmin`) is now imported from the single, correct
- * `../middleware/authMiddleware.js` file.
- * - Corrected the controller import path to point to the
- * `siteConfigController.js` file.
+ * UPDATE: Ensured the `identifyTenant` middleware is the first to be
+ * called on all routes to correctly scope the request to a tenant.
  */
 const express = require('express');
 const router = express.Router();
 const { param } = require('express-validator');
 
-// FIX: Corrected the import path for the controller.
-const {
-    SiteConfigController,
-    PixelController
-} = require('../controllers/site');
+// Import the controller
+const { SiteConfigController, PixelController } = require('../controllers/siteController');
 
-// Import the necessary middleware from the single source of truth
+// Import all necessary middleware from the single source of truth
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
 
 // --- Main Site Config Routes ---
 
-// GET the public site configuration for the current client
+// GET the public site configuration for the current tenant
 router.get(
     '/',
-    identifyTenant,
+    identifyTenant, // Identify the tenant first
     SiteConfigController.getSiteConfig
 );
 
-// PUT to update the site configuration (Admin only)
+// PUT to update the site configuration for the current tenant (Admin only)
 router.put(
     '/',
-    identifyTenant,
+    identifyTenant, // Identify the tenant first
     protect,
     isAdmin,
     SiteConfigController.updateSiteConfig
@@ -42,28 +35,28 @@ router.put(
 
 // --- Pixel Tracking Routes ---
 
-// GET all pixel configurations for the current client (Admin only)
+// GET all pixel configurations for the current tenant (Admin only)
 router.get(
     '/pixels',
-    identifyTenant,
+    identifyTenant, // Identify the tenant first
     protect,
     isAdmin,
     PixelController.getPixels
 );
 
-// POST a new pixel configuration for the current client (Admin only)
+// POST a new pixel configuration for the current tenant (Admin only)
 router.post(
     '/pixels',
-    identifyTenant,
+    identifyTenant, // Identify the tenant first
     protect,
     isAdmin,
     PixelController.postPixel
 );
 
-// DELETE a pixel configuration by its ID (Admin only)
+// DELETE a pixel configuration by its ID for the current tenant (Admin only)
 router.delete(
     '/pixels/:id',
-    identifyTenant,
+    identifyTenant, // Identify the tenant first
     protect,
     isAdmin,
     [param('id').isMongoId().withMessage('Invalid Pixel ID format.')],
