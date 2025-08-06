@@ -6,17 +6,19 @@
  * - Added comprehensive validation to check for existing clients by name, email, phone, or subdomain.
  * - Ensured the rollback mechanism properly deletes a created client if the subsequent admin user creation fails.
  * - Standardized error responses for better client-side handling.
+ * - UPDATE: Implemented MongoDB sessions for atomic transactions to ensure that a client and their admin user are either both created or neither is, preventing orphaned data.
  */
 const crypto = require('crypto');
+const mongoose = require('mongoose'); // Required for sessions
 const { validationResult } = require('express-validator');
 const Client = require('../models/Client');
 const User = require('../models/User');
 const Counter = require('../models/Counter'); // This model is required for atomic ID generation.
 
 /**
- * @desc     Atomically finds and updates a counter sequence to get the next ID.
- * @param    {string} sequenceName The name of the sequence (e.g., 'tenantId').
- * @returns  {Promise<number>} The next unique ID in the sequence.
+ * @desc      Atomically finds and updates a counter sequence to get the next ID.
+ * @param     {string} sequenceName The name of the sequence (e.g., 'tenantId').
+ * @returns   {Promise<number>} The next unique ID in the sequence.
  */
 async function getNextSequenceValue(sequenceName) {
     const sequenceDocument = await Counter.findByIdAndUpdate(
@@ -29,9 +31,9 @@ async function getNextSequenceValue(sequenceName) {
 
 const ProvisioningController = {
     /**
-     * @desc     Creates a new Client (Tenant) and their initial admin user.
-     * @route    POST /api/provision/client
-     * @access   Private (Super Admin Only)
+     * @desc      Creates a new Client (Tenant) and their initial admin user.
+     * @route     POST /api/provision/client
+     * @access    Private (Super Admin Only)
      */
     createClient: async (req, res) => {
         const errors = validationResult(req);
@@ -57,7 +59,9 @@ const ProvisioningController = {
             return res.status(400).json({ message: 'Client name, subdomain, admin email, password, and phone number are required.' });
         }
         
-        let savedClient = null;
+        // Start a session for an atomic transaction.
+        const session = await mongoose.startSession();
+        session.startTransaction();
 
         try {
             // 1. Check for uniqueness of all critical fields to provide clear error messages.
@@ -71,7 +75,7 @@ const ProvisioningController = {
                     { email: lowerAdminEmail },
                     { phoneNumber: adminPhoneNumber }
                 ]
-            }).lean();
+            }).session(session).lean();
 
             if (existingClient) {
                 let field = 'details';
@@ -79,6 +83,9 @@ const ProvisioningController = {
                 if (existingClient.subdomain === lowerSubdomain) field = 'subdomain';
                 if (existingClient.email === lowerAdminEmail) field = 'email';
                 if (existingClient.phoneNumber === adminPhoneNumber) field = 'phone number';
+                // Abort transaction before sending response
+                await session.abortTransaction();
+                session.endSession();
                 return res.status(409).json({ message: `A client with this ${field} already exists.` });
             }
 
@@ -88,7 +95,7 @@ const ProvisioningController = {
             // 3. Generate a unique JWT secret for the tenant.
             const jwtSecret = crypto.randomBytes(32).toString('hex');
 
-            // 4. Create the new Client document.
+            // 4. Create the new Client document within the transaction.
             const newClient = new Client({
                 tenantId: nextTenantId,
                 name: clientName,
@@ -109,9 +116,11 @@ const ProvisioningController = {
                 },
             });
             
-            savedClient = await newClient.save();
+            const savedClientArray = await newClient.save({ session });
+            const savedClient = savedClientArray[0] || savedClientArray;
+
             
-            // 5. Create the initial administrator user for the new client.
+            // 5. Create the initial administrator user for the new client within the transaction.
             const adminUser = new User({
                 tenantId: savedClient.tenantId,
                 name: 'Administrator', // Default name for the first admin
@@ -120,7 +129,10 @@ const ProvisioningController = {
                 role: 'admin',
             });
 
-            await adminUser.save();
+            await adminUser.save({ session });
+
+            // If all operations succeed, commit the transaction.
+            await session.commitTransaction();
 
             res.status(201).json({
                 message: 'Client provisioned successfully!',
@@ -134,18 +146,19 @@ const ProvisioningController = {
 
         } catch (error) {
             console.error('Failed to provision new client:', error);
-
-            // If the client was saved but user creation failed, roll back by deleting the client.
-            if (savedClient) {
-                await Client.findByIdAndDelete(savedClient._id);
-            }
+            
+            // If any error occurs, abort the transaction to roll back all changes.
+            await session.abortTransaction();
             
             if (error.code === 11000) { 
                 const field = Object.keys(error.keyValue)[0];
-                return res.status(409).json({ message: `A client with this ${field} already exists.` });
+                return res.status(409).json({ message: `A user or client with this ${field} already exists.` });
             }
 
             res.status(500).json({ message: 'Server error during client provisioning.' });
+        } finally {
+            // Always end the session.
+            session.endSession();
         }
     }
 };
