@@ -6,9 +6,6 @@
  * - Added a try...catch block within the `getTenantObjectId` helper function.
  * - This prevents unhandled promise rejections if the `Client.findOne` database
  * call fails, which was the likely cause of the 500 Internal Server Error.
- * - The function will now log the specific database error and return null,
- * allowing the calling controller to respond with a more accurate error
- * message instead of a generic 500.
  * - Removed the 'express-async-handler' dependency.
  * - Replaced asyncHandler with standard try...catch blocks for error handling.
  * - Refactored `getTenantObjectId` to be more resilient. It now checks for the
@@ -19,6 +16,7 @@
  * - NEW: Added `getProductByBarcode` to fetch a product using its barcode.
  * - FIX: Corrected `getPublicProducts` and `getPublicCollections` to properly use the `getTenantObjectId` helper, resolving the 400 Bad Request error.
  * - UPDATE: Changed tenant lookup logic to use the subdomain from the request header (`x-tenant-id`) instead of the internal numeric `tenantId`. This makes tenant identification more robust and intuitive.
+ * - FIX: Resolved `TypeError` by making the `getTenantObjectId` helper handle both numeric `tenantId` (from authenticated users) and string `subdomain` (from public headers).
  */
 
 const Product = require('../models/Product');
@@ -35,18 +33,18 @@ const { body, param, validationResult } = require('express-validator');
 // =========================
 const uploadMiddleware = async (req, res, next) => {
     try {
-        // The identifier is now the subdomain from the URL.
-        const tenantSubdomain = req.user ? req.user.tenantId : (req.headers['x-tenant-id'] || req.tenantId);
+        const tenantIdentifier = req.user ? req.user.tenantId : (req.headers['x-tenant-id'] || req.tenantId);
 
-        if (!tenantSubdomain) {
+        if (!tenantIdentifier) {
             return res.status(400).json({ message: 'Could not identify the tenant for the upload.' });
         }
 
-        // Find the client by their unique subdomain.
-        const client = await Client.findOne({ subdomain: tenantSubdomain.toLowerCase() }).lean();
+        // Find the client by their unique subdomain or numeric ID
+        const query = isNaN(tenantIdentifier) ? { subdomain: tenantIdentifier.toLowerCase() } : { tenantId: tenantIdentifier };
+        const client = await Client.findOne(query).lean();
 
         if (!client || !client.config || !client.config.cloudinary || !client.config.cloudinary.cloud_name) {
-            console.error('Cloudinary configuration missing or incomplete for tenant:', tenantSubdomain);
+            console.error('Cloudinary configuration missing or incomplete for tenant:', tenantIdentifier);
             return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
         }
         
@@ -57,7 +55,7 @@ const uploadMiddleware = async (req, res, next) => {
         const storage = new CloudinaryStorage({
             cloudinary: cloudinary,
             params: {
-                folder: `tenant_${tenantSubdomain}/products`,
+                folder: `tenant_${client.subdomain}/products`, // Use subdomain for folder consistency
                 allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
                 transformation: [{ width: 1024, crop: 'limit' }],
             },
@@ -67,11 +65,11 @@ const uploadMiddleware = async (req, res, next) => {
         
         upload(req, res, (err) => {
             if (err) {
-                console.error('Multer upload error for tenant ' + tenantSubdomain, err);
+                console.error('Multer upload error for tenant ' + client.subdomain, err);
                 return res.status(400).json({ message: 'Image upload failed.', error: err.message });
             }
             req.client = client; 
-            req.tenantId = client.tenantId; // Keep internal tenantId for consistency if needed elsewhere
+            req.tenantId = client.tenantId;
             next();
         });
     } catch (error) {
@@ -82,32 +80,45 @@ const uploadMiddleware = async (req, res, next) => {
 
 
 // **HELPER FUNCTION TO GET TENANT OBJECT ID**
-// UPDATE: This function now finds the tenant using the subdomain.
+// FIX: This function now robustly handles both numeric tenantId and string subdomain.
 const getTenantObjectId = async (req) => {
-    // The identifier from the header is expected to be the subdomain.
-    const tenantSubdomain = req.user?.tenantId || req.tenantId || req.headers['x-tenant-id'];
+    const identifier = req.user?.tenantId || req.tenantId || req.headers['x-tenant-id'];
     
-    if (!tenantSubdomain) {
+    if (!identifier) {
         return null;
-    }
-    
-    // If a client object is already attached to the request and its subdomain matches, use it.
-    if (req.client && req.client.subdomain === tenantSubdomain.toLowerCase()) {
-        return req.client._id;
     }
 
     try {
-        // Find the client by their unique subdomain.
-        const client = await Client.findOne({ subdomain: tenantSubdomain.toLowerCase() }).lean();
+        let client = null;
+        let query;
+
+        // If the identifier is numeric, query by tenantId. This is typical for authenticated users.
+        if (!isNaN(identifier)) {
+            query = { tenantId: identifier };
+            if (req.client && req.client.tenantId === identifier) {
+                return req.client._id;
+            }
+        } 
+        // Otherwise, treat it as a subdomain string. This is for public requests.
+        else {
+            const subdomain = String(identifier).toLowerCase();
+            query = { subdomain: subdomain };
+            if (req.client && req.client.subdomain === subdomain) {
+                return req.client._id;
+            }
+        }
+
+        client = await Client.findOne(query).lean();
+
         if (!client) {
             return null;
         }
-        // Attach the full client object to the request for potential reuse in the same request lifecycle.
+        
         req.client = client;
-        return client._id; // Return the MongoDB ObjectId for querying.
+        return client._id;
     } catch (error) {
         console.error("Database error in getTenantObjectId:", error);
-        return null; // Return null on error to be handled by the controller
+        return null;
     }
 };
 
