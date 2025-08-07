@@ -11,6 +11,16 @@
  * - Updated `deleteProduct` to remove image files from the local filesystem
  * using `fs.unlink`.
  * - Image URLs are now relative paths to be served statically by Express.
+ *
+ * FIX (based on logs):
+ * - Introduced a new `identifyTenant` middleware to ensure tenant identification
+ * runs on ALL product-related routes, not just file uploads. This resolves
+ * the 400 "Tenant could not be identified" error on GET requests.
+ * - Simplified the `uploadMiddleware` to rely on the `identifyTenant` middleware
+ * running first.
+ * - Removed the redundant `getTenantObjectId` helper function.
+ * - Refactored all handlers to use `req.client._id` directly, which is now
+ * reliably populated by the `identifyTenant` middleware.
  */
 
 const Product = require('../models/Product');
@@ -23,45 +33,58 @@ const fs = require('fs');
 const path = require('path');
 
 // =========================
+// 🏢 Tenant Identification Middleware
+// =========================
+// This middleware should be applied to all product/collection routes
+// to ensure the tenant is identified before any other logic runs.
+const identifyTenant = async (req, res, next) => {
+    try {
+        const identifier = req.user?.tenantId || req.headers['x-tenant-id'];
+        
+        if (!identifier && identifier !== 0) {
+            // Correctly send a 400 error if the header is missing.
+            return res.status(400).json({ message: 'Tenant could not be identified. The "x-tenant-id" header is missing.' });
+        }
+
+        let query;
+        const isNumeric = !isNaN(parseFloat(identifier)) && isFinite(identifier);
+
+        if (isNumeric) {
+            query = { tenantId: Number(identifier) };
+        } else {
+            query = { subdomain: String(identifier).toLowerCase() };
+        }
+
+        const client = await Client.findOne(query).lean();
+        
+        if (!client) {
+            return res.status(404).json({ message: 'Tenant not found.' });
+        }
+
+        // Attach tenant info to the request for use in subsequent handlers
+        req.client = client;
+        req.tenantId = client.tenantId; // For backward compatibility if needed
+        next();
+    } catch (error) {
+        console.error("Error during tenant identification:", error);
+        res.status(500).json({ message: 'Server error during tenant identification.' });
+    }
+};
+
+
+// =========================
 // 📦 Local File Storage Setup with Multer
 // =========================
 
 const storage = multer.diskStorage({
-    destination: async (req, file, cb) => {
-        try {
-            // Identify tenant to create a specific folder for their uploads
-            const tenantIdentifier = req.user ? req.user.tenantId : (req.headers['x-tenant-id'] || req.tenantId);
-            if (!tenantIdentifier) {
-                return cb(new Error('Could not identify the tenant for the upload.'), null);
-            }
-
-            // Find the client to get their subdomain for the folder name
-            let client;
-            if (typeof tenantIdentifier === 'string' && isNaN(tenantIdentifier)) {
-                client = await Client.findOne({ subdomain: tenantIdentifier.toLowerCase() }).lean();
-            } else {
-                client = await Client.findOne({ tenantId: Number(tenantIdentifier) }).lean();
-            }
-
-            if (!client) {
-                return cb(new Error('Tenant not found.'), null);
-            }
-            
-            // Set tenant info on the request object for later use
-            req.client = client;
-            req.tenantId = client.tenantId;
-
-            // Create a tenant-specific directory for uploads
-            // IMPORTANT: This path is relative to your project's root directory
-            const uploadDir = path.join('public', 'uploads', client.subdomain);
-            fs.mkdirSync(uploadDir, { recursive: true }); // Create directory if it doesn't exist
-            
-            cb(null, uploadDir);
-
-        } catch (error) {
-            console.error('Error in multer destination function:', error);
-            cb(error, null);
+    destination: (req, file, cb) => {
+        // The `identifyTenant` middleware has already run, so `req.client` is available.
+        if (!req.client || !req.client.subdomain) {
+            return cb(new Error('Tenant has not been identified prior to upload.'), null);
         }
+        const uploadDir = path.join('public', 'uploads', req.client.subdomain);
+        fs.mkdirSync(uploadDir, { recursive: true }); // Create directory if it doesn't exist
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         // Create a unique filename to prevent overwriting
@@ -88,57 +111,14 @@ const uploadMiddleware = multer({
 }).array('images', 10);
 
 
-// **HELPER FUNCTION TO GET TENANT OBJECT ID**
-// This function remains largely the same but is simplified as the client
-// is now attached to `req` in the upload middleware.
-const getTenantObjectId = async (req) => {
-    const identifier = req.user?.tenantId || req.tenantId || req.headers['x-tenant-id'];
-    
-    if (!identifier && identifier !== 0) {
-        return null;
-    }
-
-    try {
-        // If the middleware already attached the client, use it.
-        if (req.client) {
-            return req.client._id;
-        }
-
-        let query;
-        const isNumeric = !isNaN(parseFloat(identifier)) && isFinite(identifier);
-
-        if (isNumeric) {
-            query = { tenantId: Number(identifier) };
-        } else {
-            query = { subdomain: String(identifier).toLowerCase() };
-        }
-
-        const client = await Client.findOne(query).lean();
-        if (client) {
-            req.client = client; // Cache for subsequent operations
-            return client._id;
-        }
-        return null;
-    } catch (error) {
-        console.error("Database error in getTenantObjectId:", error);
-        return null;
-    }
-};
-
-
 // =========================
 // 📸 Promo Image Handlers
 // =========================
 
 const getProductImagesOnly = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req);
-        if (!tenantObjectId) {
-            return res.status(400).json({ message: 'Tenant could not be identified.' });
-        }
-
+        const tenantObjectId = req.client._id;
         const promos = await PromoImage.find({ tenantId: tenantObjectId }, 'images').lean();
-        // The image URLs are already stored as relative paths, so this works as is.
         const allImages = promos.flatMap(p => p.images || []);
         res.json(allImages);
     } catch (error) {
@@ -152,16 +132,11 @@ const uploadPromoImages = async (req, res) => {
         if (!req.files || req.files.length === 0) {
             return res.status(400).json({ error: 'No images uploaded' });
         }
-        const tenantObjectId = await getTenantObjectId(req);
-        if (!tenantObjectId) {
-            return res.status(400).json({ message: 'Tenant could not be identified.' });
-        }
+        const tenantObjectId = req.client._id;
         
-        // Map uploaded files to relative URL paths for storage in the database.
-        // e.g., 'public/uploads/tenant1/image-123.jpg' becomes '/uploads/tenant1/image-123.jpg'
         const images = req.files.map(file => {
             const relativePath = path.join('/uploads', req.client.subdomain, file.filename);
-            return relativePath.replace(/\\/g, '/'); // Ensure forward slashes for URLs
+            return relativePath.replace(/\\/g, '/');
         });
 
         const newPromo = new PromoImage({ images, tenantId: tenantObjectId });
@@ -179,7 +154,6 @@ const uploadPromoImages = async (req, res) => {
 // =========================
 
 const addProduct = [
-    // Validation middleware remains the same
     body('name').trim().notEmpty().withMessage('Product name is required.'),
     body('description').trim().notEmpty().withMessage('Description is required.'),
     body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
@@ -192,11 +166,7 @@ const addProduct = [
                 return res.status(400).json({ errors: errors.array() });
             }
             
-            const tenantObjectId = await getTenantObjectId(req);
-            if (!tenantObjectId) {
-                return res.status(400).json({ message: 'Tenant could not be identified.' });
-            }
-
+            const tenantObjectId = req.client._id;
             const { name, description, quantity, price, olprice, variants, barcode } = req.body;
 
             if (!req.files || req.files.length === 0) {
@@ -212,7 +182,6 @@ const addProduct = [
                 }
             }
             
-            // This transformation logic is still relevant and correct
             const formattedVariants = [];
             if (Array.isArray(parsedVariants)) {
                 parsedVariants.forEach(variant => {
@@ -225,12 +194,10 @@ const addProduct = [
                 });
             }
 
-            // Create relative URLs for the images to store in the database
             const imagesForDb = req.files.map(file => {
                 const relativePath = path.join('/uploads', req.client.subdomain, file.filename);
                 return {
-                    url: relativePath.replace(/\\/g, '/'), // Use URL-friendly forward slashes
-                    // We store the filename to make it easy to delete from the filesystem later
+                    url: relativePath.replace(/\\/g, '/'),
                     public_id: file.filename 
                 };
             });
@@ -259,14 +226,9 @@ const addProduct = [
     }
 ];
 
-// ... (getProducts, getPublicProducts, getProductById, getProductByBarcode handlers are unchanged)
 const getProducts = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req);
-        if (!tenantObjectId) {
-            return res.status(400).json({ message: 'Tenant could not be identified.' });
-        }
-
+        const tenantObjectId = req.client._id;
         const products = await Product.find({ tenantId: tenantObjectId }).sort({ createdAt: -1 }).lean();
         res.json(products);
     } catch (error) {
@@ -277,11 +239,7 @@ const getProducts = async (req, res) => {
 
 const getPublicProducts = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req);
-        if (!tenantObjectId) {
-            return res.status(400).json({ message: 'Tenant could not be identified from request.' });
-        }
-
+        const tenantObjectId = req.client._id;
         const lang = req.query.lang || 'en';
         const products = await Product.find({ tenantId: tenantObjectId }).sort({ createdAt: -1 }).lean();
 
@@ -307,11 +265,7 @@ const getProductById = [
     param('id').isMongoId(),
     async (req, res) => {
         try {
-            const tenantObjectId = await getTenantObjectId(req);
-            if (!tenantObjectId) {
-                return res.status(400).json({ message: 'Tenant could not be identified.' });
-            }
-
+            const tenantObjectId = req.client._id;
             const product = await Product.findOne({ _id: req.params.id, tenantId: tenantObjectId }).lean();
             if (!product) {
                 return res.status(404).json({ error: 'Product not found.' });
@@ -328,11 +282,7 @@ const getProductByBarcode = [
     param('barcode').notEmpty().withMessage('Barcode is required.'),
     async (req, res) => {
         try {
-            const tenantObjectId = await getTenantObjectId(req);
-            if (!tenantObjectId) {
-                return res.status(400).json({ message: 'Tenant could not be identified.' });
-            }
-
+            const tenantObjectId = req.client._id;
             const product = await Product.findOne({
                 barcode: req.params.barcode,
                 tenantId: tenantObjectId
@@ -355,11 +305,7 @@ const updateProduct = [
     body('barcode').optional().trim().notEmpty().withMessage('Barcode cannot be an empty string.'),
     async (req, res) => {
         try {
-            const tenantObjectId = await getTenantObjectId(req);
-            if (!tenantObjectId) {
-                return res.status(400).json({ message: 'Tenant could not be identified.' });
-            }
-
+            const tenantObjectId = req.client._id;
             const product = await Product.findOne({ _id: req.params.id, tenantId: tenantObjectId });
 
             if (!product) {
@@ -410,26 +356,20 @@ const deleteProduct = [
     param('id').isMongoId(),
     async (req, res) => {
         try {
-            const tenantObjectId = await getTenantObjectId(req);
-            if (!tenantObjectId) {
-                return res.status(400).json({ message: 'Tenant could not be identified.' });
-            }
-
+            const tenantObjectId = req.client._id;
             const product = await Product.findOneAndDelete({ _id: req.params.id, tenantId: tenantObjectId });
 
             if (!product) {
                 return res.status(404).json({ error: 'Product not found for this client.' });
             }
 
-            // **NEW**: Delete images from the local filesystem
             if (product.images && product.images.length > 0) {
                 const tenantSubdomain = req.client.subdomain;
                 product.images.forEach(image => {
-                    if (image.public_id) { // public_id now stores the filename
+                    if (image.public_id) {
                         const imagePath = path.join('public', 'uploads', tenantSubdomain, image.public_id);
                         fs.unlink(imagePath, (err) => {
                             if (err) {
-                                // Log error but don't block response, as product is already deleted
                                 console.error(`Failed to delete image file: ${imagePath}`, err);
                             }
                         });
@@ -445,7 +385,10 @@ const deleteProduct = [
     }
 ];
 
-// ... (All collection and review handlers remain unchanged)
+// =========================
+// 🛒 Collection Handlers
+// =========================
+
 const addCollection = [
     body('name').trim().notEmpty(),
     async (req, res) => {
@@ -455,11 +398,7 @@ const addCollection = [
                 return res.status(400).json({ errors: errors.array() });
             }
             
-            const tenantObjectId = await getTenantObjectId(req);
-            if (!tenantObjectId) {
-                return res.status(400).json({ message: 'Tenant could not be identified.' });
-            }
-
+            const tenantObjectId = req.client._id;
             const { name, thumbnailUrl, productIds } = req.body;
             const newCollection = new Collection({
                 name,
@@ -478,11 +417,7 @@ const addCollection = [
 
 const getCollections = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req);
-        if (!tenantObjectId) {
-            return res.status(400).json({ message: 'Tenant could not be identified.' });
-        }
-
+        const tenantObjectId = req.client._id;
         const collections = await Collection.find({ tenantId: tenantObjectId })
             .populate({ path: 'productIds', select: 'name images price' })
             .lean();
@@ -495,11 +430,7 @@ const getCollections = async (req, res) => {
 
 const getPublicCollections = async (req, res) => {
     try {
-        const tenantObjectId = await getTenantObjectId(req);
-        if (!tenantObjectId) {
-            return res.status(400).json({ message: 'Tenant could not be identified from request.' });
-        }
-
+        const tenantObjectId = req.client._id;
         const lang = req.query.lang || 'en';
         const collections = await Collection.find({ tenantId: tenantObjectId }).lean();
 
@@ -535,11 +466,7 @@ const updateCollection = [
                 return res.status(400).json({ errors: errors.array() });
             }
             
-            const tenantObjectId = await getTenantObjectId(req);
-            if (!tenantObjectId) {
-                return res.status(400).json({ message: 'Tenant could not be identified.' });
-            }
-
+            const tenantObjectId = req.client._id;
             const { name, thumbnailUrl, productIds } = req.body;
 
             const collection = await Collection.findOneAndUpdate(
@@ -564,11 +491,7 @@ const deleteCollection = [
     param('id').isMongoId(),
     async (req, res) => {
         try {
-            const tenantObjectId = await getTenantObjectId(req);
-            if (!tenantObjectId) {
-                return res.status(400).json({ message: 'Tenant could not be identified.' });
-            }
-            
+            const tenantObjectId = req.client._id;
             const collection = await Collection.findOneAndDelete({ _id: req.params.id, tenantId: tenantObjectId });
 
             if (!collection) {
@@ -582,6 +505,10 @@ const deleteCollection = [
         }
     }
 ];
+
+// =========================
+// ⭐ Product Review Handlers
+// =========================
 
 const createProductReview = [
     param('id').isMongoId(),
@@ -599,6 +526,7 @@ const createProductReview = [
                 return res.status(401).json({ message: 'Not authorized. Please log in as a customer.' });
             }
             
+            // Assuming customer object has tenantId attached during login
             const tenantObjectId = customer.tenantId;
             if (!tenantObjectId) {
                  return res.status(400).json({ message: 'Customer is not associated with a tenant.' });
@@ -638,6 +566,7 @@ const createProductReview = [
 
 // Centralized exports
 module.exports = {
+    identifyTenant, // Export the new middleware
     uploadMiddleware,
     getProductImagesOnly,
     uploadPromoImages,
