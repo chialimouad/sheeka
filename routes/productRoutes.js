@@ -2,8 +2,13 @@
  * FILE: ./routes/productRoutes.js
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
- * UPDATE: Added the `identifyTenant` middleware to all public-facing and admin
- * routes to ensure all database operations are scoped to the correct tenant.
+ * FIX:
+ * - Corrected the import for `identifyTenant` to pull from the product controller
+ * where it is defined.
+ * - Reordered middleware for all file upload routes (`/promo`, `/`, `/:id`)
+ * to ensure `identifyTenant` runs BEFORE `uploadMiddleware`. This resolves the
+ * "Tenant has not been identified" error by making sure the tenant's
+ * information is available when Multer determines the file destination.
  */
 const express = require('express');
 const router = express.Router();
@@ -26,13 +31,13 @@ const {
     uploadPromoImages,
     uploadMiddleware,
     getPublicProducts,
-    getPublicCollections
+    getPublicCollections,
+    identifyTenant // <-- CORRECT: Import from the controller where it's defined
 } = require('../controllers/productController');
 
 
-// Import all necessary middleware from the centralized auth file.
+// Import middleware from the centralized auth file.
 const {
-    identifyTenant, // <-- IMPORT THE NEW MIDDLEWARE
     protect,
     isAdmin,
     protectCustomer
@@ -46,7 +51,7 @@ const {
 // Public route for storefronts to fetch collections for a specific tenant
 router.get(
     '/collections/public',
-    identifyTenant, // <-- ADD THIS
+    identifyTenant,
     getPublicCollections
 );
 
@@ -91,17 +96,17 @@ router.delete(
 // Get all promo images for a tenant (Publicly accessible for storefronts)
 router.get(
     '/promo',
-    identifyTenant, // <-- ADD THIS
+    identifyTenant,
     getProductImagesOnly
 );
 
 // Upload new promo images for a tenant (Admin Only)
 router.post(
     '/promo',
-    identifyTenant,
+    identifyTenant,     // 1. Identify the tenant
     protect,
     isAdmin,
-    uploadMiddleware,
+    uploadMiddleware,   // 2. Then handle the upload
     uploadPromoImages
 );
 
@@ -113,7 +118,7 @@ router.post(
 // Get all products for the public storefront for a specific tenant
 router.get(
     '/public',
-    identifyTenant, // <-- ADD THIS
+    identifyTenant,
     getPublicProducts
 );
 
@@ -123,17 +128,17 @@ router.get('/', identifyTenant, protect, getProducts);
 // Create a new product for a tenant (Admin Only)
 router.post(
     '/',
-    identifyTenant,
+    identifyTenant,     // 1. Identify the tenant
     protect,
     isAdmin,
-    uploadMiddleware,
+    uploadMiddleware,   // 2. Then handle the upload
     addProduct
 );
 
 // Get a single product by its barcode for a tenant
 router.get(
     '/barcode/:barcode',
-    identifyTenant, // <-- ADD THIS
+    identifyTenant,
     protect,
     param('barcode').notEmpty().withMessage('Barcode parameter cannot be empty.'),
     getProductByBarcode
@@ -142,7 +147,7 @@ router.get(
 // Get a single product by ID for a tenant (Publicly accessible)
 router.get(
     '/:id',
-    identifyTenant, // <-- ADD THIS
+    identifyTenant,
     param('id').isMongoId(),
     getProductById
 );
@@ -150,11 +155,11 @@ router.get(
 // Update a product for a tenant (Admin Only)
 router.put(
     '/:id',
-    identifyTenant,
+    identifyTenant,     // 1. Identify the tenant
     protect,
     isAdmin,
     param('id').isMongoId(),
-    uploadMiddleware,
+    uploadMiddleware,   // 2. Then handle the upload
     updateProduct
 );
 
@@ -175,7 +180,7 @@ router.delete(
 // Create a new review for a product (which belongs to a tenant)
 router.post(
     '/:id/reviews',
-    identifyTenant, // <-- ADD THIS
+    identifyTenant,
     protectCustomer,
     param('id').isMongoId(),
     [
