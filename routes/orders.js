@@ -1,42 +1,117 @@
 /**
  * FILE: ./routes/orders.js
- * DESC: Defines API endpoints for handling orders.
+ * DESC: Defines API endpoints for handling orders, with email notifications.
  *
- * FIX:
- * - Consolidated all middleware imports to use the single, correct
- * `../middleware/authMiddleware.js` file. This resolves the primary error.
- * - Removed the global `router.use(identifyTenant, protect)` call.
- * - Applied the full, explicit middleware chain (`identifyTenant`, `protect`, `isAdmin`)
- * to each protected admin route. This is a safer pattern that guarantees the
- * correct execution order and prevents middleware conflicts.
- * - Removed the `getTenantObjectId` helper function and updated all protected routes
- * to use `req.tenant._id` directly, which is simpler and more reliable.
+ * CHANGE:
+ * - Integrated `nodemailer` to send an email notification to the client
+ * when a new order is created.
+ * - Added a new utility function `sendOrderConfirmationEmail` directly in this file
+ * for sending a formatted HTML email.
+ * - The order creation route (`POST /`) now calls this function after
+ * successfully saving a new order.
+ * - Added comments explaining the new functionality and the required
+ * environment variables for nodemailer.
+ *
+ * REQUIREMENT:
+ * - You must install nodemailer: `npm install nodemailer`
+ * - You must set the following environment variables in your .env file:
+ * - EMAIL_HOST (e.g., 'smtp.gmail.com')
+ * - EMAIL_PORT (e.g., 587)
+ * - EMAIL_USER (your email address)
+ * - EMAIL_PASS (your email password or an app-specific password)
  */
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const nodemailer = require('nodemailer'); // Import nodemailer
 
 // --- Import Models ---
 const Order = require('../models/Order');
 const AbandonedCart = require('../models/AbandonedCart');
 const Product = require('../models/Product');
-const Client = require('../models/Client'); 
+const Client = require('../models/Client');
 
 // --- Import Middleware ---
-// **FIX**: All auth-related middleware is now imported from the single correct file.
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
+
+// =========================
+// Nodemailer Configuration
+// =========================
+// NOTE: For better organization, this transporter setup should ideally be in its own
+// utility file (e.g., `utils/emailService.js`).
+// It is placed here for simplicity in this example.
+const transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port: process.env.EMAIL_PORT || 587,
+    secure: process.env.EMAIL_PORT == 465, // Use 'true' for port 465, 'false' for others
+    auth: {
+        user: process.env.EMAIL_USER, // Your email address from .env file
+        pass: process.env.EMAIL_PASS, // Your email password from .env file
+    },
+});
+
+/**
+ * Sends a new order confirmation email to the client.
+ * @param {string} clientEmail - The email address of the client to notify.
+ * @param {object} order - The full, populated order object.
+ */
+const sendOrderConfirmationEmail = async (clientEmail, order) => {
+    // Create a formatted list of products for the email body
+    const productListHtml = order.products.map(item =>
+        `<li>${item.quantity} x ${item.productId.name} (ID: ${item.productId._id})</li>`
+    ).join('');
+
+    const mailOptions = {
+        from: `"Your Store Platform" <${process.env.EMAIL_USER}>`,
+        to: clientEmail,
+        subject: `🎉 New Order Received! [Order #${order._id}]`,
+        html: `
+            <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <h2 style="color: #4CAF50;">You've Received a New Order!</h2>
+                <p>Hello,</p>
+                <p>A new order has been placed through your store. Here are the details:</p>
+                <hr>
+                <h3>Order Details</h3>
+                <ul>
+                    <li><strong>Order ID:</strong> ${order._id}</li>
+                    <li><strong>Customer Name:</strong> ${order.fullName}</li>
+                    <li><strong>Phone Number:</strong> ${order.phoneNumber}</li>
+                    <li><strong>Total Price:</strong> ${order.totalPrice} DZD</li>
+                    <li><strong>Shipping Address:</strong> ${order.address || ''}, ${order.commune}, ${order.wilaya}</li>
+                    <li><strong>Notes:</strong> ${order.notes || 'N/A'}</li>
+                </ul>
+                <h3>Products Ordered</h3>
+                <ul>
+                    ${productListHtml}
+                </ul>
+                <p>Please log in to your admin dashboard to view the full order details and manage fulfillment.</p>
+                <br>
+                <p>Thank you,</p>
+                <p><strong>Your Store Platform Team</strong></p>
+            </div>
+        `,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log(`Order confirmation email sent successfully to ${clientEmail}`);
+    } catch (error) {
+        // Log the error but don't let it crash the main process
+        console.error(`Error sending email to ${clientEmail}:`, error);
+        // We don't re-throw here because the order was already created successfully.
+        // Failing the email shouldn't fail the entire API request.
+    }
+};
 
 
 // =========================
 // Public Routes (for placing orders)
 // =========================
 
-// This route uses the correct `identifyTenant` middleware now.
 router.post('/abandoned-cart', identifyTenant, async (req, res) => {
     try {
         const { fullName, phoneNumber, product, pageUrl, wilaya, commune } = req.body;
         
-        // `identifyTenant` attaches the full tenant object.
         if (!req.tenant) {
             return res.status(404).json({ message: 'Client not found.' });
         }
@@ -58,7 +133,6 @@ router.post('/abandoned-cart', identifyTenant, async (req, res) => {
     }
 });
 
-// This route also uses the correct `identifyTenant` middleware.
 router.post('/', identifyTenant, async (req, res) => {
     const session = await mongoose.startSession();
     try {
@@ -96,6 +170,16 @@ router.post('/', identifyTenant, async (req, res) => {
             await AbandonedCart.deleteOne({ tenantId: tenantObjectId, phoneNumber, 'product.productId': products[0].productId });
         }
 
+        // --- NEW: Send Email Notification to Client ---
+        // We do this after the order is successfully created.
+        if (req.tenant && req.tenant.adminEmail) {
+            // We need to populate the product details to include them in the email.
+            const populatedOrder = await Order.findById(newOrder._id).populate('products.productId', 'name');
+            await sendOrderConfirmationEmail(req.tenant.adminEmail, populatedOrder);
+        } else {
+            console.log('Client admin email not found, skipping email notification.');
+        }
+
         res.status(201).json({ message: 'Order created successfully', order: newOrder });
     } catch (error) {
         console.error('Create order error:', error);
@@ -110,12 +194,9 @@ router.post('/', identifyTenant, async (req, res) => {
 // Protected Admin Routes
 // =========================
 
-// @route   GET /api/orders
-// @desc    Get all orders for the client.
-// @access  Private (Admin)
 router.get('/', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
-        const tenantObjectId = req.tenant._id; // Directly use the ID from the verified tenant.
+        const tenantObjectId = req.tenant._id;
 
         const orders = await Order.find({ tenantId: tenantObjectId })
             .populate('products.productId', 'name price images')
@@ -129,9 +210,6 @@ router.get('/', identifyTenant, protect, isAdmin, async (req, res) => {
     }
 });
 
-// @route   GET /api/orders/:orderId
-// @desc    Get a single order by its ID.
-// @access  Private (Admin)
 router.get('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         const tenantObjectId = req.tenant._id;
@@ -152,9 +230,6 @@ router.get('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     }
 });
 
-// @route   PUT /api/orders/:orderId
-// @desc    Update order details (e.g., customer info).
-// @access  Private (Admin)
 router.put('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         const tenantObjectId = req.tenant._id;
@@ -177,9 +252,6 @@ router.put('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     }
 });
 
-// @route   PATCH /api/orders/:orderId/status
-// @desc    Update the status of an order (e.g., confirm, ship).
-// @access  Private (Admin)
 router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         const tenantObjectId = req.tenant._id;
@@ -217,9 +289,6 @@ router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, r
     }
 });
 
-// @route   DELETE /api/orders/:orderId
-// @desc    Delete an order and restore product stock.
-// @access  Private (Admin)
 router.delete('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     const session = await mongoose.startSession();
     try {
