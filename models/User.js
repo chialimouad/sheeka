@@ -2,11 +2,10 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
-    // This is the corrected part. It should be a Number.
     tenantId: {
         type: Number,
         required: true,
-        index: true, // Good for performance when looking up users by tenant.
+        index: true, 
     },
     name: {
         type: String,
@@ -15,7 +14,7 @@ const userSchema = new mongoose.Schema({
     email: {
         type: String,
         required: true,
-        unique: true, // Emails should be unique within a tenant, handled by controller logic.
+        unique: true,
         lowercase: true,
     },
     password: {
@@ -24,10 +23,15 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['admin', 'confirmation', 'stockagent', 'user'],
+        enum: ['admin', 'confirmation', 'stockagent', 'user', 'employee'], // Added 'employee' from other file
         default: 'user',
     },
-    // You can add other fields like 'isActive', etc.
+    // FIX: Add the missing index field here
+    index: {
+        type: Number,
+        required: true,
+        default: 0, // Default to 0 (Inactive)
+    },
 }, { timestamps: true });
 
 
