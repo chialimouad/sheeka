@@ -90,7 +90,7 @@ const uploadMiddleware = async (req, res, next) => {
 const getTenantObjectId = async (req) => {
     const identifier = req.user?.tenantId || req.tenantId || req.headers['x-tenant-id'];
     
-    if (!identifier) {
+    if (!identifier && identifier !== 0) { // Allow for tenantId 0 if it's a valid ID
         return null;
     }
 
@@ -98,19 +98,21 @@ const getTenantObjectId = async (req) => {
         let client = null;
         let query;
 
-        // If the identifier is a non-numeric string, query by subdomain. This is for public requests.
-        if (typeof identifier === 'string' && isNaN(identifier)) {
-            const subdomain = identifier.toLowerCase();
-            query = { subdomain: subdomain };
-            if (req.client && req.client.subdomain === subdomain) {
-                return req.client._id;
-            }
-        } 
-        // Otherwise, treat it as a numeric tenantId. This is typical for authenticated users.
-        else {
+        // Check if the identifier is numeric or a numeric string
+        const isNumeric = !isNaN(parseFloat(identifier)) && isFinite(identifier);
+
+        if (isNumeric) {
             const numericTenantId = Number(identifier);
             query = { tenantId: numericTenantId };
             if (req.client && req.client.tenantId === numericTenantId) {
+                return req.client._id;
+            }
+        } 
+        // Otherwise, treat it as a subdomain string. This is for public requests.
+        else {
+            const subdomain = String(identifier).toLowerCase();
+            query = { subdomain: subdomain };
+            if (req.client && req.client.subdomain === subdomain) {
                 return req.client._id;
             }
         }
