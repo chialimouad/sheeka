@@ -8,7 +8,7 @@
  * - **SECURITY FIX**: Modified `updateSiteConfig` to no longer pass `req.body` directly to the database. Instead, it now explicitly destructures and validates expected fields, preventing potential data corruption or security vulnerabilities from malicious requests.
  */
 const PixelModel = require('../models/pixel');
-const SiteConfig = require('../models/SiteConfig'); // FIX: Corrected model import path
+const SiteConfig = require('../models/sitecontroll'); // FIX: Corrected model import path
 const { validationResult, param } = require('express-validator');
 
 // =========================
