@@ -5,9 +5,11 @@
  * FIX:
  * - Corrected middleware imports to use the single, consolidated `authMiddleware.js`.
  * - Corrected the controller import path to `authController`.
- * - **CRITICAL SECURITY FIX**: Added `protect` and `isAdmin` middleware to the
+ * - CRITICAL SECURITY FIX: Added `protect` and `isAdmin` middleware to the
  * `/register` route. This ensures that only authenticated administrators can
  * create new users, which is the intended behavior for this management page.
+ * - FIX: Changed the validation key in the PUT /:id/index route from `newIndexValue`
+ * to `index` to match what the frontend sends.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
@@ -63,7 +65,6 @@ router.post(
         body('email').isEmail().withMessage('Please include a valid email'),
         body('password').isLength({ min: 6 }).withMessage('Password must be 6 or more characters'),
         body('role').isIn(['admin', 'confirmation', 'stockagent', 'user', 'employee']).withMessage('Invalid role'),
-        body('index').optional().isInt({ min: 0, max: 1 }).withMessage('Index must be 0 or 1'),
     ],
     register
 );
@@ -99,8 +100,8 @@ router.get(
 
 /**
  * @route   PUT /users/:id/index
- * @desc    Update a user's index (admin or self)
- * @access  Private (controller enforces access control)
+ * @desc    Update a user's index (status)
+ * @access  Private
  */
 router.put(
     '/:id/index',
@@ -108,7 +109,8 @@ router.put(
     protect,
     [
         param('id').isMongoId().withMessage('Invalid user ID format'),
-        body('newIndexValue')
+        // FIX: The key sent from the frontend is 'index'.
+        body('index')
             .isInt({ min: 0, max: 1 })
             .withMessage('A new index value of 0 or 1 is required')
     ],
