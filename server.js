@@ -3,6 +3,11 @@
  * DESC: Main server entry point for the multi-tenant ERP system.
  *
  * FIX:
+ * - Imported the built-in 'path' module to handle file paths reliably.
+ * - Changed `express.static('public')` to `express.static(path.join(__dirname, 'public'))`.
+ * This creates an absolute path to the public directory, ensuring that static
+ * files like images are found and served correctly, regardless of the hosting
+ * environment. This resolves the issue of images not loading.
  * - Updated all require() statements to use the correct filenames for the route
  * modules as provided. This ensures that all routes, including `/site-config`,
  * are properly loaded and registered by the Express app.
@@ -14,6 +19,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const path = require('path'); // <-- IMPORT PATH MODULE
 
 const app = express();
 
@@ -24,7 +30,9 @@ app.use(cors());
 app.use(express.json());
 app.use(helmet());
 app.use(morgan('dev'));
-app.use(express.static('public'));
+// FIX: Use an absolute path for serving static files
+app.use(express.static(path.join(__dirname, 'public')));
+
 
 // ========================
 // 📡 MongoDB Connection
