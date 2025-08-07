@@ -22,7 +22,7 @@ const {
     getUsers,
     updateIndex,
     getUserIndex
-} = require('../controllers/authController'); // Corrected controller file name
+} = require('../controllers/authcontrolleruser'); // Corrected controller file name
 
 // Middleware from the single source of truth
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
