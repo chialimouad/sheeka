@@ -5,6 +5,7 @@
  * FIX:
  * - Corrected the model import path from 'sitecontroll' to 'SiteConfig'.
  * - Refactored `getSiteConfig` to use the robust `SiteConfig.findOrCreateForTenant` static method. This simplifies the controller, prevents errors, and ensures that a complete, default configuration is always returned for new tenants.
+ * - **SECURITY FIX**: Modified `updateSiteConfig` to no longer pass `req.body` directly to the database. Instead, it now explicitly destructures and validates expected fields, preventing potential data corruption or security vulnerabilities from malicious requests.
  */
 const PixelModel = require('../models/pixel');
 const SiteConfig = require('../models/SiteConfig'); // FIX: Corrected model import path
@@ -86,7 +87,7 @@ const SiteConfigController = {
         try {
             const tenantObjectId = req.tenantObjectId;
 
-            // FIX: Use the findOrCreateForTenant static method from the model.
+            // Use the findOrCreateForTenant static method from the model.
             // This simplifies logic and ensures a default config is always available.
             const siteConfig = await SiteConfig.findOrCreateForTenant(tenantObjectId);
             
@@ -109,9 +110,51 @@ const SiteConfigController = {
         try {
             const tenantObjectId = req.tenantObjectId;
             
+            // **SECURITY FIX**: Explicitly define which fields can be updated.
+            // This prevents users from injecting unwanted data.
+            const {
+                siteName,
+                slogan,
+                heroTitle,
+                heroButtonText,
+                heroImageUrl,
+                primaryColor,
+                secondaryColor,
+                tertiaryColor,
+                generalTextColor,
+                footerBgColor,
+                footerTextColor,
+                footerLinkColor,
+                aboutUsText,
+                aboutUsImageUrl,
+                contactInfo,
+                socialMediaLinks,
+                currentDataIndex
+            } = req.body;
+
+            const updateData = {
+                siteName,
+                slogan,
+                heroTitle,
+                heroButtonText,
+                heroImageUrl,
+                primaryColor,
+                secondaryColor,
+                tertiaryColor,
+                generalTextColor,
+                footerBgColor,
+                footerTextColor,
+                footerLinkColor,
+                aboutUsText,
+                aboutUsImageUrl,
+                contactInfo,
+                socialMediaLinks,
+                currentDataIndex
+            };
+
             const updatedConfig = await SiteConfig.findOneAndUpdate(
                 { tenantId: tenantObjectId }, // Query by the correct ObjectId
-                { $set: req.body },
+                { $set: updateData },
                 { new: true, upsert: true, runValidators: true }
             );
 
