@@ -7,6 +7,7 @@
  * - Ensured the rollback mechanism properly deletes a created client if the subsequent admin user creation fails.
  * - Standardized error responses for better client-side handling.
  * - UPDATE: Implemented MongoDB sessions for atomic transactions to ensure that a client and their admin user are either both created or neither is, preventing orphaned data.
+ * - FIX: Explicitly set the first admin user's `index` to 1, making them active by default upon creation.
  */
 const crypto = require('crypto');
 const mongoose = require('mongoose'); // Required for sessions
@@ -116,9 +117,7 @@ const ProvisioningController = {
                 },
             });
             
-            const savedClientArray = await newClient.save({ session });
-            const savedClient = savedClientArray[0] || savedClientArray;
-
+            const [savedClient] = await newClient.save({ session });
             
             // 5. Create the initial administrator user for the new client within the transaction.
             const adminUser = new User({
@@ -127,6 +126,8 @@ const ProvisioningController = {
                 email: lowerAdminEmail,
                 password: adminPassword, // The User model's pre-save hook will handle hashing
                 role: 'admin',
+                // FIX: Set the first admin user to be active by default.
+                index: 1 
             });
 
             await adminUser.save({ session });
