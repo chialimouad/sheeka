@@ -78,6 +78,11 @@ const SiteConfigSchema = new mongoose.Schema({
     },
     siteName: { type: String, default: 'My Store' },
     slogan: { type: String, default: 'Quality products you can trust.' },
+    // ** NEW **: Added fields for Hero Section
+    heroTitle: { type: String, default: 'Welcome to Our Store' },
+    heroButtonText: { type: String, default: 'Shop Now' },
+    heroImageUrl: { type: String, default: 'https://placehold.co/1920x1080/cccccc/FFFFFF?text=Hero+Image' },
+    
     primaryColor: { type: String, default: '#C8797D' },
     secondaryColor: { type: String, default: '#A85F64' },
     tertiaryColor: { type: String, default: '#FDF5E6' },
@@ -87,6 +92,12 @@ const SiteConfigSchema = new mongoose.Schema({
     footerLinkColor: { type: String, default: '#E6B89C' },
     aboutUsText: { type: String, default: 'Welcome to our store!' },
     aboutUsImageUrl: { type: String, default: 'https://placehold.co/800x600/cccccc/FFFFFF?text=About+Us' },
+    // ** NEW **: Added Contact Info object
+    contactInfo: {
+        address: { type: String },
+        email: { type: String },
+        phone: { type: String }
+    },
     socialMediaLinks: [{
         platform: { type: String, required: true },
         url: { type: String, required: true },
