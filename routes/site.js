@@ -4,6 +4,7 @@
  *
  * UPDATE: Ensured the `identifyTenant` middleware is the first to be
  * called on all routes to correctly scope the request to a tenant.
+ * FIX: Corrected the controller import path from '../controllers/site' to '../controllers/siteConfigController'.
  */
 const express = require('express');
 const router = express.Router();
