@@ -24,6 +24,7 @@ app.use(cors());
 app.use(express.json());
 app.use(helmet());
 app.use(morgan('dev'));
+app.use(express.static('public'));
 
 // ========================
 // 📡 MongoDB Connection
