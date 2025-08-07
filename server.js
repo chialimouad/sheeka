@@ -3,11 +3,12 @@
  * DESC: Main server entry point for the multi-tenant ERP system.
  *
  * FIX:
+ * - Disabled Helmet's Content Security Policy (CSP) by setting `contentSecurityPolicy: false`.
+ * The default CSP is very strict and was likely the final cause of the
+ * `net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` error by preventing the browser
+ * from loading image resources from a different origin, even with CORS headers present.
  * - Configured the `helmet` middleware to set the `Cross-Origin-Resource-Policy`
- * header to "cross-origin". This is necessary because Helmet's default
- * security policy can block images from being loaded on different domains,
- * even when CORS is enabled. This specifically resolves the
- * `net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` error for static image assets.
+ * header to "cross-origin".
  * - Configured the `cors` middleware with `cors({ origin: '*' })` to explicitly
  * allow cross-origin requests from any domain.
  * - Added logic to support persistent file storage using Render Disks.
@@ -28,9 +29,10 @@ const app = express();
 // ========================
 app.use(cors({ origin: '*' })); 
 app.use(express.json());
-// FIX: Configure Helmet to allow cross-origin resource loading for images
+// FIX: Configure Helmet to allow cross-origin images and disable restrictive CSP
 app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false, // Disable CSP to resolve the image blocking issue
 }));
 app.use(morgan('dev'));
 
