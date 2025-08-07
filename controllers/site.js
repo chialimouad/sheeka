@@ -3,13 +3,11 @@
  * DESC: Handles business logic for site and pixel configurations.
  *
  * FIX:
- * - Modified `getSiteConfig` to be more resilient. If a `SiteConfig` document
- * does not exist for a given tenant, a new default configuration is
- * created and returned automatically. This prevents 404 errors on the
- * frontend for new tenants and simplifies client-side logic.
+ * - Corrected the model import path from 'sitecontroll' to 'SiteConfig'.
+ * - Refactored `getSiteConfig` to use the robust `SiteConfig.findOrCreateForTenant` static method. This simplifies the controller, prevents errors, and ensures that a complete, default configuration is always returned for new tenants.
  */
 const PixelModel = require('../models/pixel');
-const SiteConfig = require('../models/sitecontroll');
+const SiteConfig = require('../models/SiteConfig'); // FIX: Corrected model import path
 const { validationResult, param } = require('express-validator');
 
 // =========================
@@ -88,30 +86,12 @@ const SiteConfigController = {
         try {
             const tenantObjectId = req.tenantObjectId;
 
-            let siteConfig = await SiteConfig.findOne({ tenantId: tenantObjectId });
+            // FIX: Use the findOrCreateForTenant static method from the model.
+            // This simplifies logic and ensures a default config is always available.
+            const siteConfig = await SiteConfig.findOrCreateForTenant(tenantObjectId);
+            
             const pixelConfig = await PixelModel.findOne({ tenantId: tenantObjectId }).sort({ createdAt: -1 });
             
-            // **FIX**: If no config exists, create a default one and save it.
-            if (!siteConfig) {
-                console.log(`No site config found for tenant ${tenantObjectId}. Creating a default one.`);
-                siteConfig = new SiteConfig({
-                    tenantId: tenantObjectId,
-                    // Add any other default values your schema requires
-                    siteName: "My New Site",
-                    slogan: "Welcome!",
-                    primaryColor: "#4F46E5",
-                    secondaryColor: "#EC4899",
-                    tertiaryColor: "#10B981",
-                    generalTextColor: "#1F2937",
-                    footerBgColor: "#111827",
-                    footerTextColor: "#F9FAFB",
-                    footerLinkColor: "#9CA3AF",
-                    aboutUsText: "This is the default about us text. Please update it in the settings.",
-                    currentDataIndex: 0
-                });
-                await siteConfig.save();
-            }
-
             const fullConfig = {
                 ...siteConfig.toObject(),
                 facebookPixelId: pixelConfig ? pixelConfig.fbPixelId : null,
