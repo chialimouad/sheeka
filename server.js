@@ -3,17 +3,14 @@
  * DESC: Main server entry point for the multi-tenant ERP system.
  *
  * FIX:
+ * - Configured the `helmet` middleware to set the `Cross-Origin-Resource-Policy`
+ * header to "cross-origin". This is necessary because Helmet's default
+ * security policy can block images from being loaded on different domains,
+ * even when CORS is enabled. This specifically resolves the
+ * `net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` error for static image assets.
  * - Configured the `cors` middleware with `cors({ origin: '*' })` to explicitly
- * allow cross-origin requests from any domain. This resolves the
- * `net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` error.
+ * allow cross-origin requests from any domain.
  * - Added logic to support persistent file storage using Render Disks.
- * - Created a new `express.static` middleware specifically for the `/uploads` route.
- * - This middleware serves files from the path specified in the
- * `RENDER_DISK_MOUNT_PATH` environment variable.
- * - If the environment variable is not set (for local development), it falls back
- * to the `public/uploads` directory.
- * - This change fixes the issue of uploaded images being deleted on server restarts
- * in a hosting environment like Render.
  */
 
 require('dotenv').config();
@@ -29,10 +26,12 @@ const app = express();
 // ========================
 // 🔐 Core Middleware
 // ========================
-// FIX: Explicitly allow all origins to fix CORS error
 app.use(cors({ origin: '*' })); 
 app.use(express.json());
-app.use(helmet());
+// FIX: Configure Helmet to allow cross-origin resource loading for images
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 app.use(morgan('dev'));
 
 // ========================
