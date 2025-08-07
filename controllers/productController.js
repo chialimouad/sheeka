@@ -82,7 +82,8 @@ const storage = multer.diskStorage({
         if (!req.client || !req.client.subdomain) {
             return cb(new Error('Tenant has not been identified prior to upload.'), null);
         }
-        const uploadDir = path.join('public', 'uploads', req.client.subdomain);
+const UPLOADS_DIR = process.env.RENDER_DISK_MOUNT_PATH || path.resolve('public/uploads');
+const uploadDir = path.join(UPLOADS_DIR, req.client.subdomain);
         fs.mkdirSync(uploadDir, { recursive: true }); // Create directory if it doesn't exist
         cb(null, uploadDir);
     },
