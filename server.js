@@ -3,6 +3,9 @@
  * DESC: Main server entry point for the multi-tenant ERP system.
  *
  * FIX:
+ * - Configured the `cors` middleware with `cors({ origin: '*' })` to explicitly
+ * allow cross-origin requests from any domain. This resolves the
+ * `net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` error.
  * - Added logic to support persistent file storage using Render Disks.
  * - Created a new `express.static` middleware specifically for the `/uploads` route.
  * - This middleware serves files from the path specified in the
@@ -26,7 +29,8 @@ const app = express();
 // ========================
 // 🔐 Core Middleware
 // ========================
-app.use(cors());
+// FIX: Explicitly allow all origins to fix CORS error
+app.use(cors({ origin: '*' })); 
 app.use(express.json());
 app.use(helmet());
 app.use(morgan('dev'));
