@@ -3,14 +3,14 @@
  * DESC: Main server entry point for the multi-tenant ERP system.
  *
  * FIX:
- * - Imported the built-in 'path' module to handle file paths reliably.
- * - Changed `express.static('public')` to `express.static(path.join(__dirname, 'public'))`.
- * This creates an absolute path to the public directory, ensuring that static
- * files like images are found and served correctly, regardless of the hosting
- * environment. This resolves the issue of images not loading.
- * - Updated all require() statements to use the correct filenames for the route
- * modules as provided. This ensures that all routes, including `/site-config`,
- * are properly loaded and registered by the Express app.
+ * - Added logic to support persistent file storage using Render Disks.
+ * - Created a new `express.static` middleware specifically for the `/uploads` route.
+ * - This middleware serves files from the path specified in the
+ * `RENDER_DISK_MOUNT_PATH` environment variable.
+ * - If the environment variable is not set (for local development), it falls back
+ * to the `public/uploads` directory.
+ * - This change fixes the issue of uploaded images being deleted on server restarts
+ * in a hosting environment like Render.
  */
 
 require('dotenv').config();
@@ -19,7 +19,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const path = require('path'); // <-- IMPORT PATH MODULE
+const path = require('path');
 
 const app = express();
 
@@ -30,7 +30,21 @@ app.use(cors());
 app.use(express.json());
 app.use(helmet());
 app.use(morgan('dev'));
-// FIX: Use an absolute path for serving static files
+
+// ========================
+// 📁 Static File Serving
+// ========================
+
+// Define the path for uploaded files. Use Render Disk path if available,
+// otherwise fall back to a local directory for development.
+const UPLOADS_DIR = process.env.RENDER_DISK_MOUNT_PATH || path.join(__dirname, 'public', 'uploads');
+
+// Serve uploaded images from the persistent disk or local fallback.
+// A request to /uploads/image.png will be served from UPLOADS_DIR/image.png
+console.log(`✅ Serving uploaded files from: ${UPLOADS_DIR}`);
+app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Serve other static assets from the public directory (like CSS, client-side JS)
 app.use(express.static(path.join(__dirname, 'public')));
 
 
@@ -57,13 +71,12 @@ connectDB();
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 const { identifyTenant } = require('./middleware/authMiddleware'); 
 
-// FIX: Using the correct route filenames provided by the user.
-const provisioningRoutes = require('./routes/rovisioningRoutes'); // Corrected typo from 'rovisioning'
+const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser'); 
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
-const siteConfigRoutes = require('./routes/site'); // Corrected to 'site'
+const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emails');
 
 
