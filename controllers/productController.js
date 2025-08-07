@@ -2,22 +2,15 @@
  * FILE: ./controllers/productController.js
  * DESC: Controller for all product, collection, and promo image logic.
  *
- * FIX:
- * - Added a try...catch block within the `getTenantObjectId` helper function.
- * - This prevents unhandled promise rejections if the `Client.findOne` database
- * call fails, which was the likely cause of the 500 Internal Server Error.
- * - Removed the 'express-async-handler' dependency.
- * - Replaced asyncHandler with standard try...catch blocks for error handling.
- * - Refactored `getTenantObjectId` to be more resilient. It now checks for the
- * 'x-tenant-id' header directly as a fallback, fixing the 400 error when the
- * identifyTenant middleware does not populate req.tenantId.
- * - UPDATED: Integrated 'barcode' field into product creation and updates.
- * - UPDATED: Added specific error handling for duplicate barcode entries.
- * - NEW: Added `getProductByBarcode` to fetch a product using its barcode.
- * - FIX: Corrected `getPublicProducts` and `getPublicCollections` to properly use the `getTenantObjectId` helper, resolving the 400 Bad Request error.
- * - UPDATE: Changed tenant lookup logic to use the subdomain from the request header (`x-tenant-id`) instead of the internal numeric `tenantId`. This makes tenant identification more robust and intuitive.
- * - FIX: Resolved `TypeError` by making the `getTenantObjectId` helper handle both numeric `tenantId` (from authenticated users) and string `subdomain` (from public headers).
- * - FIX: Added data transformation in `addProduct` to handle the mismatch between the frontend form's variant structure and the updated backend model, resolving the 'Product validation failed' error.
+ * REFACTOR:
+ * - Replaced Cloudinary with local file storage.
+ * - Removed `cloudinary` and `multer-storage-cloudinary` dependencies.
+ * - Created a new `uploadMiddleware` using `multer.diskStorage` to save
+ * files directly to the server's filesystem.
+ * - Files are organized into tenant-specific subdirectories (e.g., 'public/uploads/tenant_subdomain/').
+ * - Updated `deleteProduct` to remove image files from the local filesystem
+ * using `fs.unlink`.
+ * - Image URLs are now relative paths to be served statically by Express.
  */
 
 const Product = require('../models/Product');
@@ -25,106 +18,107 @@ const PromoImage = require('../models/imagespromo');
 const Collection = require('../models/Collection');
 const Client = require('../models/Client');
 const multer = require('multer');
-const { v2: cloudinary } = require('cloudinary');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const { body, param, validationResult } = require('express-validator');
+const fs = require('fs');
+const path = require('path');
 
 // =========================
-// 📦 Dynamic Multer & Cloudinary Setup
+// 📦 Local File Storage Setup with Multer
 // =========================
-const uploadMiddleware = async (req, res, next) => {
-    try {
-        const tenantIdentifier = req.user ? req.user.tenantId : (req.headers['x-tenant-id'] || req.tenantId);
 
-        if (!tenantIdentifier) {
-            return res.status(400).json({ message: 'Could not identify the tenant for the upload.' });
-        }
-
-        // Find the client by their unique subdomain or numeric ID
-        let query;
-        if (typeof tenantIdentifier === 'string' && isNaN(tenantIdentifier)) {
-            query = { subdomain: tenantIdentifier.toLowerCase() };
-        } else {
-            query = { tenantId: Number(tenantIdentifier) };
-        }
-        const client = await Client.findOne(query).lean();
-
-        if (!client || !client.config || !client.config.cloudinary || !client.config.cloudinary.cloud_name) {
-            console.error('Cloudinary configuration missing or incomplete for tenant:', tenantIdentifier);
-            return res.status(500).json({ message: 'Cloudinary is not configured for this client.' });
-        }
-        
-        const tenantCloudinaryConfig = client.config.cloudinary;
-        
-        cloudinary.config(tenantCloudinaryConfig);
-
-        const storage = new CloudinaryStorage({
-            cloudinary: cloudinary,
-            params: {
-                folder: `tenant_${client.subdomain}/products`, // Use subdomain for folder consistency
-                allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-                transformation: [{ width: 1024, crop: 'limit' }],
-            },
-        });
-
-        const upload = multer({ storage }).array('images', 10);
-        
-        upload(req, res, (err) => {
-            if (err) {
-                console.error('Multer upload error for tenant ' + client.subdomain, err);
-                return res.status(400).json({ message: 'Image upload failed.', error: err.message });
+const storage = multer.diskStorage({
+    destination: async (req, file, cb) => {
+        try {
+            // Identify tenant to create a specific folder for their uploads
+            const tenantIdentifier = req.user ? req.user.tenantId : (req.headers['x-tenant-id'] || req.tenantId);
+            if (!tenantIdentifier) {
+                return cb(new Error('Could not identify the tenant for the upload.'), null);
             }
-            req.client = client; 
+
+            // Find the client to get their subdomain for the folder name
+            let client;
+            if (typeof tenantIdentifier === 'string' && isNaN(tenantIdentifier)) {
+                client = await Client.findOne({ subdomain: tenantIdentifier.toLowerCase() }).lean();
+            } else {
+                client = await Client.findOne({ tenantId: Number(tenantIdentifier) }).lean();
+            }
+
+            if (!client) {
+                return cb(new Error('Tenant not found.'), null);
+            }
+            
+            // Set tenant info on the request object for later use
+            req.client = client;
             req.tenantId = client.tenantId;
-            next();
-        });
-    } catch (error) {
-        console.error('Error in uploadMiddleware:', error);
-        res.status(500).json({ message: 'Server error during upload setup.' });
+
+            // Create a tenant-specific directory for uploads
+            // IMPORTANT: This path is relative to your project's root directory
+            const uploadDir = path.join('public', 'uploads', client.subdomain);
+            fs.mkdirSync(uploadDir, { recursive: true }); // Create directory if it doesn't exist
+            
+            cb(null, uploadDir);
+
+        } catch (error) {
+            console.error('Error in multer destination function:', error);
+            cb(error, null);
+        }
+    },
+    filename: (req, file, cb) => {
+        // Create a unique filename to prevent overwriting
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const fileExtension = path.extname(file.originalname);
+        cb(null, file.fieldname + '-' + uniqueSuffix + fileExtension);
     }
-};
+});
+
+const uploadMiddleware = multer({
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB file size limit
+    fileFilter: (req, file, cb) => {
+        // Allow only common image types
+        const allowedTypes = /jpeg|jpg|png|webp/;
+        const mimetype = allowedTypes.test(file.mimetype);
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+
+        if (mimetype && extname) {
+            return cb(null, true);
+        }
+        cb(new Error('Error: File upload only supports the following filetypes - ' + allowedTypes));
+    }
+}).array('images', 10);
 
 
 // **HELPER FUNCTION TO GET TENANT OBJECT ID**
-// FIX: This function now robustly handles both numeric tenantId and string subdomain.
+// This function remains largely the same but is simplified as the client
+// is now attached to `req` in the upload middleware.
 const getTenantObjectId = async (req) => {
     const identifier = req.user?.tenantId || req.tenantId || req.headers['x-tenant-id'];
     
-    if (!identifier && identifier !== 0) { // Allow for tenantId 0 if it's a valid ID
+    if (!identifier && identifier !== 0) {
         return null;
     }
 
     try {
-        let client = null;
-        let query;
+        // If the middleware already attached the client, use it.
+        if (req.client) {
+            return req.client._id;
+        }
 
-        // Check if the identifier is numeric or a numeric string
+        let query;
         const isNumeric = !isNaN(parseFloat(identifier)) && isFinite(identifier);
 
         if (isNumeric) {
-            const numericTenantId = Number(identifier);
-            query = { tenantId: numericTenantId };
-            if (req.client && req.client.tenantId === numericTenantId) {
-                return req.client._id;
-            }
-        } 
-        // Otherwise, treat it as a subdomain string. This is for public requests.
-        else {
-            const subdomain = String(identifier).toLowerCase();
-            query = { subdomain: subdomain };
-            if (req.client && req.client.subdomain === subdomain) {
-                return req.client._id;
-            }
+            query = { tenantId: Number(identifier) };
+        } else {
+            query = { subdomain: String(identifier).toLowerCase() };
         }
 
-        client = await Client.findOne(query).lean();
-
-        if (!client) {
-            return null;
+        const client = await Client.findOne(query).lean();
+        if (client) {
+            req.client = client; // Cache for subsequent operations
+            return client._id;
         }
-        
-        req.client = client;
-        return client._id;
+        return null;
     } catch (error) {
         console.error("Database error in getTenantObjectId:", error);
         return null;
@@ -144,6 +138,7 @@ const getProductImagesOnly = async (req, res) => {
         }
 
         const promos = await PromoImage.find({ tenantId: tenantObjectId }, 'images').lean();
+        // The image URLs are already stored as relative paths, so this works as is.
         const allImages = promos.flatMap(p => p.images || []);
         res.json(allImages);
     } catch (error) {
@@ -161,8 +156,14 @@ const uploadPromoImages = async (req, res) => {
         if (!tenantObjectId) {
             return res.status(400).json({ message: 'Tenant could not be identified.' });
         }
+        
+        // Map uploaded files to relative URL paths for storage in the database.
+        // e.g., 'public/uploads/tenant1/image-123.jpg' becomes '/uploads/tenant1/image-123.jpg'
+        const images = req.files.map(file => {
+            const relativePath = path.join('/uploads', req.client.subdomain, file.filename);
+            return relativePath.replace(/\\/g, '/'); // Ensure forward slashes for URLs
+        });
 
-        const images = req.files.map(file => file.path);
         const newPromo = new PromoImage({ images, tenantId: tenantObjectId });
         await newPromo.save();
         res.status(201).json(newPromo);
@@ -178,6 +179,7 @@ const uploadPromoImages = async (req, res) => {
 // =========================
 
 const addProduct = [
+    // Validation middleware remains the same
     body('name').trim().notEmpty().withMessage('Product name is required.'),
     body('description').trim().notEmpty().withMessage('Description is required.'),
     body('quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer.'),
@@ -209,8 +211,8 @@ const addProduct = [
                     return res.status(400).json({ message: 'Invalid format for variants. Must be a valid JSON string.' });
                 }
             }
-
-            // ** FIX **: Transform the frontend variant structure to match the backend schema.
+            
+            // This transformation logic is still relevant and correct
             const formattedVariants = [];
             if (Array.isArray(parsedVariants)) {
                 parsedVariants.forEach(variant => {
@@ -223,6 +225,16 @@ const addProduct = [
                 });
             }
 
+            // Create relative URLs for the images to store in the database
+            const imagesForDb = req.files.map(file => {
+                const relativePath = path.join('/uploads', req.client.subdomain, file.filename);
+                return {
+                    url: relativePath.replace(/\\/g, '/'), // Use URL-friendly forward slashes
+                    // We store the filename to make it easy to delete from the filesystem later
+                    public_id: file.filename 
+                };
+            });
+
             const newProduct = new Product({
                 tenantId: tenantObjectId,
                 name,
@@ -231,8 +243,8 @@ const addProduct = [
                 price,
                 olprice,
                 barcode,
-                images: req.files.map(file => ({ url: file.path, public_id: file.filename })),
-                variants: formattedVariants, // Use the transformed variants
+                images: imagesForDb,
+                variants: formattedVariants,
             });
 
             await newProduct.save();
@@ -241,12 +253,13 @@ const addProduct = [
             if (error.code === 11000 && error.keyPattern && error.keyPattern.barcode) {
                 return res.status(409).json({ message: 'A product with this barcode already exists for this tenant.' });
             }
-            console.warn('Error adding product:', error); // Use warn to see the validation error object
+            console.error('Error adding product:', error);
             res.status(500).json({ message: 'Server error while adding product.' });
         }
     }
 ];
 
+// ... (getProducts, getPublicProducts, getProductById, getProductByBarcode handlers are unchanged)
 const getProducts = async (req, res) => {
     try {
         const tenantObjectId = await getTenantObjectId(req);
@@ -336,6 +349,7 @@ const getProductByBarcode = [
     }
 ];
 
+
 const updateProduct = [
     param('id').isMongoId(),
     body('barcode').optional().trim().notEmpty().withMessage('Barcode cannot be an empty string.'),
@@ -369,7 +383,13 @@ const updateProduct = [
             }
 
             if (req.files && req.files.length > 0) {
-                const newImages = req.files.map(file => ({ url: file.path, public_id: file.filename }));
+                const newImages = req.files.map(file => {
+                    const relativePath = path.join('/uploads', req.client.subdomain, file.filename);
+                    return {
+                        url: relativePath.replace(/\\/g, '/'),
+                        public_id: file.filename
+                    };
+                });
                 product.images.push(...newImages);
             }
 
@@ -384,6 +404,7 @@ const updateProduct = [
         }
     }
 ];
+
 
 const deleteProduct = [
     param('id').isMongoId(),
@@ -400,19 +421,20 @@ const deleteProduct = [
                 return res.status(404).json({ error: 'Product not found for this client.' });
             }
 
+            // **NEW**: Delete images from the local filesystem
             if (product.images && product.images.length > 0) {
-                if (!req.client || !req.client.config || !req.client.config.cloudinary) {
-                    req.client = await Client.findById(tenantObjectId).lean();
-                }
-                
-                if (req.client && req.client.config && req.client.config.cloudinary) {
-                    cloudinary.config(req.client.config.cloudinary);
-                    const publicIds = product.images.map(image => image.public_id).filter(Boolean);
-
-                    if (publicIds.length > 0) {
-                        await cloudinary.api.delete_resources(publicIds);
+                const tenantSubdomain = req.client.subdomain;
+                product.images.forEach(image => {
+                    if (image.public_id) { // public_id now stores the filename
+                        const imagePath = path.join('public', 'uploads', tenantSubdomain, image.public_id);
+                        fs.unlink(imagePath, (err) => {
+                            if (err) {
+                                // Log error but don't block response, as product is already deleted
+                                console.error(`Failed to delete image file: ${imagePath}`, err);
+                            }
+                        });
                     }
-                }
+                });
             }
 
             res.json({ message: 'Product deleted successfully' });
@@ -423,10 +445,7 @@ const deleteProduct = [
     }
 ];
 
-// =========================
-// 🛒 Collection Handlers
-// =========================
-
+// ... (All collection and review handlers remain unchanged)
 const addCollection = [
     body('name').trim().notEmpty(),
     async (req, res) => {
@@ -563,11 +582,6 @@ const deleteCollection = [
         }
     }
 ];
-
-
-// =========================
-// ⭐ Product Review Handlers
-// =========================
 
 const createProductReview = [
     param('id').isMongoId(),
