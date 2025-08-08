@@ -3,14 +3,11 @@
  * DESC: Defines API endpoints for handling orders, with email notifications.
  *
  * CHANGE:
+ * - Added a new protected admin route `GET /abandoned` to fetch all abandoned cart records.
+ * This fixes the 404 error on the admin page.
  * - Integrated `nodemailer` to send an email notification to the client
  * when a new order is created.
- * - Added a new utility function `sendOrderConfirmationEmail` directly in this file
- * for sending a formatted HTML email.
- * - The order creation route (`POST /`) now calls this function after
- * successfully saving a new order.
- * - Added comments explaining the new functionality and the required
- * environment variables for nodemailer.
+ * - Added a new utility function `sendOrderConfirmationEmail` for sending emails.
  *
  * REQUIREMENT:
  * - You must install nodemailer: `npm install nodemailer`
@@ -37,9 +34,6 @@ const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddlewa
 // =========================
 // Nodemailer Configuration
 // =========================
-// NOTE: For better organization, this transporter setup should ideally be in its own
-// utility file (e.g., `utils/emailService.js`).
-// It is placed here for simplicity in this example.
 const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: process.env.EMAIL_PORT || 587,
@@ -56,7 +50,6 @@ const transporter = nodemailer.createTransport({
  * @param {object} order - The full, populated order object.
  */
 const sendOrderConfirmationEmail = async (clientEmail, order) => {
-    // Create a formatted list of products for the email body
     const productListHtml = order.products.map(item =>
         `<li>${item.quantity} x ${item.productId.name} (ID: ${item.productId._id})</li>`
     ).join('');
@@ -96,10 +89,7 @@ const sendOrderConfirmationEmail = async (clientEmail, order) => {
         await transporter.sendMail(mailOptions);
         console.log(`Order confirmation email sent successfully to ${clientEmail}`);
     } catch (error) {
-        // Log the error but don't let it crash the main process
         console.error(`Error sending email to ${clientEmail}:`, error);
-        // We don't re-throw here because the order was already created successfully.
-        // Failing the email shouldn't fail the entire API request.
     }
 };
 
@@ -170,10 +160,7 @@ router.post('/', identifyTenant, async (req, res) => {
             await AbandonedCart.deleteOne({ tenantId: tenantObjectId, phoneNumber, 'product.productId': products[0].productId });
         }
 
-        // --- NEW: Send Email Notification to Client ---
-        // We do this after the order is successfully created.
         if (req.tenant && req.tenant.adminEmail) {
-            // We need to populate the product details to include them in the email.
             const populatedOrder = await Order.findById(newOrder._id).populate('products.productId', 'name');
             await sendOrderConfirmationEmail(req.tenant.adminEmail, populatedOrder);
         } else {
@@ -193,6 +180,22 @@ router.post('/', identifyTenant, async (req, res) => {
 // =========================
 // Protected Admin Routes
 // =========================
+
+// *** NEW ROUTE TO FIX 404 ERROR ***
+router.get('/abandoned', identifyTenant, protect, isAdmin, async (req, res) => {
+    try {
+        if (!req.tenant) {
+            return res.status(404).json({ message: 'Client not found.' });
+        }
+        const tenantObjectId = req.tenant._id;
+        const carts = await AbandonedCart.find({ tenantId: tenantObjectId }).sort({ createdAt: -1 });
+        res.status(200).json(carts);
+    } catch (error) {
+        console.error('Fetch abandoned carts error:', error);
+        res.status(500).json({ message: 'Server error fetching abandoned carts.' });
+    }
+});
+
 
 router.get('/', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
