@@ -6,21 +6,21 @@
  * is saved when a new configuration is created via `upsert`. It now uses the
  * `$setOnInsert` operator to add the `subdomain` and `tenantId` from the request's
  * tenant object, guaranteeing this crucial data is not missed on initial creation.
- * FIX: Corrected the model import path from 'sitecontroll' to 'siteConfig'.
+ * FIX: Corrected the model import path from 'sitecontroll' to 'SiteConfig'.
  * FIX: The `getSiteConfig` function now returns the subdomain from the tenant object
  * even if a full configuration has not been created yet, allowing the UI to display it.
  */
-// FIX: Corrected model name to match convention, e.g., 'siteConfig'.
-const SiteConfig = require('../models/sitecontroll');
+// FIX: Corrected model import to match the actual model filename 'SiteConfig'.
+const SiteConfig = require('../models/sitecontroll'); 
 const PixelModel = require('../models/pixel');
 const { validationResult } = require('express-validator');
 
 const SiteConfigController = {
     /**
-     * @desc    Provides the entire site configuration for the current tenant,
+     * @desc     Provides the entire site configuration for the current tenant,
      * including the latest pixel IDs.
-     * @route   GET /site-config
-     * @access  Private (Admin)
+     * @route    GET /site-config
+     * @access   Private (Admin)
      */
     getSiteConfig: async (req, res) => {
         try {
@@ -61,9 +61,9 @@ const SiteConfigController = {
     },
 
     /**
-     * @desc    Updates or creates the main site configuration for the current tenant.
-     * @route   PUT /site-config
-     * @access  Private (Admin)
+     * @desc     Updates or creates the main site configuration for the current tenant.
+     * @route    PUT /site-config
+     * @access   Private (Admin)
      */
     updateSiteConfig: async (req, res) => {
         try {
