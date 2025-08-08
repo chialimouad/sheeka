@@ -1,18 +1,18 @@
 // controllers/siteConfigController.js
 
 const PixelModel = require('../models/Pixel');
-const SiteConfig = require('../models/SiteConfig'); // You will need a SiteConfig model for this
+const SiteConfig = require('../models/SiteConfig'); // Assuming you have a SiteConfig model
 const { validationResult, param } = require('express-validator');
 
-// =========================
-// 픽셀 핸들러 (테넌트 인식)
-// =========================
+// ==================================
+// Pixel Handlers (Tenant-Aware)
+// ==================================
 
 const PixelController = {
     /**
-     * @desc    새 Facebook 또는 TikTok 픽셀 ID를 저장합니다.
+     * @desc    Saves a new Facebook or TikTok pixel ID for the current tenant.
      * @route   POST /api/pixels
-     * @access  Private (Admin)
+     * @access  Private (Admin) - Requires authentication to identify the tenant.
      */
     postPixel: async (req, res) => {
         const errors = validationResult(req);
@@ -22,7 +22,9 @@ const PixelController = {
 
         try {
             const { fbPixelId, tiktokPixelId } = req.body;
-            const tenantId = req.user.tenantId; // 'protect' 미들웨어에서 제공
+            // The tenantId is securely obtained from the authenticated user's session/token,
+            // which is set by a protection middleware (e.g., 'protect').
+            const tenantId = req.user.tenantId; 
 
             const newPixel = await PixelModel.createPixelForTenant({
                 fbPixelId,
@@ -31,17 +33,17 @@ const PixelController = {
             });
 
             res.status(201).json({
-                message: '픽셀 ID가 성공적으로 저장되었습니다!',
+                message: 'Pixel IDs saved successfully!',
                 pixel: newPixel
             });
         } catch (error) {
-            console.error('픽셀 ID 저장 오류:', error);
-            res.status(error.statusCode || 500).json({ message: error.message || '픽셀 ID 저장에 실패했습니다.' });
+            console.error('Error saving pixel IDs:', error);
+            res.status(error.statusCode || 500).json({ message: error.message || 'Failed to save pixel IDs.' });
         }
     },
 
     /**
-     * @desc    현재 테넌트의 모든 저장된 픽셀 항목을 가져옵니다.
+     * @desc    Gets all saved pixel entries for the current tenant.
      * @route   GET /api/pixels
      * @access  Private (Admin)
      */
@@ -50,22 +52,22 @@ const PixelController = {
             const tenantId = req.user.tenantId;
             const pixels = await PixelModel.getAllPixelsForTenant(tenantId);
             res.status(200).json({
-                message: '모든 픽셀 ID를 성공적으로 가져왔습니다!',
+                message: 'Successfully retrieved all pixel IDs!',
                 pixels
             });
         } catch (error) {
-            console.error('픽셀 ID 가져오기 오류:', error);
-            res.status(500).json({ message: '픽셀 ID를 가져오는 데 실패했습니다.' });
+            console.error('Error fetching pixel IDs:', error);
+            res.status(500).json({ message: 'Failed to retrieve pixel IDs.' });
         }
     },
 
     /**
-     * @desc    ID로 특정 픽셀 항목을 삭제합니다.
+     * @desc    Deletes a specific pixel entry by its ID for the current tenant.
      * @route   DELETE /api/pixels/:id
      * @access  Private (Admin)
      */
     deletePixel: [
-        param('id').isMongoId().withMessage('잘못된 픽셀 ID 형식입니다.'),
+        param('id').isMongoId().withMessage('Invalid Pixel ID format.'),
         async (req, res) => {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
@@ -75,62 +77,65 @@ const PixelController = {
                 const pixelId = req.params.id;
                 const tenantId = req.user.tenantId;
 
+                // The model logic ensures we only delete the pixel if it belongs to the current tenant.
                 const deletedPixel = await PixelModel.deletePixelForTenant(pixelId, tenantId);
 
                 if (!deletedPixel) {
-                    return res.status(404).json({ message: '픽셀 ID를 찾을 수 없거나 이미 삭제되었습니다.' });
+                    return res.status(404).json({ message: 'Pixel ID not found or already deleted.' });
                 }
 
                 res.status(200).json({
-                    message: '픽셀 ID가 성공적으로 삭제되었습니다!',
+                    message: 'Pixel ID deleted successfully!',
                     pixel: deletedPixel
                 });
             } catch (error) {
-                console.error('픽셀 ID 삭제 오류:', error);
-                res.status(500).json({ message: '픽셀 ID 삭제에 실패했습니다.' });
+                console.error('Error deleting pixel ID:', error);
+                res.status(500).json({ message: 'Failed to delete pixel ID.' });
             }
         }
     ]
 };
 
-// =========================
-// サイト設定ハンドラ (テナント対応)
-// =========================
+// ======================================
+// Site Config Handlers (Tenant-Aware)
+// ======================================
 
 const SiteConfigController = {
     /**
-     * @desc    現在のテナントのサイト全体の構成を提供します。
+     * @desc    Provides the entire site configuration for the current tenant.
      * @route   GET /api/site-config
-     * @access  Public
+     * @access  Public - Tenant is identified via a public middleware (e.g., from subdomain).
      */
     getSiteConfig: async (req, res) => {
         try {
-            const tenantId = req.tenantId; // `identifyTenant` ミドルウェアから
+            // This `tenantId` is set by a middleware (like `identifyTenant`) that runs
+            // before this controller, determining the tenant from the request's hostname.
+            const tenantId = req.tenantId; 
 
-            // データベースからサイト設定とピクセル設定を並行して取得します
+            // Fetch the site settings and the latest pixel settings in parallel for efficiency.
             const [siteConfig, pixelConfig] = await Promise.all([
-                SiteConfig.findOne({ tenantId }).lean(), // サイト設定モデルから取得
+                SiteConfig.findOne({ tenantId }).lean(), // Fetch from your SiteConfig model
                 PixelModel.getLatestPixelConfigForTenant(tenantId)
             ]);
 
             if (!siteConfig) {
-                return res.status(404).json({ message: 'このクライアントのサイト設定が見つかりません。' });
+                return res.status(404).json({ message: 'Site configuration not found for this client.' });
             }
 
-            // データベースからのデータとピクセル設定を結合します
+            // Combine the data from the database with the pixel settings.
             const fullConfig = {
-                ...siteConfig, // サイト名、色、配送料など
+                ...siteConfig, // Includes site name, colors, delivery fees, etc.
                 facebookPixelId: pixelConfig ? pixelConfig.facebookPixelId : null,
                 tiktokPixelId: pixelConfig ? pixelConfig.tiktokPixelId : null,
             };
 
             res.status(200).json(fullConfig);
         } catch (error) {
-            console.error('サイト設定の取得エラー:', error);
-            res.status(500).json({ message: 'サイト設定の取得に失敗しました。' });
+            console.error('Error fetching site configuration:', error);
+            res.status(500).json({ message: 'Failed to retrieve site configuration.' });
         }
     }
-    // ここにサイト設定を更新するための PUT/POST ハンドラを追加できます
+    // You can add PUT/POST handlers here to update the site configuration.
 };
 
 module.exports = { PixelController, SiteConfigController };
