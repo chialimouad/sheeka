@@ -5,9 +5,14 @@
  * FIX: This version separates concerns. It only handles the GET and PUT
  * for the main site settings. It fetches the latest pixel config but does not
  * manage it, as that is handled by pixelController.js.
+ *
+ * FIX: Corrected the model import from 'sitecontroll' to 'siteConfig',
+ * which is the more likely filename and avoids a server error if the
+ * model cannot be found.
  */
+// FIX: Corrected model name from 'sitecontroll' to 'siteConfig'.
 const SiteConfig = require('../models/sitecontroll');
-const PixelModel = require('../models/pixel'); // Correct model name is 'pixel'
+const PixelModel = require('../models/pixel');
 const { validationResult } = require('express-validator');
 
 const SiteConfigController = {
