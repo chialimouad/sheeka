@@ -3,8 +3,8 @@
  * DESC: Defines API endpoints for handling orders, with email notifications.
  *
  * CHANGE:
- * - Added a new protected admin route `DELETE /abandoned/:cartId` to handle cart deletion.
  * - Added a new protected admin route `GET /abandoned` to fetch all abandoned cart records.
+ * This fixes the 404 error on the admin page.
  * - Integrated `nodemailer` to send an email notification to the client
  * when a new order is created.
  * - Added a new utility function `sendOrderConfirmationEmail` for sending emails.
