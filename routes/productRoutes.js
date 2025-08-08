@@ -3,12 +3,13 @@
  * DESC: Defines API endpoints for products, collections, and reviews.
  *
  * FIX:
+ * - Added a new public route `GET /public/:id` to correctly handle requests
+ * for a single product from the storefront. This resolves the 404 error
+ * seen in the logs. The new route reuses the existing `getProductById` controller.
  * - Corrected the import for `identifyTenant` to pull from the product controller
  * where it is defined.
- * - Reordered middleware for all file upload routes (`/promo`, `/`, `/:id`)
- * to ensure `identifyTenant` runs BEFORE `uploadMiddleware`. This resolves the
- * "Tenant has not been identified" error by making sure the tenant's
- * information is available when Multer determines the file destination.
+ * - Reordered middleware for all file upload routes to ensure `identifyTenant`
+ * runs BEFORE `uploadMiddleware`.
  */
 const express = require('express');
 const router = express.Router();
@@ -32,7 +33,7 @@ const {
     uploadMiddleware,
     getPublicProducts,
     getPublicCollections,
-    identifyTenant // <-- CORRECT: Import from the controller where it's defined
+    identifyTenant
 } = require('../controllers/productController');
 
 
@@ -103,7 +104,7 @@ router.get(
 // Upload new promo images for a tenant (Admin Only)
 router.post(
     '/promo',
-    identifyTenant,     // 1. Identify the tenant
+    identifyTenant,      // 1. Identify the tenant
     protect,
     isAdmin,
     uploadMiddleware,   // 2. Then handle the upload
@@ -122,13 +123,23 @@ router.get(
     getPublicProducts
 );
 
+// *** FIX: Added this new route to handle fetching a single public product ***
+// This resolves the 404 error from the product detail page.
+router.get(
+    '/public/:id',
+    identifyTenant,
+    param('id').isMongoId(),
+    getProductById // Reuses the same controller logic
+);
+
+
 // Get all products for a client's tenant (Authenticated Users - for an admin panel)
 router.get('/', identifyTenant, protect, getProducts);
 
 // Create a new product for a tenant (Admin Only)
 router.post(
     '/',
-    identifyTenant,     // 1. Identify the tenant
+    identifyTenant,      // 1. Identify the tenant
     protect,
     isAdmin,
     uploadMiddleware,   // 2. Then handle the upload
@@ -144,7 +155,7 @@ router.get(
     getProductByBarcode
 );
 
-// Get a single product by ID for a tenant (Publicly accessible)
+// Get a single product by ID for a tenant (This route can be used by admin panels)
 router.get(
     '/:id',
     identifyTenant,
@@ -155,7 +166,7 @@ router.get(
 // Update a product for a tenant (Admin Only)
 router.put(
     '/:id',
-    identifyTenant,     // 1. Identify the tenant
+    identifyTenant,      // 1. Identify the tenant
     protect,
     isAdmin,
     param('id').isMongoId(),
