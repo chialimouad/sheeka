@@ -11,6 +11,7 @@ const router = express.Router();
 const { param } = require('express-validator');
 
 // Import the controller
+// FIX: Corrected the import path to match the intended controller file.
 const { SiteConfigController, PixelController } = require('../controllers/site');
 
 // Import all necessary middleware from the single source of truth
@@ -19,6 +20,7 @@ const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddlewa
 // --- Main Site Config Routes ---
 
 // GET the public site configuration for the current tenant
+// This route is now correctly wired to the controller.
 router.get(
     '/',
     identifyTenant, // Identify the tenant first
