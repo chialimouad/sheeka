@@ -11,7 +11,7 @@
  * even if a full configuration has not been created yet, allowing the UI to display it.
  */
 // FIX: Corrected model import to match the actual model filename 'SiteConfig'.
-const SiteConfig = require('../models/SiteConfig');
+const SiteConfig = require('../models/sitecontroll');
 const PixelModel = require('../models/pixel');
 const { validationResult } = require('express-validator');
 
