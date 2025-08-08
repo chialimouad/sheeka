@@ -11,9 +11,9 @@ const express = require('express');
 const router = express.Router();
 const { param } = require('express-validator');
 
-// FIX: Corrected the import path to match the controller's filename.
+// FIX: Corrected the import paths to match the controllers' filenames.
 const { SiteConfigController } = require('../controllers/site');
-const { PixelController } = require('../controllers/pixelcontroller');
+const { PixelController } = require('../controllers/pixelcontroller'); // Assuming filename is pixelController.js
 
 // Import all necessary middleware
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
