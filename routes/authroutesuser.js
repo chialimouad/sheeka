@@ -1,28 +1,19 @@
 /**
- * FILE: ./routes/userRoutes.js
+ * FILE: ./routes/authRoutes.js
  * DESC: Defines API endpoints for staff user management.
  *
  * FIX:
- * - Corrected middleware imports to use the single, consolidated `authMiddleware.js`.
  * - Corrected the controller import path to `authController`.
- * - CRITICAL SECURITY FIX: Added `protect` and `isAdmin` middleware to the
- * `/register` route. This ensures that only authenticated administrators can
- * create new users, which is the intended behavior for this management page.
- * - FIX: Changed the validation key in the PUT /:id/index route from `newIndexValue`
- * to `index` to match what the frontend sends.
+ * - Updated route handlers to correctly call methods from the imported AuthController object.
+ * - Removed the unused `getUserIndex` route as it has no corresponding controller function.
+ * - Maintained all security middleware for protected routes.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
 const router = express.Router();
 
 // Controller functions
-const {
-    register,
-    login,
-    getUsers,
-    updateIndex,
-    getUserIndex
-} = require('../controllers/authcontrolleruser'); // Corrected controller file name
+const AuthController = require('../controllers/authcontrolleruser');
 
 // Middleware from the single source of truth
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
@@ -32,9 +23,9 @@ const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddlewa
 // =========================
 
 /**
- * @route   POST /users/login
- * @desc    Authenticate staff user
- * @access  Public (requires tenant header)
+ * @route    POST /users/login
+ * @desc     Authenticate staff user
+ * @access   Public (requires tenant header)
  */
 router.post(
     '/login',
@@ -43,7 +34,7 @@ router.post(
         body('email').isEmail().withMessage('Please include a valid email'),
         body('password').notEmpty().withMessage('Password is required'),
     ],
-    login
+    AuthController.login
 );
 
 // =========================
@@ -51,70 +42,54 @@ router.post(
 // =========================
 
 /**
- * @route   POST /users/register
- * @desc    Register a new staff user (tenant-scoped)
- * @access  Private (Admin Only)
+ * @route    POST /users/register
+ * @desc     Register a new staff user (tenant-scoped)
+ * @access   Private (Admin Only)
  */
 router.post(
     '/register',
     identifyTenant,
-    protect, // <-- FIX: This route must be protected
-    isAdmin, // <-- FIX: Only admins can register new users
+    protect,
+    isAdmin,
     [
         body('name').notEmpty().withMessage('Name is required'),
         body('email').isEmail().withMessage('Please include a valid email'),
         body('password').isLength({ min: 6 }).withMessage('Password must be 6 or more characters'),
         body('role').isIn(['admin', 'confirmation', 'stockagent', 'user', 'employee']).withMessage('Invalid role'),
     ],
-    register
+    AuthController.registerUser
 );
 
 /**
- * @route   GET /users
- * @desc    Get all staff users for a tenant
- * @access  Private (Admin only)
+ * @route    GET /users
+ * @desc     Get all staff users for a tenant
+ * @access   Private (Admin only)
  */
 router.get(
     '/',
     identifyTenant,
     protect,
     isAdmin,
-    getUsers
+    AuthController.getUsers
 );
 
 /**
- * @route   GET /users/:id/index
- * @desc    Get user's index by ID
- * @access  Private (Admin only)
- */
-router.get(
-    '/:id/index',
-    identifyTenant,
-    protect,
-    isAdmin,
-    [
-        param('id').isMongoId().withMessage('Invalid user ID format')
-    ],
-    getUserIndex
-);
-
-/**
- * @route   PUT /users/:id/index
- * @desc    Update a user's index (status)
- * @access  Private
+ * @route    PUT /users/:id/index
+ * @desc     Update a user's index (status)
+ * @access   Private (Admin Only)
  */
 router.put(
     '/:id/index',
     identifyTenant,
     protect,
+    isAdmin, // Only admins should change user status
     [
         param('id').isMongoId().withMessage('Invalid user ID format'),
-        // FIX: The key sent from the frontend is 'index'.
         body('index')
             .isInt({ min: 0, max: 1 })
             .withMessage('A new index value of 0 or 1 is required')
     ],
-    updateIndex
+    AuthController.updateUserStatus
 );
 
 module.exports = router;
