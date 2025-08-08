@@ -2,25 +2,31 @@
  * FILE: ./routes/siteConfigRoutes.js
  * DESC: Defines API endpoints for site and pixel configuration.
  *
- * FIXES:
- * - Corrected the import path for SiteConfigController to point directly to the
- * 'siteConfigController.js' file. This ensures the controller is not undefined
- * when the routes are being defined.
+ * UPDATE: Added a new public route `GET /public` to fetch site configuration
+ * data for the public-facing website. This route only uses the `identifyTenant`
+ * middleware and does not require authentication, resolving the 401 error.
  */
 const express = require('express');
 const router = express.Router();
 const { param } = require('express-validator');
 
-// FIX: Corrected the import paths to match the controllers' filenames.
 const { SiteConfigController } = require('../controllers/site');
-const { PixelController } = require('../controllers/pixelcontroller'); // Assuming filename is pixelController.js
+const { PixelController } = require('../controllers/pixelcontroller');
 
-// Import all necessary middleware
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
 
-// --- Main Site Config Routes ---
+// --- Public Route ---
 
-// GET the site configuration for the current tenant
+// GET the public site configuration for the current tenant
+router.get(
+    '/public',
+    identifyTenant,
+    SiteConfigController.getPublicSiteConfig
+);
+
+// --- Admin-Only Routes ---
+
+// GET the full site configuration for the current tenant (Admin only)
 router.get(
     '/',
     identifyTenant,
@@ -38,9 +44,8 @@ router.put(
     SiteConfigController.updateSiteConfig
 );
 
-// --- Pixel Tracking Routes ---
+// --- Pixel Tracking Routes (Admin Only) ---
 
-// GET all pixel configurations for the current tenant (Admin only)
 router.get(
     '/pixels',
     identifyTenant,
@@ -49,7 +54,6 @@ router.get(
     PixelController.getPixels
 );
 
-// POST a new pixel configuration for the current tenant (Admin only)
 router.post(
     '/pixels',
     identifyTenant,
@@ -58,7 +62,6 @@ router.post(
     PixelController.postPixel
 );
 
-// DELETE a pixel configuration by its ID for the current tenant (Admin only)
 router.delete(
     '/pixels/:id',
     identifyTenant,
