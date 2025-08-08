@@ -14,7 +14,7 @@ const { param } = require('express-validator');
 
 // Import controllers from their dedicated files
 const { SiteConfigController } = require('../controllers/site');
-const { PixelController } = require('../controllers/pixelController');
+const { PixelController } = require('../controllers/pixelcontroller');
 
 // Import all necessary middleware
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
