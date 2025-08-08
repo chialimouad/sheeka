@@ -82,7 +82,7 @@ const customerRoutes = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
 // FIX: Corrected the import path to the proper routes file.
-const siteConfigRoutes = require('./routes/siteConfigRoutes'); 
+const siteConfigRoutes = require('./routes/site'); 
 const emailRoutes = require('./routes/emails');
 
 
