@@ -3,8 +3,8 @@
  * DESC: Defines API endpoints for handling orders, with email notifications.
  *
  * CHANGE:
+ * - Added a new protected admin route `DELETE /abandoned/:cartId` to handle cart deletion.
  * - Added a new protected admin route `GET /abandoned` to fetch all abandoned cart records.
- * This fixes the 404 error on the admin page.
  * - Integrated `nodemailer` to send an email notification to the client
  * when a new order is created.
  * - Added a new utility function `sendOrderConfirmationEmail` for sending emails.
@@ -181,7 +181,6 @@ router.post('/', identifyTenant, async (req, res) => {
 // Protected Admin Routes
 // =========================
 
-// *** NEW ROUTE TO FIX 404 ERROR ***
 router.get('/abandoned', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         if (!req.tenant) {
@@ -193,6 +192,28 @@ router.get('/abandoned', identifyTenant, protect, isAdmin, async (req, res) => {
     } catch (error) {
         console.error('Fetch abandoned carts error:', error);
         res.status(500).json({ message: 'Server error fetching abandoned carts.' });
+    }
+});
+
+// *** NEW ROUTE FOR DELETING ABANDONED CARTS ***
+router.delete('/abandoned/:cartId', identifyTenant, protect, isAdmin, async (req, res) => {
+    try {
+        if (!req.tenant) {
+            return res.status(404).json({ message: 'Client not found.' });
+        }
+        const tenantObjectId = req.tenant._id;
+        const { cartId } = req.params;
+
+        const deletedCart = await AbandonedCart.findOneAndDelete({ _id: cartId, tenantId: tenantObjectId });
+
+        if (!deletedCart) {
+            return res.status(404).json({ message: 'Abandoned cart not found for this client.' });
+        }
+
+        res.status(200).json({ message: 'Abandoned cart deleted successfully.' });
+    } catch (error) {
+        console.error('Delete abandoned cart error:', error);
+        res.status(500).json({ message: 'Server error deleting abandoned cart.' });
     }
 });
 
