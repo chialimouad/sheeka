@@ -74,16 +74,15 @@ const generateDefaultDeliveryFees = () => {
 };
 
 const siteConfigSchema = new mongoose.Schema({
-    // **FIXED**: Changed type to Number to match the Client model's tenantId.
-    // This is crucial for the 'ref' to work correctly.
+    // **FIXED**: Changed type back to ObjectId to match the data type of `req.tenant._id`
+    // provided by the authentication middleware. This resolves the server-side casting error.
     tenantId: {
-        type: Number,
+        type: mongoose.Schema.Types.ObjectId,
         required: true,
         unique: true,
-        ref: 'Client',
+        ref: 'Client', // This should reference your Tenant/Client model
         index: true,
     },
-    // **FIXED**: Re-added the subdomain field, which is essential for routing and links.
     subdomain: {
         type: String,
         required: true,
@@ -116,8 +115,6 @@ const siteConfigSchema = new mongoose.Schema({
         url: { type: String, required: true },
         iconClass: { type: String, required: true }
     }],
-    // **NEW**: Added deliveryFees with a default generator function.
-    // This array will be pre-populated for new tenants.
     deliveryFees: {
         type: [{
             wilayaId: { type: Number, required: true },
@@ -130,10 +127,5 @@ const siteConfigSchema = new mongoose.Schema({
 }, {
     timestamps: true
 });
-
-// The logic for creating a new config if one doesn't exist is handled by
-// `findOneAndUpdate` with `{ upsert: true }` in the controller.
-// The `default` properties in the schema (like for deliveryFees) will be
-// applied automatically on creation.
 
 module.exports = mongoose.model('SiteConfig', siteConfigSchema);
