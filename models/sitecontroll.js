@@ -1,8 +1,15 @@
-// models/SiteConfig.js
-
+/**
+ * FILE: ./models/SiteConfig.js
+ * DESC: Mongoose schema for storing tenant-specific site configuration.
+ *
+ * This model holds all the customizable settings for a tenant's public-facing site,
+ * including branding, content, contact info, and delivery fee settings.
+ * It is linked to a Client via the tenantId.
+ */
 const mongoose = require('mongoose');
 
-// Helper function to generate default Algerian wilayas and their default fees
+// Helper function to generate default Algerian wilayas and their default fees.
+// This function is used to populate the deliveryFees for a new site configuration.
 const generateDefaultDeliveryFees = () => {
     return [
         { "wilayaId": 1, "wilayaName": "Adrar", "price": 800 },
@@ -66,23 +73,30 @@ const generateDefaultDeliveryFees = () => {
     ];
 };
 
-const SiteConfigSchema = new mongoose.Schema({
-    // This tenantId field is the cornerstone of the multi-tenant architecture.
-    // It must be unique, as each client has only one site configuration.
+const siteConfigSchema = new mongoose.Schema({
+    // **FIXED**: Changed type to Number to match the Client model's tenantId.
+    // This is crucial for the 'ref' to work correctly.
     tenantId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: Number,
         required: true,
-        ref: 'Client',
         unique: true,
+        ref: 'Client',
+        index: true,
+    },
+    // **FIXED**: Re-added the subdomain field, which is essential for routing and links.
+    subdomain: {
+        type: String,
+        required: true,
+        unique: true,
+        lowercase: true,
+        trim: true,
         index: true,
     },
     siteName: { type: String, default: 'My Store' },
     slogan: { type: String, default: 'Quality products you can trust.' },
-    // ** NEW **: Added fields for Hero Section
     heroTitle: { type: String, default: 'Welcome to Our Store' },
     heroButtonText: { type: String, default: 'Shop Now' },
     heroImageUrl: { type: String, default: 'https://placehold.co/1920x1080/cccccc/FFFFFF?text=Hero+Image' },
-    
     primaryColor: { type: String, default: '#C8797D' },
     secondaryColor: { type: String, default: '#A85F64' },
     tertiaryColor: { type: String, default: '#FDF5E6' },
@@ -92,47 +106,34 @@ const SiteConfigSchema = new mongoose.Schema({
     footerLinkColor: { type: String, default: '#E6B89C' },
     aboutUsText: { type: String, default: 'Welcome to our store!' },
     aboutUsImageUrl: { type: String, default: 'https://placehold.co/800x600/cccccc/FFFFFF?text=About+Us' },
-    // ** NEW **: Added Contact Info object
     contactInfo: {
-        address: { type: String },
-        email: { type: String },
-        phone: { type: String }
+        address: { type: String, default: '' },
+        email: { type: String, default: '' },
+        phone: { type: String, default: '' }
     },
     socialMediaLinks: [{
         platform: { type: String, required: true },
         url: { type: String, required: true },
         iconClass: { type: String, required: true }
     }],
-    deliveryFees: [{
-        wilayaId: { type: Number, required: true },
-        wilayaName: { type: String, required: true },
-        price: { type: Number, required: true, default: 0 }
-    }],
+    // **NEW**: Added deliveryFees with a default generator function.
+    // This array will be pre-populated for new tenants.
+    deliveryFees: {
+        type: [{
+            wilayaId: { type: Number, required: true },
+            wilayaName: { type: String, required: true },
+            price: { type: Number, required: true, default: 0 }
+        }],
+        default: generateDefaultDeliveryFees
+    },
     currentDataIndex: { type: Number, default: 0 }
 }, {
     timestamps: true
 });
 
-/**
- * @description Finds the configuration for a given tenant. If it doesn't exist,
- * it creates a new one with default values.
- * @param {string} tenantId The ID of the tenant.
- * @returns {Promise<Document>} The site configuration document.
- */
-SiteConfigSchema.statics.findOrCreateForTenant = async function(tenantId) {
-    let config = await this.findOne({ tenantId });
-    if (!config) {
-        config = await this.create({
-            tenantId,
-            deliveryFees: generateDefaultDeliveryFees(), // Initialize with default fees
-            socialMediaLinks: [
-                { platform: 'Facebook', url: '#', iconClass: 'fab fa-facebook-f' },
-                { platform: 'Instagram', url: '#', iconClass: 'fab fa-instagram' },
-                { platform: 'Twitter', url: '#', iconClass: 'fab fa-twitter' }
-            ],
-        });
-    }
-    return config;
-};
+// The logic for creating a new config if one doesn't exist is handled by
+// `findOneAndUpdate` with `{ upsert: true }` in the controller.
+// The `default` properties in the schema (like for deliveryFees) will be
+// applied automatically on creation.
 
-module.exports = mongoose.model('SiteConfig', SiteConfigSchema);
+module.exports = mongoose.model('SiteConfig', siteConfigSchema);
