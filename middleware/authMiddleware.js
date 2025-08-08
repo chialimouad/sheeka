@@ -16,6 +16,8 @@
  * The subsequent `User.findOne` query already validates that the user belongs
  * to the correct tenant, making the explicit check redundant and preventing
  * errors with tokens that may not contain a `tenantId` in their payload.
+ * - **DEBUG**: Added a console log to the `identifyTenant` middleware to verify
+ * that the tenant's subdomain is being correctly retrieved from the database.
  */
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -57,6 +59,13 @@ const identifyTenant = async (req, res, next) => {
         if (!client.isActive) {
             return res.status(403).json({ message: 'This client account is inactive.' });
         }
+        
+        // DEBUG: Log the identified tenant's details to the server console.
+        console.log('Tenant identified:', { 
+            _id: client._id, 
+            tenantId: client.tenantId, 
+            subdomain: client.subdomain 
+        });
 
         // 4. Success! Attach tenant data to the request.
         req.tenant = client;
