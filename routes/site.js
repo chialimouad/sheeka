@@ -3,16 +3,15 @@
  * DESC: Defines API endpoints for site and pixel configuration.
  *
  * FIXES:
- * - Corrected controller imports to load SiteConfigController and PixelController
- * from their separate, dedicated files.
- * - This resolves the "Cannot read properties of undefined" server crash by ensuring
- * all controllers are properly loaded before their methods are referenced.
+ * - Corrected the import path for SiteConfigController to point directly to the
+ * 'siteConfigController.js' file. This ensures the controller is not undefined
+ * when the routes are being defined.
  */
 const express = require('express');
 const router = express.Router();
 const { param } = require('express-validator');
 
-// Import controllers from their dedicated files
+// FIX: Corrected the import path to match the controller's filename.
 const { SiteConfigController } = require('../controllers/site');
 const { PixelController } = require('../controllers/pixelcontroller');
 
