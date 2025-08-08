@@ -12,10 +12,10 @@
  * request as `req.tenantObjectId`. This resolves the "Cast to ObjectId failed"
  * error by providing the correct data type for querying related collections
  * like SiteConfig, Products, and Orders.
- * - **SECURITY UPDATE**: The `protect` middleware has been enhanced. It now verifies
- * that the `tenantId` inside the JWT payload matches the `tenantId` of the
- * tenant identified by the request header (`x-tenant-id`). This prevents a valid
- * token from one tenant being used to attempt access on another tenant's routes.
+ * - **FIX**: Removed the strict JWT tenantId check from the `protect` middleware.
+ * The subsequent `User.findOne` query already validates that the user belongs
+ * to the correct tenant, making the explicit check redundant and preventing
+ * errors with tokens that may not contain a `tenantId` in their payload.
  */
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -102,15 +102,11 @@ const protect = async (req, res, next) => {
         // Verify the token with the secret of the tenant identified by the header.
         const decoded = jwt.verify(token, req.jwtSecret);
 
-        // **SECURITY ENHANCEMENT**: Check that the tenant in the token matches the tenant in the header.
-        // This requires the tenantId to be part of the JWT payload.
-        if (decoded.tenantId !== req.tenant.tenantId) {
-            return res.status(403).json({ message: 'Forbidden: Token does not belong to the specified tenant.' });
-        }
-
-        // Find the user associated with the token, ensuring they belong to the correct tenant.
+        // Find the user associated with the token.
+        // This query implicitly ensures the user belongs to the correct tenant,
+        // making an explicit check against the JWT payload unnecessary and more robust.
         const user = await User.findOne({ _id: decoded.id, tenantId: req.tenant.tenantId }).select('-password');
-        if (!user) return res.status(401).json({ message: 'Unauthorized: User not found.' });
+        if (!user) return res.status(401).json({ message: 'Unauthorized: User not found for this tenant.' });
 
         req.user = user;
         next();
