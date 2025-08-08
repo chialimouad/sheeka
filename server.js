@@ -2,15 +2,11 @@
  * FILE: ./server.js
  * DESC: Main server entry point for the multi-tenant ERP system.
  *
- * FIXES APPLIED:
- * - Configured Express to correctly serve static files from the 'uploads' directory,
- * resolving 404 errors for images.
- * - Added support for persistent storage on platforms like Render using environment variables.
- * - Configured Helmet to allow cross-origin resource loading, preventing browsers
- * from blocking images.
- * - Disabled Helmet's default Content Security Policy (CSP) which is often too
- * strict for dynamic applications loading external resources.
- * - Set up a global CORS policy to allow requests from any frontend domain.
+ * FIX:
+ * - Corrected the import path for site configuration routes from './routes/site'
+ * to './routes/siteConfigRoutes'. This resolves a server startup crash caused
+ * by an incorrect import in the old file, which was making all endpoints,
+ * including '/users', return a 404 error.
  */
 
 require('dotenv').config();
@@ -49,18 +45,10 @@ app.use(morgan('dev'));
 // 📁 Static File Serving
 // ========================
 
-// Define the primary directory for file uploads.
-// This uses the path provided by Render's Persistent Disks if the environment variable is set.
-// If not, it falls back to a local 'public/uploads' directory for development.
 const UPLOADS_DIR = process.env.RENDER_DISK_MOUNT_PATH || path.join(__dirname, 'public', 'uploads');
 
-// Serve the uploaded images publicly. 
-// This is the key fix: any request starting with '/uploads' will now be served
-// directly from the UPLOADS_DIR.
 console.log(`✅ Serving uploaded files from: ${UPLOADS_DIR}`);
 app.use('/uploads', express.static(UPLOADS_DIR));
-
-// Serve other static assets (like CSS, client-side JS, etc.) from the 'public' directory.
 app.use(express.static(path.join(__dirname, 'public')));
 
 
@@ -93,7 +81,8 @@ const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser'); 
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
-const siteConfigRoutes = require('./routes/site');
+// FIX: Corrected the import path to the proper routes file.
+const siteConfigRoutes = require('./routes/siteConfigRoutes'); 
 const emailRoutes = require('./routes/emails');
 
 
