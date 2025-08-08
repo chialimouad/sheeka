@@ -1,14 +1,16 @@
 /**
  * FILE: ./controllers/authController.js
- * DESC: Handles user authentication, registration, and management.
- * * FIX: 
- * - The `login` function now checks if `user.index` is 1 (Active).
- * - If the user is inactive, it returns a 401 Unauthorized error with a clear message.
- * This prevents inactive users from logging in and completes the activation workflow.
+ * DESC: Controller functions for user registration, authentication, and management.
+ * * UPDATE:
+ * - Added a new `login` function to handle user authentication.
+ * - The `login` function checks if a user's `index` is 1 (Active) before issuing a token,
+ * preventing inactive users from logging in.
+ * - Integrated a `generateToken` helper function for creating JWTs.
+ * - Maintained a consistent structure by adding `login` to the AuthController object.
  */
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken'); 
+const jwt =require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 
 // --- Helper function to generate JWT ---
@@ -21,152 +23,152 @@ const generateToken = (userId, tenantId, jwtSecret) => {
     });
 };
 
-/**
- * @desc      Authenticate a staff user and return a token
- * @route     POST /users/login
- * @access    Public (Tenant header required)
- */
-exports.login = async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { email, password } = req.body;
-    const tenantId = req.tenantId; // From identifyTenant middleware
-
-    try {
-        // Find the user scoped to the specific tenant
-        const user = await User.findOne({ email: email.toLowerCase(), tenantId: tenantId });
-
-        if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials or user does not exist for this tenant.' });
+const AuthController = {
+    /**
+     * @desc     Authenticate a staff user and return a token
+     * @route    POST /users/login
+     * @access   Public (Tenant header required)
+     */
+    login: async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
 
-        // Check if the password matches
-        const isMatch = await bcrypt.compare(password, user.password);
+        const { email, password } = req.body;
+        // The entire tenant client object is attached by the identifyTenant middleware
+        const tenant = req.tenant;
 
-        if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid credentials.' });
+        try {
+            const user = await User.findOne({ email: email.toLowerCase(), tenantId: tenant.tenantId });
+
+            if (!user) {
+                return res.status(401).json({ message: 'Invalid credentials or user does not exist for this tenant.' });
+            }
+
+            const isMatch = await bcrypt.compare(password, user.password);
+
+            if (!isMatch) {
+                return res.status(401).json({ message: 'Invalid credentials.' });
+            }
+
+            // FIX: Check if the user's account is active before allowing login.
+            if (user.index !== 1) {
+                return res.status(401).json({ message: 'This account is not active. Please contact an administrator.' });
+            }
+
+            const jwtSecret = tenant.config.jwtSecret;
+            const token = generateToken(user._id, user.tenantId, jwtSecret);
+
+            res.json({
+                token,
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                },
+            });
+
+        } catch (error) {
+            console.error('Login Error:', error);
+            res.status(500).json({ message: error.message || 'Server error during login.' });
         }
+    },
 
-        // FIX: Check if the user's account is active before allowing login.
-        if (user.index !== 1) {
-            return res.status(401).json({ message: 'This account is not active. Please contact an administrator.' });
+    /**
+     * @desc    Register a new user for the current tenant.
+     * @route   POST /users/register
+     * @access  Private (Admin)
+     */
+    registerUser: async (req, res) => {
+        try {
+            const { name, email, password, role } = req.body;
+            const tenantId = req.tenant.tenantId; // Numeric ID from identifyTenant middleware
+
+            if (!name || !email || !password || !role) {
+                return res.status(400).json({ message: 'Please provide all required fields.' });
+            }
+
+            const userExists = await User.findOne({ email, tenantId });
+            if (userExists) {
+                return res.status(400).json({ message: 'User with this email already exists for this tenant.' });
+            }
+
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(password, salt);
+
+            const newUser = await User.create({
+                name,
+                email,
+                password: hashedPassword,
+                role,
+                tenantId,
+                // 'index' defaults to 1 (Active) based on the User model
+            });
+
+            res.status(201).json({
+                message: 'User registered successfully.',
+                user: {
+                    _id: newUser._id,
+                    name: newUser.name,
+                    email: newUser.email,
+                    role: newUser.role,
+                    index: newUser.index
+                }
+            });
+        } catch (error) {
+            console.error('User registration error:', error);
+            res.status(500).json({ message: 'Server error during user registration.' });
         }
+    },
 
-        // We get the secret from the client object attached by the middleware.
-        const jwtSecret = req.client.config.jwtSecret;
+    /**
+     * @desc    Get all users for the current tenant.
+     * @route   GET /users
+     * @access  Private (Admin)
+     */
+    getUsers: async (req, res) => {
+        try {
+            const tenantId = req.tenant.tenantId;
+            const users = await User.find({ tenantId }).select('-password');
+            res.status(200).json(users);
+        } catch (error) {
+            console.error('Fetch users error:', error);
+            res.status(500).json({ message: 'Server error fetching users.' });
+        }
+    },
 
-        // Generate the token with the specific client's secret
-        const token = generateToken(user._id, user.tenantId, jwtSecret);
+    /**
+     * @desc    Update a user's status (active/inactive).
+     * @route   PUT /users/:id/index
+     * @access  Private (Admin)
+     */
+    updateUserStatus: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { index } = req.body;
+            const tenantId = req.tenant.tenantId;
 
-        res.json({
-            token,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-            },
-        });
+            if (index === undefined || (index !== 0 && index !== 1)) {
+                return res.status(400).json({ message: 'Invalid status index provided. Must be 0 or 1.' });
+            }
 
-    } catch (error) {
-        console.error('Login Error:', error);
-        res.status(500).json({ message: error.message || 'Server error during login.' });
+            const user = await User.findOne({ _id: id, tenantId });
+
+            if (!user) {
+                return res.status(404).json({ message: 'User not found for this tenant.' });
+            }
+
+            user.index = index;
+            await user.save();
+
+            res.status(200).json({ message: 'User status updated successfully.', user });
+        } catch (error) {
+            console.error('Update user status error:', error);
+            res.status(500).json({ message: 'Server error updating user status.' });
+        }
     }
 };
 
-/**
- * @desc      Register a new staff user for the current tenant
- * @route     POST /users/register
- * @access    Private (Admin Only)
- */
-exports.register = async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { name, email, password, role } = req.body;
-    const tenantId = req.tenantId; // From identifyTenant middleware
-
-    try {
-        // Check if user already exists for this tenant
-        let user = await User.findOne({ email: email.toLowerCase(), tenantId });
-        if (user) {
-            return res.status(400).json({ message: 'User with this email already exists for this tenant.' });
-        }
-
-        user = new User({
-            tenantId,
-            name,
-            email,
-            password, // Hashed by pre-save hook
-            role,
-            // Note: The 'index' field will default to 0 (Inactive) based on the schema, which is correct.
-        });
-
-        await user.save();
-
-        res.status(201).json({
-            message: 'User registered successfully. They must be activated by an admin to log in.',
-            user: { id: user._id, name: user.name, email: user.email, role: user.role }
-        });
-
-    } catch (error) {
-        console.error('Registration Error:', error);
-        res.status(500).json({ message: 'Server error during registration.' });
-    }
-};
-
-// --- User Management Functions ---
-
-exports.getUsers = async (req, res) => {
-    try {
-        const users = await User.find({ tenantId: req.tenantId }).select('-password');
-        res.json(users);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error.' });
-    }
-};
-
-exports.updateIndex = async (req, res) => {
-    const { id } = req.params;
-    // Note: The frontend sends 'index', not 'newIndexValue'.
-    const { index } = req.body; 
-
-    if (typeof index !== 'number') {
-        return res.status(400).json({ message: 'Index value must be a number (0 or 1).' });
-    }
-
-    try {
-        const user = await User.findOneAndUpdate(
-            { _id: id, tenantId: req.tenantId },
-            { $set: { index: index } },
-            { new: true }
-        ).select('-password');
-
-        if (!user) {
-            return res.status(404).json({ message: 'User not found for this tenant.' });
-        }
-
-        res.json({ message: 'User status updated successfully.', user });
-    } catch (error) {
-        console.error('Update Index Error:', error);
-        res.status(500).json({ message: 'Server error while updating user status.' });
-    }
-};
-
-// This function is not used by the frontend but is good practice to have.
-exports.getUserIndex = async (req, res) => {
-    try {
-        const user = await User.findOne({ _id: req.params.id, tenantId: req.tenantId }).select('index');
-        if (!user) {
-            return res.status(404).json({ message: 'User not found.' });
-        }
-        res.json({ index: user.index });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error.' });
-    }
-};
+module.exports = AuthController;
