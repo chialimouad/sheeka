@@ -1,51 +1,38 @@
 /**
  * FILE: ./controllers/siteConfigController.js
- * DESC: Handles business logic for fetching and updating tenant-specific site configurations.
+ * DESC: Controller for managing the main site configuration.
  *
- * FIXES APPLIED:
- * - Corrected the model import path from 'sitecontroll' to the correct 'SiteConfig'.
- * - Refactored `getSiteConfig` to properly handle cases where a config doesn't exist yet, creating a default object in memory using info from the Client model and schema defaults. This removes the dependency on the non-existent `findOrCreateForTenant` method.
- * - Added `deliveryFees` to the `updateSiteConfig` logic, allowing tenants to update their shipping prices.
- * - Standardized the use of `req.tenant.tenantId` and `req.tenant.subdomain` which are attached by the `identifyTenant` middleware.
- * - Maintained the security fix in `updateSiteConfig` to explicitly list updateable fields, preventing mass assignment vulnerabilities.
+ * FIX: This version separates concerns. It only handles the GET and PUT
+ * for the main site settings. It fetches the latest pixel config but does not
+ * manage it, as that is handled by pixelController.js.
  */
 const SiteConfig = require('../models/sitecontroll');
-const Client = require('../models/Client'); // Needed to get defaults for new configs
-const PixelModel = require('../models/pixel'); // For merging pixel data
+const PixelModel = require('../models/pixel'); // Correct model name is 'pixel'
+const { validationResult } = require('express-validator');
 
 const SiteConfigController = {
     /**
-     * @desc    Get the complete site configuration for the current tenant.
+     * @desc    Provides the entire site configuration for the current tenant,
+     * including the latest pixel IDs.
      * @route   GET /site-config
-     * @access  Private (Tenant-specific)
+     * @access  Private (Admin)
      */
     getSiteConfig: async (req, res) => {
         try {
-            const tenantId = req.tenant.tenantId; // From identifyTenant middleware
+            // The tenant's MongoDB ObjectId is attached by the identifyTenant middleware.
+            const tenantObjectId = req.tenant._id;
 
-            let siteConfig = await SiteConfig.findOne({ tenantId }).lean();
+            // Fetch site settings and the latest pixel settings in parallel for efficiency.
+            const [siteConfig, pixelConfig] = await Promise.all([
+                SiteConfig.findOne({ tenantId: tenantObjectId }).lean(),
+                PixelModel.findOne({ tenantId: tenantObjectId }).sort({ createdAt: -1 }).lean()
+            ]);
 
-            // If no config exists, build a default one to return.
-            // It will be saved on the first PUT request.
             if (!siteConfig) {
-                const client = await Client.findOne({ tenantId }).lean();
-                if (!client) {
-                    return res.status(404).json({ message: 'Client data not found for this tenant.' });
-                }
-                
-                // Create a temporary default config using schema defaults and client info
-                const defaultConfig = new SiteConfig({
-                    tenantId: client.tenantId,
-                    subdomain: client.subdomain,
-                    siteName: client.name,
-                });
-                siteConfig = defaultConfig.toObject();
+                return res.status(404).json({ message: 'Site configuration not found for this client.' });
             }
-            
-            // Fetch the latest pixel configuration for the tenant
-            const pixelConfig = await PixelModel.findOne({ tenantId: req.tenant._id }).sort({ createdAt: -1 }).lean();
 
-            // Combine site config with pixel data for a complete response
+            // Combine the data into a single response object.
             const fullConfig = {
                 ...siteConfig,
                 facebookPixelId: pixelConfig ? pixelConfig.fbPixelId : null,
@@ -55,67 +42,35 @@ const SiteConfigController = {
             res.status(200).json(fullConfig);
         } catch (error) {
             console.error('Error fetching site configuration:', error);
-            res.status(500).json({ message: 'Server error while fetching configuration.' });
+            res.status(500).json({ message: 'Failed to retrieve site configuration.' });
         }
     },
 
     /**
-     * @desc    Create or Update the site configuration for the current tenant.
+     * @desc    Updates the main site configuration for the current tenant.
      * @route   PUT /site-config
-     * @access  Private (Admin role for the tenant)
+     * @access  Private (Admin)
      */
     updateSiteConfig: async (req, res) => {
         try {
-            const tenantId = req.tenant.tenantId; // From identifyTenant middleware
-
-            // Explicitly destructure all expected fields from the request body for security.
+            const tenantObjectId = req.tenant._id;
+            // Destructure only the fields that belong to the site configuration
             const {
-                siteName,
-                slogan,
-                heroTitle,
-                heroButtonText,
-                heroImageUrl,
-                primaryColor,
-                secondaryColor,
-                tertiaryColor,
-                generalTextColor,
-                footerBgColor,
-                footerTextColor,
-                footerLinkColor,
-                aboutUsText,
-                aboutUsImageUrl,
-                contactInfo,
-                socialMediaLinks,
-                deliveryFees, // Added deliveryFees to be updatable
-                currentDataIndex
+                siteName, slogan, heroTitle, heroButtonText, heroImageUrl,
+                primaryColor, secondaryColor, tertiaryColor, generalTextColor,
+                footerBgColor, footerTextColor, footerLinkColor, aboutUsText,
+                aboutUsImageUrl, contactInfo, socialMediaLinks, deliveryFees, currentDataIndex
             } = req.body;
 
-            // Construct the object with all fields that are allowed to be updated.
             const updateData = {
-                siteName,
-                slogan,
-                heroTitle,
-                heroButtonText,
-                heroImageUrl,
-                primaryColor,
-                secondaryColor,
-                tertiaryColor,
-                generalTextColor,
-                footerBgColor,
-                footerTextColor,
-                footerLinkColor,
-                aboutUsText,
-                aboutUsImageUrl,
-                contactInfo,
-                socialMediaLinks,
-                deliveryFees,
-                currentDataIndex,
-                subdomain: req.tenant.subdomain // Ensure subdomain is always set
+                siteName, slogan, heroTitle, heroButtonText, heroImageUrl,
+                primaryColor, secondaryColor, tertiaryColor, generalTextColor,
+                footerBgColor, footerTextColor, footerLinkColor, aboutUsText,
+                aboutUsImageUrl, contactInfo, socialMediaLinks, deliveryFees, currentDataIndex
             };
-
-            // Use findOneAndUpdate with upsert to create the document if it doesn't exist.
+            
             const updatedConfig = await SiteConfig.findOneAndUpdate(
-                { tenantId: tenantId },
+                { tenantId: tenantObjectId },
                 { $set: updateData },
                 { new: true, upsert: true, runValidators: true }
             );
@@ -124,13 +79,12 @@ const SiteConfigController = {
                 message: "Site configuration updated successfully!",
                 config: updatedConfig
             });
+
         } catch (error) {
-            console.error('Error updating site configuration:', error);
-            res.status(500).json({ message: 'Failed to update site configuration.' });
+            console.error('Error updating site config:', error);
+            res.status(500).json({ message: 'Failed to update site configuration' });
         }
     }
 };
 
-// Note: The PixelController logic would ideally be in its own file.
-// For this fix, we are only exporting the corrected SiteConfigController.
 module.exports = { SiteConfigController };
