@@ -9,6 +9,10 @@
  * FIX: Corrected the model import from 'sitecontroll' to 'siteConfig',
  * which is the more likely filename and avoids a server error if the
  * model cannot be found.
+ *
+ * FIX: Enhanced error logging to provide more specific details in both the
+ * server console and the JSON response. This helps diagnose the root cause
+ * of 500 errors.
  */
 // FIX: Corrected model name from 'sitecontroll' to 'siteConfig'.
 const SiteConfig = require('../models/sitecontroll');
@@ -46,8 +50,13 @@ const SiteConfigController = {
 
             res.status(200).json(fullConfig);
         } catch (error) {
-            console.error('Error fetching site configuration:', error);
-            res.status(500).json({ message: 'Failed to retrieve site configuration.' });
+            // Log the detailed error on the server for debugging.
+            console.error('Error in getSiteConfig:', error);
+            // Send a more informative error message in the response.
+            res.status(500).json({
+                message: 'Failed to retrieve site configuration.',
+                error: error.message // Include the actual error message
+            });
         }
     },
 
@@ -86,8 +95,13 @@ const SiteConfigController = {
             });
 
         } catch (error) {
-            console.error('Error updating site config:', error);
-            res.status(500).json({ message: 'Failed to update site configuration' });
+            // Log the detailed error on the server for debugging.
+            console.error('Error in updateSiteConfig:', error);
+            // Send a more informative error message in the response.
+            res.status(500).json({
+                message: 'Failed to update site configuration',
+                error: error.message // Include the actual error message
+            });
         }
     }
 };
