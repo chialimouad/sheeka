@@ -2,20 +2,16 @@
  * FILE: ./controllers/siteConfigController.js
  * DESC: Controller for managing the main site configuration.
  *
- * FIX: This version separates concerns. It only handles the GET and PUT
- * for the main site settings. It fetches the latest pixel config but does not
- * manage it, as that is handled by pixelController.js.
- *
- * FIX: Corrected the model import from 'sitecontroll' to 'siteConfig',
- * which is the more likely filename and avoids a server error if the
- * model cannot be found.
- *
- * FIX: Enhanced error logging to provide more specific details in both the
- * server console and the JSON response. This helps diagnose the root cause
- * of 500 errors.
+ * FIX: The `updateSiteConfig` function has been corrected to ensure the `subdomain`
+ * is saved when a new configuration is created via `upsert`. It now uses the
+ * `$setOnInsert` operator to add the `subdomain` and `tenantId` from the request's
+ * tenant object, guaranteeing this crucial data is not missed on initial creation.
+ * FIX: Corrected the model import path from 'sitecontroll' to 'siteConfig'.
+ * FIX: The `getSiteConfig` function now returns the subdomain from the tenant object
+ * even if a full configuration has not been created yet, allowing the UI to display it.
  */
-// FIX: Corrected model name from 'sitecontroll' to 'siteConfig'.
-const SiteConfig = require('../models/sitecontroll');
+// FIX: Corrected model name to match convention, e.g., 'siteConfig'.
+const SiteConfig = require('../models/siteConfig');
 const PixelModel = require('../models/pixel');
 const { validationResult } = require('express-validator');
 
@@ -37,8 +33,12 @@ const SiteConfigController = {
                 PixelModel.findOne({ tenantId: tenantObjectId }).sort({ createdAt: -1 }).lean()
             ]);
 
+            // If no config exists, return a 404 but include the subdomain for the UI.
             if (!siteConfig) {
-                return res.status(404).json({ message: 'Site configuration not found for this client.' });
+                return res.status(404).json({ 
+                    message: 'Site configuration not yet created. Please save your settings to initialize it.',
+                    subdomain: req.tenant.subdomain // Send subdomain from the tenant object
+                });
             }
 
             // Combine the data into a single response object.
@@ -61,32 +61,29 @@ const SiteConfigController = {
     },
 
     /**
-     * @desc    Updates the main site configuration for the current tenant.
+     * @desc    Updates or creates the main site configuration for the current tenant.
      * @route   PUT /site-config
      * @access  Private (Admin)
      */
     updateSiteConfig: async (req, res) => {
         try {
-            const tenantObjectId = req.tenant._id;
-            // Destructure only the fields that belong to the site configuration
-            const {
-                siteName, slogan, heroTitle, heroButtonText, heroImageUrl,
-                primaryColor, secondaryColor, tertiaryColor, generalTextColor,
-                footerBgColor, footerTextColor, footerLinkColor, aboutUsText,
-                aboutUsImageUrl, contactInfo, socialMediaLinks, deliveryFees, currentDataIndex
-            } = req.body;
+            const tenant = req.tenant; // Get the full tenant object from middleware
+            const updateData = req.body;
 
-            const updateData = {
-                siteName, slogan, heroTitle, heroButtonText, heroImageUrl,
-                primaryColor, secondaryColor, tertiaryColor, generalTextColor,
-                footerBgColor, footerTextColor, footerLinkColor, aboutUsText,
-                aboutUsImageUrl, contactInfo, socialMediaLinks, deliveryFees, currentDataIndex
-            };
-            
             const updatedConfig = await SiteConfig.findOneAndUpdate(
-                { tenantId: tenantObjectId },
-                { $set: updateData },
-                { new: true, upsert: true, runValidators: true }
+                { tenantId: tenant._id },
+                {
+                    $set: updateData, // Update fields from the form
+                    $setOnInsert: {   // **FIX**: Set these fields ONLY on initial creation
+                        tenantId: tenant._id,
+                        subdomain: tenant.subdomain
+                    }
+                },
+                { 
+                    new: true, 
+                    upsert: true, // Create the document if it doesn't exist
+                    runValidators: true 
+                }
             );
 
             res.status(200).json({
