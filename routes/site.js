@@ -3,18 +3,18 @@
  * DESC: Defines API endpoints for site and pixel configuration.
  *
  * FIXES:
- * - Corrected the controller import path to '../controllers/siteConfigController'.
- * - Imported the PixelController to handle pixel-related logic.
- * - Activated and correctly defined the routes for '/pixels' and '/pixels/:id'
- * to match the API calls from the frontend, resolving the 404 errors.
- * - Ensured all routes have the necessary middleware for tenant identification and security.
+ * - Corrected controller imports to load SiteConfigController and PixelController
+ * from their separate, dedicated files.
+ * - This resolves the "Cannot read properties of undefined" server crash by ensuring
+ * all controllers are properly loaded before their methods are referenced.
  */
 const express = require('express');
 const router = express.Router();
 const { param } = require('express-validator');
 
-// Import controllers from the correct file
-const { SiteConfigController, PixelController } = require('../controllers/site');
+// Import controllers from their dedicated files
+const { SiteConfigController } = require('../controllers/site');
+const { PixelController } = require('../controllers/pixelController');
 
 // Import all necessary middleware
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
@@ -25,7 +25,7 @@ const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddlewa
 router.get(
     '/',
     identifyTenant,
-    protect, // Re-added protect as a best practice for authenticated sections
+    protect,
     isAdmin,
     SiteConfigController.getSiteConfig
 );
