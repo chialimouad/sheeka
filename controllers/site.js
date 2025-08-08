@@ -11,7 +11,7 @@
  * even if a full configuration has not been created yet, allowing the UI to display it.
  */
 // FIX: Corrected model name to match convention, e.g., 'siteConfig'.
-const SiteConfig = require('../models/siteConfig');
+const SiteConfig = require('../models/sitecontroll');
 const PixelModel = require('../models/pixel');
 const { validationResult } = require('express-validator');
 
