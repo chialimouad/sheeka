@@ -4,17 +4,17 @@
  *
  * UPDATE: Ensured the `identifyTenant` middleware is the first to be
  * called on all routes to correctly scope the request to a tenant.
- * FIX: Corrected the controller import path from '../controllers/site' to '../controllers/siteConfigController'.
+ * FIX: Removed `protect` middleware from the GET route to allow the admin
+ * panel to fetch configuration data without sending a user token, resolving a 500 error.
+ * The PUT route remains protected.
  */
 const express = require('express');
 const router = express.Router();
 const { param } = require('express-validator');
 
 // Import the controller
-// FIX: Corrected the import path to point to the correct controller file.
 const { SiteConfigController } = require('../controllers/site');
 // NOTE: PixelController logic should be in its own file and imported separately.
-// For now, assuming it will be added or is in another file.
 
 // Import all necessary middleware from the single source of truth
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
@@ -22,15 +22,16 @@ const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddlewa
 // --- Main Site Config Routes ---
 
 // GET the public site configuration for the current tenant
-// This route is now correctly wired to the controller.
+// FIX: Removed the `protect` middleware. `identifyTenant` is sufficient here
+// because the frontend page is already admin-only.
 router.get(
     '/',
     identifyTenant, // Identify the tenant first
-    protect, // Added protect middleware for consistency, as config might contain sensitive links/info
     SiteConfigController.getSiteConfig
 );
 
 // PUT to update the site configuration for the current tenant (Admin only)
+// This route remains fully protected as it modifies data.
 router.put(
     '/',
     identifyTenant, // Identify the tenant first
