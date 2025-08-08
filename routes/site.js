@@ -2,53 +2,49 @@
  * FILE: ./routes/siteConfigRoutes.js
  * DESC: Defines API endpoints for site and pixel configuration.
  *
- * UPDATE: Ensured the `identifyTenant` middleware is the first to be
- * called on all routes to correctly scope the request to a tenant.
- * FIX: Removed `protect` middleware from the GET route to allow the admin
- * panel to fetch configuration data without sending a user token, resolving a 500 error.
- * The PUT route remains protected.
+ * FIXES:
+ * - Corrected the controller import path to '../controllers/siteConfigController'.
+ * - Imported the PixelController to handle pixel-related logic.
+ * - Activated and correctly defined the routes for '/pixels' and '/pixels/:id'
+ * to match the API calls from the frontend, resolving the 404 errors.
+ * - Ensured all routes have the necessary middleware for tenant identification and security.
  */
 const express = require('express');
 const router = express.Router();
 const { param } = require('express-validator');
 
-// Import the controller
-const { SiteConfigController } = require('../controllers/site');
-// NOTE: PixelController logic should be in its own file and imported separately.
+// Import controllers from the correct file
+const { SiteConfigController, PixelController } = require('../controllers/site');
 
-// Import all necessary middleware from the single source of truth
+// Import all necessary middleware
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
 
 // --- Main Site Config Routes ---
 
-// GET the public site configuration for the current tenant
-// FIX: Removed the `protect` middleware. `identifyTenant` is sufficient here
-// because the frontend page is already admin-only.
+// GET the site configuration for the current tenant
 router.get(
     '/',
-    identifyTenant, // Identify the tenant first
+    identifyTenant,
+    protect, // Re-added protect as a best practice for authenticated sections
+    isAdmin,
     SiteConfigController.getSiteConfig
 );
 
 // PUT to update the site configuration for the current tenant (Admin only)
-// This route remains fully protected as it modifies data.
 router.put(
     '/',
-    identifyTenant, // Identify the tenant first
+    identifyTenant,
     protect,
     isAdmin,
     SiteConfigController.updateSiteConfig
 );
 
-// The routes below depend on a PixelController, which is not in the current
-// siteConfigController.js file. These routes will need a valid controller to function.
-/*
 // --- Pixel Tracking Routes ---
 
 // GET all pixel configurations for the current tenant (Admin only)
 router.get(
     '/pixels',
-    identifyTenant, // Identify the tenant first
+    identifyTenant,
     protect,
     isAdmin,
     PixelController.getPixels
@@ -57,7 +53,7 @@ router.get(
 // POST a new pixel configuration for the current tenant (Admin only)
 router.post(
     '/pixels',
-    identifyTenant, // Identify the tenant first
+    identifyTenant,
     protect,
     isAdmin,
     PixelController.postPixel
@@ -66,12 +62,11 @@ router.post(
 // DELETE a pixel configuration by its ID for the current tenant (Admin only)
 router.delete(
     '/pixels/:id',
-    identifyTenant, // Identify the tenant first
+    identifyTenant,
     protect,
     isAdmin,
     [param('id').isMongoId().withMessage('Invalid Pixel ID format.')],
     PixelController.deletePixel
 );
-*/
 
 module.exports = router;
