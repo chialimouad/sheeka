@@ -2,46 +2,62 @@
  * FILE: ./controllers/siteConfigController.js
  * DESC: Controller for managing the main site configuration.
  *
- * FIX: The `updateSiteConfig` function has been corrected to ensure the `subdomain`
- * is saved when a new configuration is created via `upsert`. It now uses the
- * `$setOnInsert` operator to add the `subdomain` and `tenantId` from the request's
- * tenant object, guaranteeing this crucial data is not missed on initial creation.
- * FIX: Corrected the model import path from '../models/sitecontroll' to '../models/SiteConfig'.
- * FIX: The `getSiteConfig` function now returns the subdomain from the tenant object
- * even if a full configuration has not been created yet, allowing the UI to display it.
+ * UPDATE: Added a new `getPublicSiteConfig` function. This function is called
+ * by a new, unprotected public route. It fetches the necessary site configuration
+ * for the public-facing website without requiring admin authentication, resolving
+ * the 401 Unauthorized error on the main site.
  */
-// FIX: Corrected model import to match the actual model filename 'SiteConfig'.
 const SiteConfig = require('../models/sitecontroll');
 const PixelModel = require('../models/pixel');
 const { validationResult } = require('express-validator');
 
 const SiteConfigController = {
     /**
-     * @desc     Provides the entire site configuration for the current tenant,
-     * including the latest pixel IDs.
+     * @desc     Provides the public site configuration for the current tenant.
+     * @route    GET /site-config/public
+     * @access   Public
+     */
+    getPublicSiteConfig: async (req, res) => {
+        try {
+            // The tenant's MongoDB ObjectId is attached by the identifyTenant middleware.
+            const tenantObjectId = req.tenant._id;
+
+            const siteConfig = await SiteConfig.findOne({ tenantId: tenantObjectId }).lean();
+
+            if (!siteConfig) {
+                return res.status(404).json({ message: 'Site configuration not found.' });
+            }
+
+            res.status(200).json(siteConfig);
+        } catch (error) {
+            console.error('Error in getPublicSiteConfig:', error);
+            res.status(500).json({
+                message: 'Failed to retrieve public site configuration.',
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * @desc     Provides the entire site configuration for the current tenant (Admin).
      * @route    GET /site-config
      * @access   Private (Admin)
      */
     getSiteConfig: async (req, res) => {
         try {
-            // The tenant's MongoDB ObjectId is attached by the identifyTenant middleware.
             const tenantObjectId = req.tenant._id;
-
-            // Fetch site settings and the latest pixel settings in parallel for efficiency.
             const [siteConfig, pixelConfig] = await Promise.all([
                 SiteConfig.findOne({ tenantId: tenantObjectId }).lean(),
                 PixelModel.findOne({ tenantId: tenantObjectId }).sort({ createdAt: -1 }).lean()
             ]);
 
-            // If no config exists, return a 404 but include the subdomain for the UI.
             if (!siteConfig) {
-                return res.status(404).json({ 
+                return res.status(404).json({
                     message: 'Site configuration not yet created. Please save your settings to initialize it.',
-                    subdomain: req.tenant.subdomain // Send subdomain from the tenant object
+                    subdomain: req.tenant.subdomain
                 });
             }
 
-            // Combine the data into a single response object.
             const fullConfig = {
                 ...siteConfig,
                 facebookPixelId: pixelConfig ? pixelConfig.fbPixelId : null,
@@ -50,12 +66,10 @@ const SiteConfigController = {
 
             res.status(200).json(fullConfig);
         } catch (error) {
-            // Log the detailed error on the server for debugging.
             console.error('Error in getSiteConfig:', error);
-            // Send a more informative error message in the response.
             res.status(500).json({
                 message: 'Failed to retrieve site configuration.',
-                error: error.message // Include the actual error message
+                error: error.message
             });
         }
     },
@@ -67,22 +81,22 @@ const SiteConfigController = {
      */
     updateSiteConfig: async (req, res) => {
         try {
-            const tenant = req.tenant; // Get the full tenant object from middleware
+            const tenant = req.tenant;
             const updateData = req.body;
 
             const updatedConfig = await SiteConfig.findOneAndUpdate(
                 { tenantId: tenant._id },
                 {
-                    $set: updateData, // Update fields from the form
-                    $setOnInsert: {   // **FIX**: Set these fields ONLY on initial creation
+                    $set: updateData,
+                    $setOnInsert: {
                         tenantId: tenant._id,
                         subdomain: tenant.subdomain
                     }
                 },
-                { 
-                    new: true, 
-                    upsert: true, // Create the document if it doesn't exist
-                    runValidators: true 
+                {
+                    new: true,
+                    upsert: true,
+                    runValidators: true
                 }
             );
 
@@ -92,12 +106,10 @@ const SiteConfigController = {
             });
 
         } catch (error) {
-            // Log the detailed error on the server for debugging.
             console.error('Error in updateSiteConfig:', error);
-            // Send a more informative error message in the response.
             res.status(500).json({
                 message: 'Failed to update site configuration',
-                error: error.message // Include the actual error message
+                error: error.message
             });
         }
     }
