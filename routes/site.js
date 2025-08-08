@@ -1,72 +1,90 @@
 /**
- * FILE: ./routes/siteConfigRoutes.js
- * DESC: Defines API endpoints for site and pixel configuration.
+ * FILE: ./controllers/siteConfigController.js
+ * DESC: Controller for managing the main site configuration.
  *
- * FIXES:
- * - Corrected the controller import path to '../controllers/siteConfigController'.
- * - Imported the PixelController to handle pixel-related logic.
- * - Activated and correctly defined the routes for '/pixels' and '/pixels/:id'
- * to match the API calls from the frontend, resolving the 404 errors.
- * - Ensured all routes have the necessary middleware for tenant identification and security.
+ * FIX: This version separates concerns. It only handles the GET and PUT
+ * for the main site settings. It fetches the latest pixel config but does not
+ * manage it, as that is handled by pixelController.js.
  */
-const express = require('express');
-const router = express.Router();
-const { param } = require('express-validator');
+const SiteConfig = require('../models/site');
+const PixelModel = require('../models/pixel'); // Correct model name is 'pixel'
+const { validationResult } = require('express-validator');
 
-// Import controllers from the correct file
-const { SiteConfigController, PixelController } = require('../controllers/site');
+const SiteConfigController = {
+    /**
+     * @desc    Provides the entire site configuration for the current tenant,
+     * including the latest pixel IDs.
+     * @route   GET /site-config
+     * @access  Private (Admin)
+     */
+    getSiteConfig: async (req, res) => {
+        try {
+            // The tenant's MongoDB ObjectId is attached by the identifyTenant middleware.
+            const tenantObjectId = req.tenant._id;
 
-// Import all necessary middleware
-const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
+            // Fetch site settings and the latest pixel settings in parallel for efficiency.
+            const [siteConfig, pixelConfig] = await Promise.all([
+                SiteConfig.findOne({ tenantId: tenantObjectId }).lean(),
+                PixelModel.findOne({ tenantId: tenantObjectId }).sort({ createdAt: -1 }).lean()
+            ]);
 
-// --- Main Site Config Routes ---
+            if (!siteConfig) {
+                return res.status(404).json({ message: 'Site configuration not found for this client.' });
+            }
 
-// GET the site configuration for the current tenant
-router.get(
-    '/',
-    identifyTenant,
-    protect, // Re-added protect as a best practice for authenticated sections
-    isAdmin,
-    SiteConfigController.getSiteConfig
-);
+            // Combine the data into a single response object.
+            const fullConfig = {
+                ...siteConfig,
+                facebookPixelId: pixelConfig ? pixelConfig.fbPixelId : null,
+                tiktokPixelId: pixelConfig ? pixelConfig.tiktokPixelId : null,
+            };
 
-// PUT to update the site configuration for the current tenant (Admin only)
-router.put(
-    '/',
-    identifyTenant,
-    protect,
-    isAdmin,
-    SiteConfigController.updateSiteConfig
-);
+            res.status(200).json(fullConfig);
+        } catch (error) {
+            console.error('Error fetching site configuration:', error);
+            res.status(500).json({ message: 'Failed to retrieve site configuration.' });
+        }
+    },
 
-// --- Pixel Tracking Routes ---
+    /**
+     * @desc    Updates the main site configuration for the current tenant.
+     * @route   PUT /site-config
+     * @access  Private (Admin)
+     */
+    updateSiteConfig: async (req, res) => {
+        try {
+            const tenantObjectId = req.tenant._id;
+            // Destructure only the fields that belong to the site configuration
+            const {
+                siteName, slogan, heroTitle, heroButtonText, heroImageUrl,
+                primaryColor, secondaryColor, tertiaryColor, generalTextColor,
+                footerBgColor, footerTextColor, footerLinkColor, aboutUsText,
+                aboutUsImageUrl, contactInfo, socialMediaLinks, deliveryFees, currentDataIndex
+            } = req.body;
 
-// GET all pixel configurations for the current tenant (Admin only)
-router.get(
-    '/pixels',
-    identifyTenant,
-    protect,
-    isAdmin,
-    PixelController.getPixels
-);
+            const updateData = {
+                siteName, slogan, heroTitle, heroButtonText, heroImageUrl,
+                primaryColor, secondaryColor, tertiaryColor, generalTextColor,
+                footerBgColor, footerTextColor, footerLinkColor, aboutUsText,
+                aboutUsImageUrl, contactInfo, socialMediaLinks, deliveryFees, currentDataIndex
+            };
+            
+            const updatedConfig = await SiteConfig.findOneAndUpdate(
+                { tenantId: tenantObjectId },
+                { $set: updateData },
+                { new: true, upsert: true, runValidators: true }
+            );
 
-// POST a new pixel configuration for the current tenant (Admin only)
-router.post(
-    '/pixels',
-    identifyTenant,
-    protect,
-    isAdmin,
-    PixelController.postPixel
-);
+            res.status(200).json({
+                message: "Site configuration updated successfully!",
+                config: updatedConfig
+            });
 
-// DELETE a pixel configuration by its ID for the current tenant (Admin only)
-router.delete(
-    '/pixels/:id',
-    identifyTenant,
-    protect,
-    isAdmin,
-    [param('id').isMongoId().withMessage('Invalid Pixel ID format.')],
-    PixelController.deletePixel
-);
+        } catch (error) {
+            console.error('Error updating site config:', error);
+            res.status(500).json({ message: 'Failed to update site configuration' });
+        }
+    }
+};
 
-module.exports = router;
+module.exports = { SiteConfigController };
