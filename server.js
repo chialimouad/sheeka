@@ -2,16 +2,15 @@
  * FILE: ./server.js
  * DESC: Main server entry point for the multi-tenant ERP system.
  *
- * FIX:
- * - Disabled Helmet's Content Security Policy (CSP) by setting `contentSecurityPolicy: false`.
- * The default CSP is very strict and was likely the final cause of the
- * `net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` error by preventing the browser
- * from loading image resources from a different origin, even with CORS headers present.
- * - Configured the `helmet` middleware to set the `Cross-Origin-Resource-Policy`
- * header to "cross-origin".
- * - Configured the `cors` middleware with `cors({ origin: '*' })` to explicitly
- * allow cross-origin requests from any domain.
- * - Added logic to support persistent file storage using Render Disks.
+ * FIXES APPLIED:
+ * - Configured Express to correctly serve static files from the 'uploads' directory,
+ * resolving 404 errors for images.
+ * - Added support for persistent storage on platforms like Render using environment variables.
+ * - Configured Helmet to allow cross-origin resource loading, preventing browsers
+ * from blocking images.
+ * - Disabled Helmet's default Content Security Policy (CSP) which is often too
+ * strict for dynamic applications loading external resources.
+ * - Set up a global CORS policy to allow requests from any frontend domain.
  */
 
 require('dotenv').config();
@@ -27,29 +26,41 @@ const app = express();
 // ========================
 // 🔐 Core Middleware
 // ========================
+
+// Allow Cross-Origin Resource Sharing from any domain
 app.use(cors({ origin: '*' })); 
+
+// Parse incoming JSON request bodies
 app.use(express.json());
-// FIX: Configure Helmet to allow cross-origin images and disable restrictive CSP
+
+// Configure Helmet for security headers
 app.use(helmet({
+    // Allow images and other resources to be loaded from this server on different domains
     crossOriginResourcePolicy: { policy: "cross-origin" },
-    contentSecurityPolicy: false, // Disable CSP to resolve the image blocking issue
+    // Disable the default Content Security Policy, which can be too restrictive
+    // and block images or scripts. A custom, more specific CSP could be added later if needed.
+    contentSecurityPolicy: false, 
 }));
+
+// Log HTTP requests in development mode
 app.use(morgan('dev'));
 
 // ========================
 // 📁 Static File Serving
 // ========================
 
-// Define the path for uploaded files. Use Render Disk path if available,
-// otherwise fall back to a local directory for development.
+// Define the primary directory for file uploads.
+// This uses the path provided by Render's Persistent Disks if the environment variable is set.
+// If not, it falls back to a local 'public/uploads' directory for development.
 const UPLOADS_DIR = process.env.RENDER_DISK_MOUNT_PATH || path.join(__dirname, 'public', 'uploads');
 
-// Serve uploaded images from the persistent disk or local fallback.
-// A request to /uploads/image.png will be served from UPLOADS_DIR/image.png
+// Serve the uploaded images publicly. 
+// This is the key fix: any request starting with '/uploads' will now be served
+// directly from the UPLOADS_DIR.
 console.log(`✅ Serving uploaded files from: ${UPLOADS_DIR}`);
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Serve other static assets from the public directory (like CSS, client-side JS)
+// Serve other static assets (like CSS, client-side JS, etc.) from the 'public' directory.
 app.use(express.static(path.join(__dirname, 'public')));
 
 
@@ -65,7 +76,7 @@ const connectDB = async () => {
         console.log('✅ MongoDB Connected');
     } catch (error) {
         console.error('❌ MongoDB Connection Error:', error.message);
-        process.exit(1);
+        process.exit(1); // Exit process with failure
     }
 };
 connectDB();
@@ -76,6 +87,7 @@ connectDB();
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
 const { identifyTenant } = require('./middleware/authMiddleware'); 
 
+// Import route handlers
 const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser'); 
@@ -88,6 +100,7 @@ const emailRoutes = require('./routes/emails');
 // ========================
 // 🚏 Mount Routes
 // ========================
+// Apply the correct middleware to each route group
 app.use('/provision', isSuperAdmin, provisioningRoutes);
 app.use('/users', identifyTenant, userRoutes);
 app.use('/customers', identifyTenant, customerRoutes);
@@ -99,10 +112,13 @@ app.use('/emails', emailRoutes);
 // ========================
 // ❌ Error Handling
 // ========================
+
+// Catch-all for 404 Not Found errors
 app.use((req, res) => {
     res.status(404).json({ message: `Route not found: ${req.originalUrl}` });
 });
 
+// Global error handler
 app.use((err, req, res, next) => {
     console.error('🔥 Server Error:', err.stack);
     res.status(err.statusCode || 500).json({
