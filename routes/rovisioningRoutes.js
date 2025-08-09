@@ -1,8 +1,12 @@
-// File: ./routes/provisioningRoutes.js
+// ==================================================================================
+// FILE: ./routes/provisioningRoutes.js
+// INSTRUCTIONS: Replace the entire content of your provisioningRoutes.js file with the code below.
+// ==================================================================================
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
-const ProvisioningController = require('../controllers/provisioningController');
+// This line imports the controller logic from the other file.
+const ProvisioningController = require('../controllers/provisioningController'); 
 const { isSuperAdmin } = require('../middleware/superAdminMiddleware');
 
 /**
@@ -22,7 +26,6 @@ router.post(
             .isSlug().withMessage('Subdomain can only contain letters, numbers, and hyphens.'),
         body('adminEmail').isEmail().withMessage('A valid admin email is required').normalizeEmail(),
         body('adminPassword').isLength({ min: 8 }).withMessage('Admin password must be at least 8 characters long'),
-        // FIX: Added validation for the phone number to match the controller's requirements.
         body('adminPhoneNumber').trim().notEmpty().withMessage('Administrator phone number is required'),
         body('cloudinaryCloudName').notEmpty().withMessage('Cloudinary Cloud Name is required'),
         body('cloudinaryApiKey').notEmpty().withMessage('Cloudinary API Key is required'),
@@ -33,9 +36,10 @@ router.post(
 
 module.exports = router;
 
-// ----------------------------------------------------------------------------------
-
-// File: ./controllers/provisioningController.js
+// ==================================================================================
+// FILE: ./controllers/provisioningController.js
+// INSTRUCTIONS: Replace the entire content of your provisioningController.js file with the code below.
+// ==================================================================================
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
@@ -57,6 +61,7 @@ async function getNextSequenceValue(sequenceName) {
     return sequenceDocument.seq;
 }
 
+// This is the main controller object that gets exported.
 const ProvisioningController = {
     createClient: async (req, res) => {
         const errors = validationResult(req);
@@ -128,7 +133,6 @@ const ProvisioningController = {
                 },
             });
             
-            // FIX: Correctly save the document. The .save() method returns the document itself, not an array.
             const savedClient = await newClient.save({ session });
             
             const adminUser = new User({
