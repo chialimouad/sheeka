@@ -1,95 +1,53 @@
-/**
- * FILE: ./routes/authRoutes.js
- * DESC: Defines API endpoints for staff user management.
- *
- * FIX:
- * - Corrected the controller import path from 'authcontrolleruser' to 'authController'.
- * - This change ensures that the routes correctly connect to their handler functions,
- * resolving the 404 error when fetching or managing users.
- */
+// ==================================================================================
+// FILE: ./routes/userRoutes.js
+// INSTRUCTIONS: Create this new file or replace its contents with the code below.
+// This file defines all the API routes related to user authentication and management.
+// ==================================================================================
 const express = require('express');
-const { body, param } = require('express-validator');
 const router = express.Router();
-
-// Controller functions
-// FIX: Corrected the controller filename to match the actual file.
+const { body } = require('express-validator');
 const AuthController = require('../controllers/authcontrolleruser');
+const { protect } = require('../middleware/authMiddleware'); // Middleware to protect routes
+const { isAdmin } = require('../middleware/adminMiddleware'); // Middleware to check for admin role
 
-// Middleware from the single source of truth
-const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
-
-// =========================
-// Public Routes (Tenant-Aware)
-// =========================
-
-/**
- * @route     POST /users/login
- * @desc      Authenticate staff user
- * @access    Public (requires tenant header)
- */
+// @route   POST /api/users/login
+// @desc    Authenticate user & get token
+// @access  Public
 router.post(
-    '/login',
-    identifyTenant,
+    '/login', 
     [
-        body('email').isEmail().withMessage('Please include a valid email'),
-        body('password').notEmpty().withMessage('Password is required'),
+        body('email', 'Please include a valid email').isEmail(),
+        body('password', 'Password is required').exists()
     ],
     AuthController.login
 );
 
-// =========================
-// Admin Protected Routes
-// =========================
-
-/**
- * @route     POST /users/register
- * @desc      Register a new staff user (tenant-scoped)
- * @access    Private (Admin Only)
- */
+// @route   POST /api/users/register
+// @desc    Register a new user
+// @access  Private (Admin)
 router.post(
     '/register',
-    identifyTenant,
-    protect,
-    isAdmin,
-    [
-        body('name').notEmpty().withMessage('Name is required'),
-        body('email').isEmail().withMessage('Please include a valid email'),
-        body('password').isLength({ min: 6 }).withMessage('Password must be 6 or more characters'),
-        body('role').isIn(['admin', 'confirmation', 'stockagent', 'user', 'employee']).withMessage('Invalid role'),
-    ],
+    [protect, isAdmin], // Only logged-in admins can register new users
     AuthController.registerUser
 );
 
-/**
- * @route     GET /users
- * @desc      Get all staff users for a tenant
- * @access    Private (Admin only)
- */
+// @route   GET /api/users
+// @desc    Get all users for the tenant
+// @access  Private (Admin)
 router.get(
     '/',
-    identifyTenant,
-    protect,
-    isAdmin,
+    [protect, isAdmin],
     AuthController.getUsers
 );
 
-/**
- * @route     PUT /users/:id/index
- * @desc      Update a user's index (status)
- * @access    Private (Admin Only)
- */
+// @route   PUT /api/users/:id/index
+// @desc    Update user status (active/inactive)
+// @access  Private (Admin)
 router.put(
     '/:id/index',
-    identifyTenant,
-    protect,
-    isAdmin, // Only admins should change user status
-    [
-        param('id').isMongoId().withMessage('Invalid user ID format'),
-        body('index')
-            .isInt({ min: 0, max: 1 })
-            .withMessage('A new index value of 0 or 1 is required')
-    ],
+    [protect, isAdmin],
     AuthController.updateUserStatus
 );
 
 module.exports = router;
+
