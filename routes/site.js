@@ -11,7 +11,7 @@ const router = express.Router();
 const { param } = require('express-validator');
 
 // FIX: Corrected the paths to the controller files.
-const { SiteConfigController } = require('../controllers/siteConfigController');
+const { SiteConfigController } = require('../controllers/site');
 const { PixelController } = require('../controllers/pixelController');
 
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
