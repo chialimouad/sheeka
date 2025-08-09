@@ -12,9 +12,9 @@ const { validationResult } = require('express-validator');
 
 const SiteConfigController = {
     /**
-     * @desc     Provides the public site configuration for the current tenant.
-     * @route    GET /site-config/public
-     * @access   Public
+     * @desc      Provides the public site configuration for the current tenant.
+     * @route     GET /site-config/public
+     * @access    Public
      */
     getPublicSiteConfig: async (req, res) => {
         try {
@@ -36,9 +36,9 @@ const SiteConfigController = {
     },
 
     /**
-     * @desc     Provides the entire site configuration for the current tenant (Admin).
-     * @route    GET /site-config
-     * @access   Private (Admin)
+     * @desc      Provides the entire site configuration for the current tenant (Admin).
+     * @route     GET /site-config
+     * @access    Private (Admin)
      */
     getSiteConfig: async (req, res) => {
         try {
@@ -49,7 +49,7 @@ const SiteConfigController = {
             ]);
 
             if (!siteConfig) {
-                return res.status(404).json({
+                return res.status(200).json({ // Return 200 with default data instead of 404
                     message: 'Site configuration not yet created. Please save your settings to initialize it.',
                     // FIX: Always include the subdomain from the tenant object itself.
                     subdomain: req.tenant.subdomain 
@@ -76,9 +76,9 @@ const SiteConfigController = {
     },
 
     /**
-     * @desc     Updates or creates the main site configuration for the current tenant.
-     * @route    PUT /site-config
-     * @access   Private (Admin)
+     * @desc      Updates or creates the main site configuration for the current tenant.
+     * @route     PUT /site-config
+     * @access    Private (Admin)
      */
     updateSiteConfig: async (req, res) => {
         try {
