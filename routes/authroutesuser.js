@@ -1,12 +1,12 @@
+
 // ==================================================================================
 // FILE: ./routes/userRoutes.js
-// INSTRUCTIONS: Create this new file or replace its contents with the code below.
-// This file defines all the API routes related to user authentication and management.
+// INSTRUCTIONS: This file's content remains the same. It correctly imports and uses the new middleware.
 // ==================================================================================
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
-const AuthController = require('../controllers/authcontrolleruser');
+const AuthController = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware'); // Middleware to protect routes
 const { isAdmin } = require('../middleware/adminMiddleware'); // Middleware to check for admin role
 
