@@ -1,19 +1,12 @@
-/**
- * FILE: ./controllers/authController.js
- * DESC: Controller functions for user registration, authentication, and management.
- * * UPDATE:
- * - Added a new `login` function to handle user authentication.
- * - The `login` function checks if a user's `index` is 1 (Active) before issuing a token,
- * preventing inactive users from logging in.
- * - Integrated a `generateToken` helper function for creating JWTs.
- * - Maintained a consistent structure by adding `login` to the AuthController object.
- */
+// FILE: ./controllers/authController.js
+// INSTRUCTIONS: Replace the entire content of your authController.js file with this code.
+// This is the confirmed correct version of your controller.
+// ==================================================================================
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
-const jwt =require('jsonwebtoken');
+const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 
-// --- Helper function to generate JWT ---
 const generateToken = (userId, tenantId, jwtSecret) => {
     if (!jwtSecret) {
         throw new Error('JWT Secret is missing for this client.');
@@ -24,11 +17,6 @@ const generateToken = (userId, tenantId, jwtSecret) => {
 };
 
 const AuthController = {
-    /**
-     * @desc     Authenticate a staff user and return a token
-     * @route    POST /users/login
-     * @access   Public (Tenant header required)
-     */
     login: async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -36,14 +24,13 @@ const AuthController = {
         }
 
         const { email, password } = req.body;
-        // The entire tenant client object is attached by the identifyTenant middleware
-        const tenant = req.tenant;
+        const tenant = req.tenant; // Attached by identifyTenant middleware
 
         try {
             const user = await User.findOne({ email: email.toLowerCase(), tenantId: tenant.tenantId });
 
             if (!user) {
-                return res.status(401).json({ message: 'Invalid credentials or user does not exist for this tenant.' });
+                return res.status(401).json({ message: 'Invalid credentials.' });
             }
 
             const isMatch = await bcrypt.compare(password, user.password);
@@ -52,7 +39,6 @@ const AuthController = {
                 return res.status(401).json({ message: 'Invalid credentials.' });
             }
 
-            // FIX: Check if the user's account is active before allowing login.
             if (user.index !== 1) {
                 return res.status(401).json({ message: 'This account is not active. Please contact an administrator.' });
             }
@@ -76,35 +62,27 @@ const AuthController = {
         }
     },
 
-    /**
-     * @desc    Register a new user for the current tenant.
-     * @route   POST /users/register
-     * @access  Private (Admin)
-     */
     registerUser: async (req, res) => {
+        const { name, email, password, role } = req.body;
+        const tenantId = req.tenant.tenantId;
+
+        if (!name || !email || !password || !role) {
+            return res.status(400).json({ message: 'Please provide all required fields.' });
+        }
+
         try {
-            const { name, email, password, role } = req.body;
-            const tenantId = req.tenant.tenantId; // Numeric ID from identifyTenant middleware
-
-            if (!name || !email || !password || !role) {
-                return res.status(400).json({ message: 'Please provide all required fields.' });
-            }
-
-            const userExists = await User.findOne({ email, tenantId });
+            const userExists = await User.findOne({ email: email.toLowerCase(), tenantId });
             if (userExists) {
                 return res.status(400).json({ message: 'User with this email already exists for this tenant.' });
             }
 
-            const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash(password, salt);
-
             const newUser = await User.create({
                 name,
-                email,
-                password: hashedPassword,
+                email: email.toLowerCase(),
+                password, // Hashing is handled by the User model's pre-save hook
                 role,
                 tenantId,
-                // 'index' defaults to 1 (Active) based on the User model
+                index: 1 // Ensure user is active by default
             });
 
             res.status(201).json({
@@ -123,15 +101,9 @@ const AuthController = {
         }
     },
 
-    /**
-     * @desc    Get all users for the current tenant.
-     * @route   GET /users
-     * @access  Private (Admin)
-     */
     getUsers: async (req, res) => {
         try {
-            const tenantId = req.tenant.tenantId;
-            const users = await User.find({ tenantId }).select('-password');
+            const users = await User.find({ tenantId: req.tenant.tenantId }).select('-password');
             res.status(200).json(users);
         } catch (error) {
             console.error('Fetch users error:', error);
@@ -139,22 +111,16 @@ const AuthController = {
         }
     },
 
-    /**
-     * @desc    Update a user's status (active/inactive).
-     * @route   PUT /users/:id/index
-     * @access  Private (Admin)
-     */
     updateUserStatus: async (req, res) => {
         try {
             const { id } = req.params;
             const { index } = req.body;
-            const tenantId = req.tenant.tenantId;
 
             if (index === undefined || (index !== 0 && index !== 1)) {
                 return res.status(400).json({ message: 'Invalid status index provided. Must be 0 or 1.' });
             }
 
-            const user = await User.findOne({ _id: id, tenantId });
+            const user = await User.findOne({ _id: id, tenantId: req.tenant.tenantId });
 
             if (!user) {
                 return res.status(404).json({ message: 'User not found for this tenant.' });
