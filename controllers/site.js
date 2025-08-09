@@ -2,9 +2,9 @@
  * FILE: ./controllers/siteConfigController.js
  * DESC: Controller for managing the main site configuration.
  *
- * UPDATE: Modified `getSiteConfig` to ensure the tenant's subdomain is always
- * included in the response, even if a site configuration document hasn't been
- * created yet. This resolves the issue where the frontend wouldn't display the site URL.
+ * UPDATE: Modified `getPublicSiteConfig` to explicitly include the `deliveryFees`
+ * array in the data sent to the public-facing product page. This ensures that
+ * shipping costs can be calculated and displayed to customers.
  */
 const SiteConfig = require('../models/sitecontroll');
 const PixelModel = require('../models/pixel');
@@ -19,7 +19,12 @@ const SiteConfigController = {
     getPublicSiteConfig: async (req, res) => {
         try {
             const tenantObjectId = req.tenant._id;
-            const siteConfig = await SiteConfig.findOne({ tenantId: tenantObjectId }).lean();
+            
+            // FIX: Explicitly select all necessary public fields, including deliveryFees.
+            // This ensures shipping costs are available on the public product page.
+            const siteConfig = await SiteConfig.findOne({ tenantId: tenantObjectId })
+                .select('siteName primaryColor secondaryColor facebookPixelId deliveryFees translations')
+                .lean();
 
             if (!siteConfig) {
                 return res.status(404).json({ message: 'Site configuration not found.' });
@@ -51,16 +56,13 @@ const SiteConfigController = {
             if (!siteConfig) {
                 return res.status(200).json({ // Return 200 with default data instead of 404
                     message: 'Site configuration not yet created. Please save your settings to initialize it.',
-                    // FIX: Always include the subdomain from the tenant object itself.
                     subdomain: req.tenant.subdomain 
                 });
             }
 
-            // FIX: Ensure the final config object always includes the authoritative subdomain
-            // from the tenant record, along with pixel data and other settings.
             const fullConfig = {
                 ...(siteConfig || {}),
-                subdomain: req.tenant.subdomain, // Ensure subdomain is always present
+                subdomain: req.tenant.subdomain,
                 facebookPixelId: pixelConfig ? pixelConfig.fbPixelId : null,
                 tiktokPixelId: pixelConfig ? pixelConfig.tiktokPixelId : null,
             };
