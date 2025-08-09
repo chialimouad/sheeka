@@ -12,7 +12,7 @@ const { param } = require('express-validator');
 
 // FIX: Corrected the paths to the controller files.
 const { SiteConfigController } = require('../controllers/site');
-const { PixelController } = require('../controllers/pixelController');
+const { PixelController } = require('../controllers/pixelcontroller');
 
 const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
 
