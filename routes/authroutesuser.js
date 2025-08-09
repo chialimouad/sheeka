@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
-const AuthController = require('../controllers/authController');
+const AuthController = require('../controllers/authcontrolleruser');
 const { protect } = require('../middleware/authMiddleware'); // Middleware to protect routes
 const { isAdmin } = require('../middleware/adminMiddleware'); // Middleware to check for admin role
 
