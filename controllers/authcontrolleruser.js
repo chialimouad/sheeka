@@ -1,6 +1,6 @@
+// ==================================================================================
 // FILE: ./controllers/authController.js
-// INSTRUCTIONS: Replace the entire content of your authController.js file with this code.
-// This is the confirmed correct version of your controller.
+// INSTRUCTIONS: This file's content remains the same.
 // ==================================================================================
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
