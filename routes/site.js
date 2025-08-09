@@ -10,7 +10,7 @@ const express = require('express');
 const router = express.Router();
 const { param } = require('express-validator');
 
-// FIX: Corrected the paths to the controller files.
+// FIX: Corrected the path to the site config controller file.
 const { SiteConfigController } = require('../controllers/site');
 const { PixelController } = require('../controllers/pixelcontroller');
 
