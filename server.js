@@ -45,10 +45,13 @@ app.use(morgan('dev'));
 // 📁 Static File Serving
 // ========================
 
+// This is the correct setup for serving images from a persistent disk on Render.
 const UPLOADS_DIR = process.env.RENDER_DISK_MOUNT_PATH || path.join(__dirname, 'public', 'uploads');
 
 console.log(`✅ Serving uploaded files from: ${UPLOADS_DIR}`);
+// This line makes any file in your persistent disk available under the '/uploads' URL path.
 app.use('/uploads', express.static(UPLOADS_DIR));
+// This serves other static files (like CSS or frontend JS) from the 'public' directory.
 app.use(express.static(path.join(__dirname, 'public')));
 
 
@@ -81,8 +84,8 @@ const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser'); 
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
-// FIX: Corrected the import path to the proper routes file.
-const siteConfigRoutes = require('./routes/site'); 
+// FIX: Corrected the import path to the proper routes file ('siteConfigRoutes').
+const siteConfigRoutes = require('./routes/siteConfigRoutes'); 
 const emailRoutes = require('./routes/emails');
 
 
