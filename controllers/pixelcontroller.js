@@ -7,9 +7,9 @@ const { validationResult } = require('express-validator');
 
 const PixelController = {
     /**
-     * @desc    Create a new pixel configuration for the current tenant.
-     * @route   POST /site-config/pixels
-     * @access  Private (Admin)
+     * @desc      Create a new pixel configuration for the current tenant.
+     * @route     POST /site-config/pixels
+     * @access    Private (Admin)
      */
     postPixel: async (req, res) => {
         try {
@@ -38,9 +38,9 @@ const PixelController = {
     },
 
     /**
-     * @desc    Get all pixel configurations for the current tenant.
-     * @route   GET /site-config/pixels
-     * @access  Private (Admin)
+     * @desc      Get all pixel configurations for the current tenant.
+     * @route     GET /site-config/pixels
+     * @access    Private (Admin)
      */
     getPixels: async (req, res) => {
         try {
@@ -57,9 +57,9 @@ const PixelController = {
     },
 
     /**
-     * @desc    Delete a pixel configuration by its ID.
-     * @route   DELETE /site-config/pixels/:id
-     * @access  Private (Admin)
+     * @desc      Delete a pixel configuration by its ID.
+     * @route     DELETE /site-config/pixels/:id
+     * @access    Private (Admin)
      */
     deletePixel: async (req, res) => {
         const errors = validationResult(req);
