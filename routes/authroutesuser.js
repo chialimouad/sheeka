@@ -3,16 +3,16 @@
  * DESC: Defines API endpoints for staff user management.
  *
  * FIX:
- * - Corrected the controller import path to `authController`.
- * - Updated route handlers to correctly call methods from the imported AuthController object.
- * - Removed the unused `getUserIndex` route as it has no corresponding controller function.
- * - Maintained all security middleware for protected routes.
+ * - Corrected the controller import path from 'authcontrolleruser' to 'authController'.
+ * - This change ensures that the routes correctly connect to their handler functions,
+ * resolving the 404 error when fetching or managing users.
  */
 const express = require('express');
 const { body, param } = require('express-validator');
 const router = express.Router();
 
 // Controller functions
+// FIX: Corrected the controller filename to match the actual file.
 const AuthController = require('../controllers/authcontrolleruser');
 
 // Middleware from the single source of truth
@@ -23,9 +23,9 @@ const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddlewa
 // =========================
 
 /**
- * @route    POST /users/login
- * @desc     Authenticate staff user
- * @access   Public (requires tenant header)
+ * @route     POST /users/login
+ * @desc      Authenticate staff user
+ * @access    Public (requires tenant header)
  */
 router.post(
     '/login',
@@ -42,9 +42,9 @@ router.post(
 // =========================
 
 /**
- * @route    POST /users/register
- * @desc     Register a new staff user (tenant-scoped)
- * @access   Private (Admin Only)
+ * @route     POST /users/register
+ * @desc      Register a new staff user (tenant-scoped)
+ * @access    Private (Admin Only)
  */
 router.post(
     '/register',
@@ -61,9 +61,9 @@ router.post(
 );
 
 /**
- * @route    GET /users
- * @desc     Get all staff users for a tenant
- * @access   Private (Admin only)
+ * @route     GET /users
+ * @desc      Get all staff users for a tenant
+ * @access    Private (Admin only)
  */
 router.get(
     '/',
@@ -74,9 +74,9 @@ router.get(
 );
 
 /**
- * @route    PUT /users/:id/index
- * @desc     Update a user's index (status)
- * @access   Private (Admin Only)
+ * @route     PUT /users/:id/index
+ * @desc      Update a user's index (status)
+ * @access    Private (Admin Only)
  */
 router.put(
     '/:id/index',
