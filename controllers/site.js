@@ -2,9 +2,9 @@
  * FILE: ./controllers/siteConfigController.js
  * DESC: Controller for managing the main site configuration.
  *
- * UPDATE: Modified `getPublicSiteConfig` to explicitly include the `deliveryFees`
- * array in the data sent to the public-facing product page. This ensures that
- * shipping costs can be calculated and displayed to customers.
+ * UPDATE: Modified `getPublicSiteConfig` to fetch the latest pixel configuration
+ * and include it in the public data. This makes the Facebook Pixel ID
+ * available to the public-facing product pages.
  */
 const SiteConfig = require('../models/sitecontroll');
 const PixelModel = require('../models/pixel');
@@ -20,17 +20,26 @@ const SiteConfigController = {
         try {
             const tenantObjectId = req.tenant._id;
             
-            // FIX: Explicitly select all necessary public fields, including deliveryFees.
-            // This ensures shipping costs are available on the public product page.
-            const siteConfig = await SiteConfig.findOne({ tenantId: tenantObjectId })
-                .select('siteName primaryColor secondaryColor facebookPixelId deliveryFees translations')
-                .lean();
+            // FIX: Fetch both site config and the latest pixel config in parallel.
+            const [siteConfig, pixelConfig] = await Promise.all([
+                SiteConfig.findOne({ tenantId: tenantObjectId }).lean(),
+                PixelModel.findOne({ tenantId: tenantObjectId }).sort({ createdAt: -1 }).lean()
+            ]);
 
             if (!siteConfig) {
+                // Even if no site config exists, we should not error out the whole page.
+                // Send a default response or an empty object.
                 return res.status(404).json({ message: 'Site configuration not found.' });
             }
 
-            res.status(200).json(siteConfig);
+            // Combine the configurations to include the pixel ID.
+            const publicConfig = {
+                ...siteConfig,
+                facebookPixelId: pixelConfig ? pixelConfig.fbPixelId : null,
+                tiktokPixelId: pixelConfig ? pixelConfig.tiktokPixelId : null,
+            };
+
+            res.status(200).json(publicConfig);
         } catch (error) {
             console.error('Error in getPublicSiteConfig:', error);
             res.status(500).json({
