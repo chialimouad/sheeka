@@ -3,6 +3,9 @@
  * DESC: Defines API endpoints for handling orders, with email notifications.
  *
  * CHANGE SUMMARY:
+ * - CRITICAL FIX: Refactored the `PATCH /:orderId/status` route to use `findOneAndUpdate`. This prevents a Mongoose `ValidationError` 
+ * that occurred because the `.save()` method was re-validating the entire document, including product sub-documents that were not populated. 
+ * This resolves the "Server error updating order status" issue.
  * - CRITICAL FIX: To fix the "Server error updating order status", you must ensure your Order model
  * (in `/models/Order.js`) correctly defines the `statusTimestamps` field. Mongoose needs to know
  * it's a Map of Dates. Your schema should look like this:
@@ -16,8 +19,6 @@
  * - FIXED: Added logic to the `PATCH /:orderId` route to correctly handle un-assigning an agent.
  * An empty string from the frontend is now converted to `null`, preventing a database CastError
  * which was causing the "Server error updating order" message.
- * - FIXED: Added a defensive check in the `PATCH /:orderId/status` route to ensure
- * the `statusTimestamps` field is a valid Map before attempting to set a value on it.
  * - ADDED: A new protected admin route `GET /abandoned` to fetch all abandoned cart records.
  * - ADDED: A new route `DELETE /abandoned/:cartId` to allow admins to delete abandoned cart records.
  * - Integrated `nodemailer` to send an email notification to the client
@@ -273,8 +274,6 @@ router.patch('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => 
         const { orderId } = req.params;
         const updateData = req.body;
 
-        // FIX: Handle un-assigning an agent. An empty string is not a valid ObjectId
-        // and will cause a CastError. Convert it to null to correctly remove the reference.
         if (updateData.assignedTo === '') {
             updateData.assignedTo = null;
         }
@@ -304,39 +303,36 @@ router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, r
         const { orderId } = req.params;
         const { status, notes } = req.body;
 
-        const order = await Order.findOne({ _id: orderId, tenantId: tenantObjectId });
-        if (!order) {
+        if (!status && notes === undefined) {
+             return res.status(400).json({ message: 'No status or notes provided for update.' });
+        }
+
+        const updateFields = {};
+        if (notes !== undefined) {
+            updateFields.notes = notes;
+        }
+        if (status) {
+            updateFields.status = status;
+            updateFields[`statusTimestamps.${status}`] = new Date();
+            if (status === 'confirmed') {
+                updateFields.confirmedBy = req.user.id;
+            }
+        }
+
+        const updatedOrder = await Order.findOneAndUpdate(
+            { _id: orderId, tenantId: tenantObjectId },
+            { $set: updateFields },
+            { new: true }
+        )
+        .populate('products.productId', 'name price images')
+        .populate('confirmedBy', 'name email')
+        .populate('assignedTo', 'name email');
+
+        if (!updatedOrder) {
             return res.status(404).json({ message: 'Order not found for this client.' });
         }
-
-        if (!order.statusTimestamps || !(order.statusTimestamps instanceof Map)) {
-            order.statusTimestamps = new Map();
-        }
-
-        let hasUpdate = false;
-        if (status) {
-            order.status = status;
-            order.statusTimestamps.set(status, new Date());
-            if (status === 'confirmed') {
-                order.confirmedBy = req.user.id;
-            }
-            hasUpdate = true;
-        }
-        if (notes !== undefined) {
-            order.notes = notes;
-            hasUpdate = true;
-        }
-        if (!hasUpdate) {
-            return res.status(400).json({ message: 'No status or notes provided for update.' });
-        }
-
-        await order.save();
-        const populatedOrder = await Order.findById(orderId)
-            .populate('products.productId', 'name price images')
-            .populate('confirmedBy', 'name email')
-            .populate('assignedTo', 'name email');
             
-        res.status(200).json({ message: 'Order status updated successfully', order: populatedOrder });
+        res.status(200).json({ message: 'Order status updated successfully', order: updatedOrder });
     } catch (error) {
         console.error('Error updating order status:', error);
         res.status(500).json({ message: 'Server error updating order status.' });
