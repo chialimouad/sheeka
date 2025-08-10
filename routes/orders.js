@@ -3,12 +3,11 @@
  * DESC: Defines API endpoints for handling orders, with email notifications.
  *
  * CHANGE SUMMARY:
- * - FIXED: Changed the order update endpoint from `PUT /:orderId` to `PATCH /:orderId`
- * to match the request method used by the frontend. This resolves the primary "can't edit" issue.
- * - IMPROVED: The `PATCH /:orderId` endpoint now returns the fully populated, updated order object,
- * ensuring the UI has the most current data after an edit.
- * - FIXED: The `PATCH /:orderId/status` endpoint logic was simplified to only handle status and notes,
- * preventing it from accidentally un-assigning agents.
+ * - FIXED: Added a defensive check in the `PATCH /:orderId/status` route to ensure
+ * the `statusTimestamps` field is a valid Map before attempting to set a value on it.
+ * This prevents a TypeError on the server and resolves the "Server error updating order status" issue.
+ * - FIXED: The route for general order edits is now `PATCH /:orderId` (was `PUT`), matching the
+ * frontend's request method and ensuring the edit functionality works correctly.
  * - ADDED: A new protected admin route `GET /abandoned` to fetch all abandoned cart records.
  * - ADDED: A new route `DELETE /abandoned/:cartId` to allow admins to delete abandoned cart records.
  * - Integrated `nodemailer` to send an email notification to the client
@@ -258,17 +257,12 @@ router.get('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     }
 });
 
-// FIXED: This route now uses PATCH and correctly handles all fields from the edit modal.
+// FIXED: Changed from PUT to PATCH to match frontend request
 router.patch('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
         const updateData = req.body;
-
-        // If assignedTo is an empty string from the form, it means "None", so set to null.
-        if (updateData.assignedTo === '') {
-            updateData.assignedTo = null;
-        }
 
         const updatedOrder = await Order.findOneAndUpdate(
             { _id: orderId, tenantId: tenantObjectId },
@@ -277,7 +271,7 @@ router.patch('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => 
         )
         .populate('products.productId', 'name price images')
         .populate('confirmedBy', 'name email')
-        .populate('assignedTo', 'name email'); // Re-populate to send full data back
+        .populate('assignedTo', 'name email');
 
         if (!updatedOrder) {
             return res.status(404).json({ message: 'Order not found for this client.' });
@@ -289,17 +283,21 @@ router.patch('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => 
     }
 });
 
-
-// FIXED: This route now correctly handles only status and notes updates from the main card buttons.
 router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
-        const { status, notes } = req.body; // Only process status and notes.
+        const { status, notes } = req.body;
 
         const order = await Order.findOne({ _id: orderId, tenantId: tenantObjectId });
         if (!order) {
             return res.status(404).json({ message: 'Order not found for this client.' });
+        }
+
+        // FIX: Defensively ensure statusTimestamps is a Map before use.
+        // This prevents a server error if the field was not initialized correctly in the database.
+        if (!order.statusTimestamps || !(order.statusTimestamps instanceof Map)) {
+            order.statusTimestamps = new Map();
         }
 
         let hasUpdate = false;
@@ -325,7 +323,7 @@ router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, r
             .populate('confirmedBy', 'name email')
             .populate('assignedTo', 'name email');
             
-        res.status(200).json({ message: 'Order updated successfully', order: populatedOrder });
+        res.status(200).json({ message: 'Order status updated successfully', order: populatedOrder });
     } catch (error) {
         console.error('Error updating order status:', error);
         res.status(500).json({ message: 'Server error updating order status.' });
@@ -345,7 +343,6 @@ router.delete('/:orderId', identifyTenant, protect, isAdmin, async (req, res) =>
                 throw new Error('Order not found for this client.');
             }
 
-            // Only restore stock if the order wasn't cancelled (as cancelled orders might not have deducted stock)
             if (order.status !== 'cancelled') {
                 for (const item of order.products) {
                     await Product.updateOne(
