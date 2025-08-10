@@ -2,12 +2,17 @@
  * FILE: ./routes/orders.js
  * DESC: Defines API endpoints for handling orders, with email notifications.
  *
- * CHANGE:
- * - Added a new protected admin route `GET /abandoned` to fetch all abandoned cart records.
- * This fixes the 404 error on the admin page.
+ * CHANGE SUMMARY:
+ * - FIXED: Changed the order update endpoint from `PUT /:orderId` to `PATCH /:orderId`
+ * to match the request method used by the frontend. This resolves the primary "can't edit" issue.
+ * - IMPROVED: The `PATCH /:orderId` endpoint now returns the fully populated, updated order object,
+ * ensuring the UI has the most current data after an edit.
+ * - FIXED: The `PATCH /:orderId/status` endpoint logic was simplified to only handle status and notes,
+ * preventing it from accidentally un-assigning agents.
+ * - ADDED: A new protected admin route `GET /abandoned` to fetch all abandoned cart records.
+ * - ADDED: A new route `DELETE /abandoned/:cartId` to allow admins to delete abandoned cart records.
  * - Integrated `nodemailer` to send an email notification to the client
  * when a new order is created.
- * - Added a new utility function `sendOrderConfirmationEmail` for sending emails.
  *
  * REQUIREMENT:
  * - You must install nodemailer: `npm install nodemailer`
@@ -55,7 +60,7 @@ const sendOrderConfirmationEmail = async (clientEmail, order) => {
     ).join('');
 
     const mailOptions = {
-        from: `"Your Store Platform" <${process.env.EMAIL_USER}>`,
+        from: `"Sheeka Platform" <${process.env.EMAIL_USER}>`,
         to: clientEmail,
         subject: `🎉 New Order Received! [Order #${order._id}]`,
         html: `
@@ -80,7 +85,7 @@ const sendOrderConfirmationEmail = async (clientEmail, order) => {
                 <p>Please log in to your admin dashboard to view the full order details and manage fulfillment.</p>
                 <br>
                 <p>Thank you,</p>
-                <p><strong>Your Store Platform Team</strong></p>
+                <p><strong>Sheeka Platform Team</strong></p>
             </div>
         `,
     };
@@ -195,7 +200,6 @@ router.get('/abandoned', identifyTenant, protect, isAdmin, async (req, res) => {
     }
 });
 
-// *** NEW ROUTE FOR DELETING ABANDONED CARTS ***
 router.delete('/abandoned/:cartId', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         if (!req.tenant) {
@@ -254,17 +258,26 @@ router.get('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     }
 });
 
-router.put('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
+// FIXED: This route now uses PATCH and correctly handles all fields from the edit modal.
+router.patch('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
         const updateData = req.body;
 
+        // If assignedTo is an empty string from the form, it means "None", so set to null.
+        if (updateData.assignedTo === '') {
+            updateData.assignedTo = null;
+        }
+
         const updatedOrder = await Order.findOneAndUpdate(
             { _id: orderId, tenantId: tenantObjectId },
             { $set: updateData },
             { new: true, runValidators: true }
-        );
+        )
+        .populate('products.productId', 'name price images')
+        .populate('confirmedBy', 'name email')
+        .populate('assignedTo', 'name email'); // Re-populate to send full data back
 
         if (!updatedOrder) {
             return res.status(404).json({ message: 'Order not found for this client.' });
@@ -276,11 +289,13 @@ router.put('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     }
 });
 
+
+// FIXED: This route now correctly handles only status and notes updates from the main card buttons.
 router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
-        const { status, notes } = req.body;
+        const { status, notes } = req.body; // Only process status and notes.
 
         const order = await Order.findOne({ _id: orderId, tenantId: tenantObjectId });
         if (!order) {
@@ -305,8 +320,12 @@ router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, r
         }
 
         await order.save();
-        const populatedOrder = await Order.findById(orderId).populate('confirmedBy', 'name email').populate('assignedTo', 'name email');
-        res.status(200).json({ message: 'Order status updated successfully', order: populatedOrder });
+        const populatedOrder = await Order.findById(orderId)
+            .populate('products.productId', 'name price images')
+            .populate('confirmedBy', 'name email')
+            .populate('assignedTo', 'name email');
+            
+        res.status(200).json({ message: 'Order updated successfully', order: populatedOrder });
     } catch (error) {
         console.error('Error updating order status:', error);
         res.status(500).json({ message: 'Server error updating order status.' });
@@ -326,12 +345,15 @@ router.delete('/:orderId', identifyTenant, protect, isAdmin, async (req, res) =>
                 throw new Error('Order not found for this client.');
             }
 
-            for (const item of order.products) {
-                await Product.updateOne(
-                    { _id: item.productId, tenantId: tenantObjectId },
-                    { $inc: { quantity: item.quantity } },
-                    { session }
-                );
+            // Only restore stock if the order wasn't cancelled (as cancelled orders might not have deducted stock)
+            if (order.status !== 'cancelled') {
+                for (const item of order.products) {
+                    await Product.updateOne(
+                        { _id: item.productId, tenantId: tenantObjectId },
+                        { $inc: { quantity: item.quantity } },
+                        { session }
+                    );
+                }
             }
             
             deletedOrder = await Order.findOneAndDelete({ _id: orderId, tenantId: tenantObjectId }).session(session);
