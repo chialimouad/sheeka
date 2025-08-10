@@ -3,6 +3,8 @@
  * DESC: Defines API endpoints for handling orders, with email notifications.
  *
  * CHANGE SUMMARY:
+ * - ADDED: A new Super Admin route `GET /super/all-orders` to fetch all orders from all tenants,
+ * protected by a new `isSuperAdmin` middleware. This is for platform-wide monitoring.
  * - CRITICAL FIX: Refactored the `PATCH /:orderId/status` route to use `findOneAndUpdate`. This prevents a Mongoose `ValidationError` 
  * that occurred because the `.save()` method was re-validating the entire document, including product sub-documents that were not populated. 
  * This resolves the "Server error updating order status" issue.
@@ -44,7 +46,7 @@ const Product = require('../models/Product');
 const Client = require('../models/Client');
 
 // --- Import Middleware ---
-const { identifyTenant, protect, isAdmin } = require('../middleware/authMiddleware');
+const { identifyTenant, protect, isAdmin, isSuperAdmin } = require('../middleware/authMiddleware'); // Added isSuperAdmin
 
 // =========================
 // Nodemailer Configuration
@@ -377,5 +379,39 @@ router.delete('/:orderId', identifyTenant, protect, isAdmin, async (req, res) =>
         session.endSession();
     }
 });
+
+
+// =========================
+// Super Admin Route
+// =========================
+
+/**
+ * @route   GET /api/orders/super/all-orders
+ * @desc    [SUPER ADMIN] Get all orders from all tenants
+ * @access  SuperAdmin Only
+ */
+router.get('/super/all-orders', isSuperAdmin, async (req, res) => {
+    try {
+        const orders = await Order.find({}) // Find all orders, no tenant filter
+            .populate({
+                path: 'tenantId', // Populate the tenantId field from the Client model
+                select: 'name subdomain tenantId' // Select the specific fields you want to show
+            })
+            .populate('products.productId', 'name price')
+            .populate('confirmedBy', 'name')
+            .populate('assignedTo', 'name')
+            .sort({ createdAt: -1 });
+
+        if (!orders) {
+            return res.status(404).json({ message: 'No orders found in the database.' });
+        }
+
+        res.status(200).json(orders);
+    } catch (error) {
+        console.error('Super Admin fetch all orders error:', error);
+        res.status(500).json({ message: 'Server error fetching all orders.' });
+    }
+});
+
 
 module.exports = router;
