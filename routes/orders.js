@@ -3,11 +3,19 @@
  * DESC: Defines API endpoints for handling orders, with email notifications.
  *
  * CHANGE SUMMARY:
+ * - CRITICAL FIX: To fix the "Server error updating order status", you must ensure your Order model
+ * (in `/models/Order.js`) correctly defines the `statusTimestamps` field. Mongoose needs to know
+ * it's a Map of Dates. Your schema should look like this:
+ *
+ * statusTimestamps: {
+ * type: Map,
+ * of: Date,
+ * default: () => new Map(),
+ * },
+ *
  * - FIXED: Added a defensive check in the `PATCH /:orderId/status` route to ensure
  * the `statusTimestamps` field is a valid Map before attempting to set a value on it.
- * This prevents a TypeError on the server and resolves the "Server error updating order status" issue.
- * - FIXED: The route for general order edits is now `PATCH /:orderId` (was `PUT`), matching the
- * frontend's request method and ensuring the edit functionality works correctly.
+ * - FIXED: The route for general order edits is `PATCH /:orderId`, matching the frontend.
  * - ADDED: A new protected admin route `GET /abandoned` to fetch all abandoned cart records.
  * - ADDED: A new route `DELETE /abandoned/:cartId` to allow admins to delete abandoned cart records.
  * - Integrated `nodemailer` to send an email notification to the client
@@ -257,7 +265,6 @@ router.get('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     }
 });
 
-// FIXED: Changed from PUT to PATCH to match frontend request
 router.patch('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
         const tenantObjectId = req.tenant._id;
@@ -294,8 +301,6 @@ router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, r
             return res.status(404).json({ message: 'Order not found for this client.' });
         }
 
-        // FIX: Defensively ensure statusTimestamps is a Map before use.
-        // This prevents a server error if the field was not initialized correctly in the database.
         if (!order.statusTimestamps || !(order.statusTimestamps instanceof Map)) {
             order.statusTimestamps = new Map();
         }
