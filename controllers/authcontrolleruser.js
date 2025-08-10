@@ -1,13 +1,9 @@
-// ==================================================================================
-// FILE: ./controllers/authController.js
-// INSTRUCTIONS: Replace the content of your authController.js file with this code.
-// ==================================================================================
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 
-// Helper function to generate a JWT
+// Helper to generate a JWT using the tenant's specific secret
 const generateToken = (userId, tenantId, jwtSecret) => {
     if (!jwtSecret) {
         throw new Error('JWT Secret is missing for this client.');
@@ -19,7 +15,9 @@ const generateToken = (userId, tenantId, jwtSecret) => {
 
 const AuthController = {
     /**
-     * Authenticates a user.
+     * @desc    Authenticate a user within a specific tenant
+     * @route   POST /api/users/login
+     * @access  Public
      */
     login: async (req, res) => {
         const errors = validationResult(req);
@@ -28,29 +26,29 @@ const AuthController = {
         }
 
         const { email, password } = req.body;
-        const tenant = req.tenant; // This is attached by your identifyTenant middleware
+        const tenant = req.tenant; // Attached by identifyTenant middleware
 
         try {
-            // 1. Find the user by email for the specific tenant.
+            // Find user by email, scoped to the current tenant
             const user = await User.findOne({ email: email.toLowerCase(), tenantId: tenant.tenantId });
 
             if (!user) {
                 return res.status(401).json({ message: 'Invalid credentials.' });
             }
 
-            // 2. Compare the provided password with the stored hash.
+            // Compare provided password with the stored hash
             const isMatch = await bcrypt.compare(password, user.password);
 
             if (!isMatch) {
                 return res.status(401).json({ message: 'Invalid credentials.' });
             }
 
-            // 3. Check if the user's account is active.
+            // Check if the user's account is active
             if (user.index !== 1) {
                 return res.status(401).json({ message: 'This account is not active. Please contact an administrator.' });
             }
 
-            // If all checks pass, generate and return the token.
+            // Generate and return the token using the tenant's unique secret
             const jwtSecret = tenant.config.jwtSecret;
             const token = generateToken(user._id, user.tenantId, jwtSecret);
 
@@ -71,17 +69,21 @@ const AuthController = {
     },
 
     /**
-     * Registers a new user for the current tenant.
+     * @desc    Register a new user for the current tenant
+     * @route   POST /api/users/register
+     * @access  Private (Admin)
      */
     registerUser: async (req, res) => {
         const { name, email, password, role } = req.body;
         const tenantId = req.tenant.tenantId;
 
+        // Basic validation
         if (!name || !email || !password || !role) {
             return res.status(400).json({ message: 'Please provide all required fields.' });
         }
 
         try {
+            // Check if user already exists for this tenant
             const userExists = await User.findOne({ email: email.toLowerCase(), tenantId });
             if (userExists) {
                 return res.status(400).json({ message: 'User with this email already exists for this tenant.' });
@@ -93,7 +95,7 @@ const AuthController = {
                 password, // Hashing is handled by the User model's pre-save hook
                 role,
                 tenantId,
-                index: 1 // Ensure new users are active by default
+                index: 1 // New users are active by default
             });
 
             res.status(201).json({
@@ -113,7 +115,9 @@ const AuthController = {
     },
 
     /**
-     * Gets all users for the current tenant.
+     * @desc    Get all users for the current tenant
+     * @route   GET /api/users
+     * @access  Private (Admin)
      */
     getUsers: async (req, res) => {
         try {
@@ -126,17 +130,20 @@ const AuthController = {
     },
 
     /**
-     * Updates a user's active/inactive status.
+     * @desc    Update a user's active/inactive status (index)
+     * @route   PUT /api/users/:id/index
+     * @access  Private (Admin)
      */
     updateUserStatus: async (req, res) => {
         try {
             const { id } = req.params;
             const { index } = req.body;
 
-            if (index === undefined || (index !== 0 && index !== 1)) {
+            if (index === undefined || ![0, 1].includes(index)) {
                 return res.status(400).json({ message: 'Invalid status index provided. Must be 0 or 1.' });
             }
 
+            // Ensure the user being updated belongs to the admin's tenant
             const user = await User.findOne({ _id: id, tenantId: req.tenant.tenantId });
 
             if (!user) {
@@ -145,8 +152,11 @@ const AuthController = {
 
             user.index = index;
             await user.save();
+            
+            const userResponse = user.toObject();
+            delete userResponse.password;
 
-            res.status(200).json({ message: 'User status updated successfully.', user });
+            res.status(200).json({ message: 'User status updated successfully.', user: userResponse });
         } catch (error) {
             console.error('Update user status error:', error);
             res.status(500).json({ message: 'Server error updating user status.' });
