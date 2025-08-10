@@ -1,13 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
-const ProvisioningController = require('../controllers/provisioningController'); 
+const ProvisioningController = require('../controllers/provisioningController');
 const { isSuperAdmin } = require('../middleware/superAdminMiddleware');
 
+// @route   POST /api/provision/client
+// @desc    Create a new client (tenant)
+// @access  SuperAdmin
 router.post(
     '/client',
-    isSuperAdmin,
+    isSuperAdmin, // Middleware to check for Super Admin API Key
     [
+        // Validation rules
         body('clientName').trim().notEmpty().withMessage('Client business name is required'),
         body('subdomain').trim().notEmpty().withMessage('Subdomain is required').isSlug().withMessage('Subdomain can only contain letters, numbers, and hyphens.'),
         body('adminEmail').isEmail().withMessage('A valid admin email is required').normalizeEmail(),
