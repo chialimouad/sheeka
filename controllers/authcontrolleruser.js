@@ -1,12 +1,13 @@
 // ==================================================================================
 // FILE: ./controllers/authController.js
-// INSTRUCTIONS: This file's content remains the same.
+// INSTRUCTIONS: Replace the content of your authController.js file with this code.
 // ==================================================================================
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 
+// Helper function to generate a JWT
 const generateToken = (userId, tenantId, jwtSecret) => {
     if (!jwtSecret) {
         throw new Error('JWT Secret is missing for this client.');
@@ -17,6 +18,9 @@ const generateToken = (userId, tenantId, jwtSecret) => {
 };
 
 const AuthController = {
+    /**
+     * Authenticates a user.
+     */
     login: async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -24,25 +28,29 @@ const AuthController = {
         }
 
         const { email, password } = req.body;
-        const tenant = req.tenant; // Attached by identifyTenant middleware
+        const tenant = req.tenant; // This is attached by your identifyTenant middleware
 
         try {
+            // 1. Find the user by email for the specific tenant.
             const user = await User.findOne({ email: email.toLowerCase(), tenantId: tenant.tenantId });
 
             if (!user) {
                 return res.status(401).json({ message: 'Invalid credentials.' });
             }
 
+            // 2. Compare the provided password with the stored hash.
             const isMatch = await bcrypt.compare(password, user.password);
 
             if (!isMatch) {
                 return res.status(401).json({ message: 'Invalid credentials.' });
             }
 
+            // 3. Check if the user's account is active.
             if (user.index !== 1) {
                 return res.status(401).json({ message: 'This account is not active. Please contact an administrator.' });
             }
 
+            // If all checks pass, generate and return the token.
             const jwtSecret = tenant.config.jwtSecret;
             const token = generateToken(user._id, user.tenantId, jwtSecret);
 
@@ -58,10 +66,13 @@ const AuthController = {
 
         } catch (error) {
             console.error('Login Error:', error);
-            res.status(500).json({ message: error.message || 'Server error during login.' });
+            res.status(500).json({ message: 'Server error during login.' });
         }
     },
 
+    /**
+     * Registers a new user for the current tenant.
+     */
     registerUser: async (req, res) => {
         const { name, email, password, role } = req.body;
         const tenantId = req.tenant.tenantId;
@@ -82,7 +93,7 @@ const AuthController = {
                 password, // Hashing is handled by the User model's pre-save hook
                 role,
                 tenantId,
-                index: 1 // Ensure user is active by default
+                index: 1 // Ensure new users are active by default
             });
 
             res.status(201).json({
@@ -101,6 +112,9 @@ const AuthController = {
         }
     },
 
+    /**
+     * Gets all users for the current tenant.
+     */
     getUsers: async (req, res) => {
         try {
             const users = await User.find({ tenantId: req.tenant.tenantId }).select('-password');
@@ -111,6 +125,9 @@ const AuthController = {
         }
     },
 
+    /**
+     * Updates a user's active/inactive status.
+     */
     updateUserStatus: async (req, res) => {
         try {
             const { id } = req.params;
