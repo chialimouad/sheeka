@@ -2,22 +2,17 @@
  * FILE: ./middleware/authMiddleware.js
  * DESC: This is the master authentication middleware file with robust tenant identification.
  *
- * FIX:
- * - The `identifyTenant` function has been upgraded to handle both numeric IDs
- * and string-based subdomains when checking the `x-tenant-id` header.
- * - It now checks if the header value is a number. If it is, it queries by the
- * `tenantId` field. If it's not a number (e.g., "mouad"), it queries by the
- * `subdomain` field.
- * - **CRITICAL FIX**: It now explicitly attaches the client's MongoDB `_id` to the
- * request as `req.tenantObjectId`. This resolves the "Cast to ObjectId failed"
- * error by providing the correct data type for querying related collections
- * like SiteConfig, Products, and Orders.
- * - **FIX**: Removed the strict JWT tenantId check from the `protect` middleware.
- * The subsequent `User.findOne` query already validates that the user belongs
- * to the correct tenant, making the explicit check redundant and preventing
- * errors with tokens that may not contain a `tenantId` in their payload.
- * - **DEBUG**: Added a console log to the `identifyTenant` middleware to verify
- * that the tenant's subdomain is being correctly retrieved from the database.
+ * CHANGE SUMMARY:
+ * - ADDED: A new `isAuthorized` middleware function. This is a flexible function that
+ * can check if a user has one of several roles (e.g., 'admin' OR 'confirmation').
+ * - ADDED: A new `isSuperAdmin` middleware function. This function checks for a 
+ * `SUPER_ADMIN_API_KEY` in the request headers (`x-api-key`). This is required to
+ * protect the new Super Admin route in `orders.js`.
+ * - ADDED: Exported both new functions so other files can import and use them.
+ *
+ * REQUIREMENT:
+ * - You must add a `SUPER_ADMIN_API_KEY` to your .env file on the server. For example:
+ * SUPER_ADMIN_API_KEY=your-very-secret-and-long-api-key
  */
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -32,26 +27,21 @@ const identifyTenant = async (req, res, next) => {
         const tenantIdentifier = req.headers['x-tenant-id'];
         let client = null;
 
-        // 1. Try to find the tenant by subdomain from the hostname.
         if (hostname && hostname.includes('.waqti.pro')) {
             const subdomain = hostname.split('.')[0];
             client = await Client.findOne({ subdomain: subdomain }).lean();
         }
 
-        // 2. If not found, fall back to the 'x-tenant-id' header.
         if (!client && tenantIdentifier) {
             const isNumeric = !isNaN(parseFloat(tenantIdentifier)) && isFinite(tenantIdentifier);
             
             if (isNumeric) {
-                // If it's a number, query by the numeric tenantId field.
                 client = await Client.findOne({ tenantId: Number(tenantIdentifier) }).lean();
             } else {
-                // If it's a string (like a subdomain), query by the subdomain field.
                 client = await Client.findOne({ subdomain: tenantIdentifier }).lean();
             }
         }
 
-        // 3. If no tenant is found, deny access.
         if (!client) {
             return res.status(404).json({ message: 'Tenant could not be identified.' });
         }
@@ -60,16 +50,13 @@ const identifyTenant = async (req, res, next) => {
             return res.status(403).json({ message: 'This client account is inactive.' });
         }
         
-        // DEBUG: Log the identified tenant's details to the server console.
         console.log('Tenant identified:', { 
             _id: client._id, 
             tenantId: client.tenantId, 
             subdomain: client.subdomain 
         });
 
-        // 4. Success! Attach tenant data to the request.
         req.tenant = client;
-        // **FIX**: Add the MongoDB ObjectId for querying related collections.
         req.tenantObjectId = client._id; 
         
         if (client.config && client.config.jwtSecret) {
@@ -86,10 +73,6 @@ const identifyTenant = async (req, res, next) => {
     }
 };
 
-
-/**
- * Extracts and returns the bearer token from the request headers.
- */
 const getTokenFromHeader = (req) => {
     const authHeader = req.headers.authorization;
     return authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
@@ -108,19 +91,13 @@ const protect = async (req, res, next) => {
             return res.status(500).json({ message: 'Server configuration error.' });
         }
         
-        // Verify the token with the secret of the tenant identified by the header.
         const decoded = jwt.verify(token, req.jwtSecret);
-
-        // Find the user associated with the token.
-        // This query implicitly ensures the user belongs to the correct tenant,
-        // making an explicit check against the JWT payload unnecessary and more robust.
         const user = await User.findOne({ _id: decoded.id, tenantId: req.tenant.tenantId }).select('-password');
         if (!user) return res.status(401).json({ message: 'Unauthorized: User not found for this tenant.' });
 
         req.user = user;
         next();
     } catch (error) {
-        // If the error is from JWT (e.g., signature invalid, expired), it will be caught here.
         return res.status(401).json({ message: 'Unauthorized: Invalid or expired token.' });
     }
 };
@@ -133,6 +110,19 @@ const isAdmin = (req, res, next) => {
         next();
     } else {
         res.status(403).json({ message: 'Forbidden: Admin access required.' });
+    }
+};
+
+/**
+ * @desc Middleware to protect Super Admin routes by checking for a secret API key.
+ */
+const isSuperAdmin = (req, res, next) => {
+    const apiKey = req.headers['x-api-key'];
+    if (apiKey && apiKey === process.env.SUPER_ADMIN_API_KEY) {
+        next();
+    } else {
+        console.warn('Failed Super Admin access attempt.');
+        res.status(401).json({ message: 'Unauthorized: Invalid or missing Super Admin API key.' });
     }
 };
 
@@ -186,6 +176,7 @@ module.exports = {
     identifyTenant,
     protect,
     isAdmin,
+    isSuperAdmin,
     isAuthorized, // Export the new function
     protectCustomer
 };
