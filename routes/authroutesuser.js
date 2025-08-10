@@ -1,17 +1,15 @@
-
-// ==================================================================================
 // FILE: ./routes/userRoutes.js
-// INSTRUCTIONS: This file's content remains the same. It correctly imports and uses the new middleware.
+// INSTRUCTIONS: Replace the content of your userRoutes.js file with this code.
 // ==================================================================================
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 const AuthController = require('../controllers/authcontrolleruser');
-const { protect } = require('../middleware/authMiddleware'); // Middleware to protect routes
-const { isAdmin } = require('../middleware/adminMiddleware'); // Middleware to check for admin role
+const { protect } = require('../middleware/authMiddleware');
+const { isAdmin } = require('../middleware/adminMiddleware');
 
 // @route   POST /api/users/login
-// @desc    Authenticate user & get token
+// @desc    Authenticate a user and get a token.
 // @access  Public
 router.post(
     '/login', 
@@ -23,17 +21,17 @@ router.post(
 );
 
 // @route   POST /api/users/register
-// @desc    Register a new user
-// @access  Private (Admin)
+// @desc    Register a new user.
+// @access  Private (Requires Admin role)
 router.post(
     '/register',
-    [protect, isAdmin], // Only logged-in admins can register new users
+    [protect, isAdmin], // Protects the route and ensures only admins can access it.
     AuthController.registerUser
 );
 
 // @route   GET /api/users
-// @desc    Get all users for the tenant
-// @access  Private (Admin)
+// @desc    Get all users for the current tenant.
+// @access  Private (Requires Admin role)
 router.get(
     '/',
     [protect, isAdmin],
@@ -41,8 +39,8 @@ router.get(
 );
 
 // @route   PUT /api/users/:id/index
-// @desc    Update user status (active/inactive)
-// @access  Private (Admin)
+// @desc    Update a user's active/inactive status.
+// @access  Private (Requires Admin role)
 router.put(
     '/:id/index',
     [protect, isAdmin],
