@@ -1,10 +1,8 @@
-// FILE: ./routes/userRoutes.js
-// INSTRUCTIONS: Replace the content of your userRoutes.js file with this code.
-// ==================================================================================
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
-const AuthController = require('../controllers/authcontrolleruser');
+// FIX: Corrected the controller import name
+const AuthController = require('../controllers/authcontrolleruser'); 
 const { protect } = require('../middleware/authMiddleware');
 const { isAdmin } = require('../middleware/adminMiddleware');
 
@@ -22,16 +20,16 @@ router.post(
 
 // @route   POST /api/users/register
 // @desc    Register a new user.
-// @access  Private (Requires Admin role)
+// @access  Private (Requires Admin role for the tenant)
 router.post(
     '/register',
-    [protect, isAdmin], // Protects the route and ensures only admins can access it.
+    [protect, isAdmin], // Protects route and ensures only admins can access.
     AuthController.registerUser
 );
 
 // @route   GET /api/users
 // @desc    Get all users for the current tenant.
-// @access  Private (Requires Admin role)
+// @access  Private (Requires Admin role for the tenant)
 router.get(
     '/',
     [protect, isAdmin],
@@ -40,7 +38,7 @@ router.get(
 
 // @route   PUT /api/users/:id/index
 // @desc    Update a user's active/inactive status.
-// @access  Private (Requires Admin role)
+// @access  Private (Requires Admin role for the tenant)
 router.put(
     '/:id/index',
     [protect, isAdmin],
@@ -48,4 +46,3 @@ router.put(
 );
 
 module.exports = router;
-
