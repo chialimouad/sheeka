@@ -13,9 +13,11 @@
  * default: () => new Map(),
  * },
  *
+ * - FIXED: Added logic to the `PATCH /:orderId` route to correctly handle un-assigning an agent.
+ * An empty string from the frontend is now converted to `null`, preventing a database CastError
+ * which was causing the "Server error updating order" message.
  * - FIXED: Added a defensive check in the `PATCH /:orderId/status` route to ensure
  * the `statusTimestamps` field is a valid Map before attempting to set a value on it.
- * - FIXED: The route for general order edits is `PATCH /:orderId`, matching the frontend.
  * - ADDED: A new protected admin route `GET /abandoned` to fetch all abandoned cart records.
  * - ADDED: A new route `DELETE /abandoned/:cartId` to allow admins to delete abandoned cart records.
  * - Integrated `nodemailer` to send an email notification to the client
@@ -270,6 +272,12 @@ router.patch('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => 
         const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
         const updateData = req.body;
+
+        // FIX: Handle un-assigning an agent. An empty string is not a valid ObjectId
+        // and will cause a CastError. Convert it to null to correctly remove the reference.
+        if (updateData.assignedTo === '') {
+            updateData.assignedTo = null;
+        }
 
         const updatedOrder = await Order.findOneAndUpdate(
             { _id: orderId, tenantId: tenantObjectId },
