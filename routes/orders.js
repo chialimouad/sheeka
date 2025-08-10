@@ -3,41 +3,19 @@
  * DESC: Defines API endpoints for handling orders, with email notifications.
  *
  * CHANGE SUMMARY:
- * - ADDED: A new Super Admin route `GET /super/all-orders` to fetch all orders from all tenants,
- * protected by a new `isSuperAdmin` middleware. This is for platform-wide monitoring.
- * - CRITICAL FIX: Refactored the `PATCH /:orderId/status` route to use `findOneAndUpdate`. This prevents a Mongoose `ValidationError` 
- * that occurred because the `.save()` method was re-validating the entire document, including product sub-documents that were not populated. 
- * This resolves the "Server error updating order status" issue.
- * - CRITICAL FIX: To fix the "Server error updating order status", you must ensure your Order model
- * (in `/models/Order.js`) correctly defines the `statusTimestamps` field. Mongoose needs to know
- * it's a Map of Dates. Your schema should look like this:
- *
- * statusTimestamps: {
- * type: Map,
- * of: Date,
- * default: () => new Map(),
- * },
- *
- * - FIXED: Added logic to the `PATCH /:orderId` route to correctly handle un-assigning an agent.
- * An empty string from the frontend is now converted to `null`, preventing a database CastError
- * which was causing the "Server error updating order" message.
- * - ADDED: A new protected admin route `GET /abandoned` to fetch all abandoned cart records.
- * - ADDED: A new route `DELETE /abandoned/:cartId` to allow admins to delete abandoned cart records.
- * - Integrated `nodemailer` to send an email notification to the client
- * when a new order is created.
- *
- * REQUIREMENT:
- * - You must install nodemailer: `npm install nodemailer`
- * - You must set the following environment variables in your .env file:
- * - EMAIL_HOST (e.g., 'smtp.gmail.com')
- * - EMAIL_PORT (e.g., 587)
- * - EMAIL_USER (your email address)
- * - EMAIL_PASS (your email password or an app-specific password)
+ * - MODIFIED: Updated route protection to use the new `isAuthorized` middleware, allowing
+ * different roles access to specific routes for better security.
+ * - `GET /`, `GET /:orderId`, and `PATCH /:orderId/status` are now accessible to both 
+ * 'admin' and 'confirmation' roles.
+ * - Deleting orders, updating general order details, and managing abandoned carts
+ * remain restricted to the 'admin' role only.
+ * - ADDED: A new Super Admin route `GET /super/all-orders` to fetch all orders from all tenants.
+ * - All other fixes and features from the previous version are maintained.
  */
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const nodemailer = require('nodemailer'); // Import nodemailer
+const nodemailer = require('nodemailer');
 
 // --- Import Models ---
 const Order = require('../models/Order');
@@ -46,7 +24,8 @@ const Product = require('../models/Product');
 const Client = require('../models/Client');
 
 // --- Import Middleware ---
-const { identifyTenant, protect, isAdmin, isSuperAdmin } = require('../middleware/authMiddleware'); // Added isSuperAdmin
+// CRITICAL: Ensure all required middleware, including the new isAuthorized, is imported.
+const { identifyTenant, protect, isAdmin, isSuperAdmin, isAuthorized } = require('../middleware/authMiddleware');
 
 // =========================
 // Nodemailer Configuration
@@ -54,10 +33,10 @@ const { identifyTenant, protect, isAdmin, isSuperAdmin } = require('../middlewar
 const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: process.env.EMAIL_PORT || 587,
-    secure: process.env.EMAIL_PORT == 465, // Use 'true' for port 465, 'false' for others
+    secure: process.env.EMAIL_PORT == 465,
     auth: {
-        user: process.env.EMAIL_USER, // Your email address from .env file
-        pass: process.env.EMAIL_PASS, // Your email password from .env file
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
     },
 });
 
@@ -195,14 +174,12 @@ router.post('/', identifyTenant, async (req, res) => {
 
 
 // =========================
-// Protected Admin Routes
+// Protected Routes
 // =========================
 
+// --- Admin Only Routes ---
 router.get('/abandoned', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
-        if (!req.tenant) {
-            return res.status(404).json({ message: 'Client not found.' });
-        }
         const tenantObjectId = req.tenant._id;
         const carts = await AbandonedCart.find({ tenantId: tenantObjectId }).sort({ createdAt: -1 });
         res.status(200).json(carts);
@@ -214,59 +191,16 @@ router.get('/abandoned', identifyTenant, protect, isAdmin, async (req, res) => {
 
 router.delete('/abandoned/:cartId', identifyTenant, protect, isAdmin, async (req, res) => {
     try {
-        if (!req.tenant) {
-            return res.status(404).json({ message: 'Client not found.' });
-        }
         const tenantObjectId = req.tenant._id;
         const { cartId } = req.params;
-
         const deletedCart = await AbandonedCart.findOneAndDelete({ _id: cartId, tenantId: tenantObjectId });
-
         if (!deletedCart) {
             return res.status(404).json({ message: 'Abandoned cart not found for this client.' });
         }
-
         res.status(200).json({ message: 'Abandoned cart deleted successfully.' });
     } catch (error) {
         console.error('Delete abandoned cart error:', error);
         res.status(500).json({ message: 'Server error deleting abandoned cart.' });
-    }
-});
-
-
-router.get('/', identifyTenant, protect, isAdmin, async (req, res) => {
-    try {
-        const tenantObjectId = req.tenant._id;
-
-        const orders = await Order.find({ tenantId: tenantObjectId })
-            .populate('products.productId', 'name price images')
-            .populate('confirmedBy', 'name email')
-            .populate('assignedTo', 'name email')
-            .sort({ createdAt: -1 });
-        res.status(200).json(orders);
-    } catch (error) {
-        console.error('Fetch orders error:', error);
-        res.status(500).json({ message: 'Server error fetching orders.' });
-    }
-});
-
-router.get('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
-    try {
-        const tenantObjectId = req.tenant._id;
-        const { orderId } = req.params;
-
-        const order = await Order.findOne({ _id: orderId, tenantId: tenantObjectId })
-            .populate('products.productId', 'name price images')
-            .populate('confirmedBy', 'name email')
-            .populate('assignedTo', 'name email');
-
-        if (!order) {
-            return res.status(404).json({ message: 'Order not found for this client.' });
-        }
-        res.status(200).json(order);
-    } catch (error) {
-        console.error('Fetch single order error:', error);
-        res.status(500).json({ message: 'Server error fetching order.' });
     }
 });
 
@@ -299,7 +233,76 @@ router.patch('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => 
     }
 });
 
-router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, res) => {
+router.delete('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
+    const session = await mongoose.startSession();
+    try {
+        const tenantObjectId = req.tenant._id;
+        const { orderId } = req.params;
+        let deletedOrder;
+        await session.withTransaction(async () => {
+            const order = await Order.findOne({ _id: orderId, tenantId: tenantObjectId }).session(session);
+            if (!order) {
+                throw new Error('Order not found for this client.');
+            }
+            if (order.status !== 'cancelled') {
+                for (const item of order.products) {
+                    await Product.updateOne(
+                        { _id: item.productId, tenantId: tenantObjectId },
+                        { $inc: { quantity: item.quantity } },
+                        { session }
+                    );
+                }
+            }
+            deletedOrder = await Order.findOneAndDelete({ _id: orderId, tenantId: tenantObjectId }).session(session);
+        });
+        if (!deletedOrder) {
+             return res.status(404).json({ message: 'Order not found for this client.' });
+        }
+        res.status(200).json({ message: 'Order deleted successfully and stock restored.' });
+    } catch (error) {
+        console.error('Delete order error:', error);
+        res.status(500).json({ message: error.message || 'Server error deleting order.' });
+    } finally {
+        session.endSession();
+    }
+});
+
+
+// --- Admin & Confirmation Routes ---
+router.get('/', identifyTenant, protect, isAuthorized('admin', 'confirmation'), async (req, res) => {
+    try {
+        const tenantObjectId = req.tenant._id;
+        const orders = await Order.find({ tenantId: tenantObjectId })
+            .populate('products.productId', 'name price images')
+            .populate('confirmedBy', 'name email')
+            .populate('assignedTo', 'name email')
+            .sort({ createdAt: -1 });
+        res.status(200).json(orders);
+    } catch (error) {
+        console.error('Fetch orders error:', error);
+        res.status(500).json({ message: 'Server error fetching orders.' });
+    }
+});
+
+router.get('/:orderId', identifyTenant, protect, isAuthorized('admin', 'confirmation'), async (req, res) => {
+    try {
+        const tenantObjectId = req.tenant._id;
+        const { orderId } = req.params;
+        const order = await Order.findOne({ _id: orderId, tenantId: tenantObjectId })
+            .populate('products.productId', 'name price images')
+            .populate('confirmedBy', 'name email')
+            .populate('assignedTo', 'name email');
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found for this client.' });
+        }
+        res.status(200).json(order);
+    } catch (error) {
+        console.error('Fetch single order error:', error);
+        res.status(500).json({ message: 'Server error fetching order.' });
+    }
+});
+
+router.patch('/:orderId/status', identifyTenant, protect, isAuthorized('admin', 'confirmation'), async (req, res) => {
     try {
         const tenantObjectId = req.tenant._id;
         const { orderId } = req.params;
@@ -341,61 +344,16 @@ router.patch('/:orderId/status', identifyTenant, protect, isAdmin, async (req, r
     }
 });
 
-router.delete('/:orderId', identifyTenant, protect, isAdmin, async (req, res) => {
-    const session = await mongoose.startSession();
-    try {
-        const tenantObjectId = req.tenant._id;
-        const { orderId } = req.params;
-
-        let deletedOrder;
-        await session.withTransaction(async () => {
-            const order = await Order.findOne({ _id: orderId, tenantId: tenantObjectId }).session(session);
-            if (!order) {
-                throw new Error('Order not found for this client.');
-            }
-
-            if (order.status !== 'cancelled') {
-                for (const item of order.products) {
-                    await Product.updateOne(
-                        { _id: item.productId, tenantId: tenantObjectId },
-                        { $inc: { quantity: item.quantity } },
-                        { session }
-                    );
-                }
-            }
-            
-            deletedOrder = await Order.findOneAndDelete({ _id: orderId, tenantId: tenantObjectId }).session(session);
-        });
-
-        if (!deletedOrder) {
-             return res.status(404).json({ message: 'Order not found for this client.' });
-        }
-
-        res.status(200).json({ message: 'Order deleted successfully and stock restored.' });
-    } catch (error) {
-        console.error('Delete order error:', error);
-        res.status(500).json({ message: error.message || 'Server error deleting order.' });
-    } finally {
-        session.endSession();
-    }
-});
-
 
 // =========================
 // Super Admin Route
 // =========================
-
-/**
- * @route   GET /api/orders/super/all-orders
- * @desc    [SUPER ADMIN] Get all orders from all tenants
- * @access  SuperAdmin Only
- */
 router.get('/super/all-orders', isSuperAdmin, async (req, res) => {
     try {
-        const orders = await Order.find({}) // Find all orders, no tenant filter
+        const orders = await Order.find({})
             .populate({
-                path: 'tenantId', // Populate the tenantId field from the Client model
-                select: 'name subdomain tenantId' // Select the specific fields you want to show
+                path: 'tenantId',
+                select: 'name subdomain tenantId'
             })
             .populate('products.productId', 'name price')
             .populate('confirmedBy', 'name')
