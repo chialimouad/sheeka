@@ -1,26 +1,3 @@
-Of course. Here is the complete, corrected `server.js` file with the detailed CORS configuration applied.
-
-The only section that has been changed is the `Core Middleware` block at the top, which now correctly handles the preflight `OPTIONS` request and allows the custom `x-tenant-id` header.
-
-You can copy and paste this entire file to replace your existing `server.js`.
-
------
-
-### `server.js` (Fixed)
-
-```javascript
-/**
- * FILE: ./server.js
- * DESC: Main server entry point for the multi-tenant ERP system.
- *
- * FIX:
- * - Corrected the import path for site configuration routes from './routes/site'
- * to './routes/siteConfigRoutes'. This resolves a server startup crash caused
- * by an incorrect import in the old file, which was making all endpoints,
- * including '/users', return a 404 error.
- * - Updated CORS configuration to explicitly allow the custom 'x-tenant-id' header,
- * resolving the cross-origin request blockage from the frontend.
- */
 
 require('dotenv').config();
 const express = require('express');
