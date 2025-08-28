@@ -1,3 +1,14 @@
+Of course. Here is the complete, corrected `server.js` file with the detailed CORS configuration applied.
+
+The only section that has been changed is the `Core Middleware` block at the top, which now correctly handles the preflight `OPTIONS` request and allows the custom `x-tenant-id` header.
+
+You can copy and paste this entire file to replace your existing `server.js`.
+
+-----
+
+### `server.js` (Fixed)
+
+```javascript
 /**
  * FILE: ./server.js
  * DESC: Main server entry point for the multi-tenant ERP system.
@@ -7,6 +18,8 @@
  * to './routes/siteConfigRoutes'. This resolves a server startup crash caused
  * by an incorrect import in the old file, which was making all endpoints,
  * including '/users', return a 404 error.
+ * - Updated CORS configuration to explicitly allow the custom 'x-tenant-id' header,
+ * resolving the cross-origin request blockage from the frontend.
  */
 
 require('dotenv').config();
@@ -23,8 +36,27 @@ const app = express();
 // 🔐 Core Middleware
 // ========================
 
-// Allow Cross-Origin Resource Sharing from any domain
-app.use(cors({ origin: '*' })); 
+// --- START: CORRECTED CORS CONFIGURATION ---
+// Define specific CORS options for your application
+const corsOptions = {
+    // SECURITY NOTE: For production, it is highly recommended to restrict this
+    // to your specific frontend's domain instead of allowing everyone.
+    // e.g., origin: 'https://sheekadz.vercel.app'
+    origin: '*',
+
+    // Specify the methods your frontend will use
+    methods: "GET, POST, PUT, DELETE, OPTIONS",
+
+    // This is the crucial part: Explicitly allow the custom headers your frontend sends
+    allowedHeaders: "Content-Type, Authorization, x-tenant-id",
+
+    // Set the standard success status for preflight (OPTIONS) requests
+    optionsSuccessStatus: 204
+};
+
+// Use the configured CORS middleware
+app.use(cors(corsOptions));
+// --- END: CORRECTED CORS CONFIGURATION ---
 
 // Parse incoming JSON request bodies
 app.use(express.json());
@@ -35,7 +67,7 @@ app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     // Disable the default Content Security Policy, which can be too restrictive
     // and block images or scripts. A custom, more specific CSP could be added later if needed.
-    contentSecurityPolicy: false, 
+    contentSecurityPolicy: false,
 }));
 
 // Log HTTP requests in development mode
@@ -76,16 +108,16 @@ connectDB();
 // 🧩 Middleware & Routes
 // ========================
 const { isSuperAdmin } = require('./middleware/superAdminMiddleware');
-const { identifyTenant } = require('./middleware/authMiddleware'); 
+const { identifyTenant } = require('./middleware/authMiddleware');
 
 // Import route handlers
 const provisioningRoutes = require('./routes/rovisioningRoutes');
 const userRoutes = require('./routes/authRoutes');
-const customerRoutes = require('./routes/authroutesuser'); 
+const customerRoutes = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
 // FIX: Corrected the import path to the proper routes file ('siteConfigRoutes').
-const siteConfigRoutes = require('./routes/site'); 
+const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emails');
 
 
@@ -125,3 +157,4 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
+```
