@@ -17,10 +17,7 @@ const app = express();
 // ========================
 // 🔐 Core Middleware
 // ========================
-// FIX: Configure CORS to allow your specific frontend domain
-// The issue is likely that cors({ origin: '*' }) is not working as expected
-// in your production environment. A better, more secure fix is to explicitly
-// whitelist your frontend URL.
+// FIX: Configure CORS to allow your specific frontend domain with explicit headers and methods.
 app.use(cors({
   origin: 'https://sheekadz.vercel.app',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -73,7 +70,7 @@ const userRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/authroutesuser');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orders');
-const siteConfigRoutes = require('./routes/site'); // تأكد من اسم الملف صحيح
+const siteConfigRoutes = require('./routes/site');
 const emailRoutes = require('./routes/emails');
 
 // 🚏 Mount Routes
