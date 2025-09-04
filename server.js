@@ -1,7 +1,7 @@
 /**
- * FILE: ./server.js
- * DESC: Main server entry point for the multi-tenant ERP system.
- */
+ * FILE: ./server.js
+ * DESC: Main server entry point for the multi-tenant ERP system.
+ */
 
 require('dotenv').config();
 
@@ -17,13 +17,14 @@ const app = express();
 // ========================
 // 🔐 Core Middleware
 // ========================
-app.use(cors({ origin: '*' }));
+// FIX: Configure CORS to allow your specific frontend domain
+app.use(cors({ origin: 'https://sheekadz.vercel.app' }));
 app.use(express.json());
 app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-    contentSecurityPolicy: false,
-  })
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false,
+  })
 );
 app.use(morgan('dev'));
 
@@ -31,7 +32,7 @@ app.use(morgan('dev'));
 // 📁 Static File Serving
 // ========================
 const UPLOADS_DIR =
-  process.env.RENDER_DISK_MOUNT_PATH || path.join(__dirname, 'public', 'uploads');
+  process.env.RENDER_DISK_MOUNT_PATH || path.join(__dirname, 'public', 'uploads');
 
 console.log(`✅ Serving uploaded files from: ${UPLOADS_DIR}`);
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -41,16 +42,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 // 📡 MongoDB Connection
 // ========================
 const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log('✅ MongoDB Connected');
-  } catch (error) {
-    console.error('❌ MongoDB Connection Error:', error.message);
-    process.exit(1);
-  }
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log('✅ MongoDB Connected');
+  } catch (error) {
+    console.error('❌ MongoDB Connection Error:', error.message);
+    process.exit(1);
+  }
 };
 connectDB();
 
@@ -79,21 +80,21 @@ app.use('/emails', emailRoutes);
 
 // ✅ Root Route
 app.get("/", (req, res) => {
-  res.send("✅ ERP API is running on Vercel!");
+  res.send("✅ ERP API is running on Vercel!");
 });
 
 // ========================
 // ❌ Error Handling
 // ========================
 app.use((req, res) => {
-  res.status(404).json({ message: `Route not found: ${req.originalUrl}` });
+  res.status(404).json({ message: `Route not found: ${req.originalUrl}` });
 });
 
 app.use((err, req, res, next) => {
-  console.error('🔥 Server Error:', err.stack);
-  res.status(err.statusCode || 500).json({
-    message: err.message || 'Internal Server Error',
-  });
+  console.error('🔥 Server Error:', err.stack);
+  res.status(err.statusCode || 500).json({
+    message: err.message || 'Internal Server Error',
+  });
 });
 
 // ========================
