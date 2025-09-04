@@ -1,27 +1,27 @@
 /**
- * FILE: ./controllers/productController.js
- * DESC: Controller for all product, collection, and promo image logic.
- *
- * REFACTOR:
- * - Replaced Cloudinary with local file storage.
- * - Removed `cloudinary` and `multer-storage-cloudinary` dependencies.
- * - Created a new `uploadMiddleware` using `multer.diskStorage` to save
- * files directly to the server's filesystem.
- * - Files are organized into tenant-specific subdirectories (e.g., 'public/uploads/tenant_subdomain/').
- * - Updated `deleteProduct` to remove image files from the local filesystem
- * using `fs.unlink`.
- * - Image URLs are now relative paths to be served statically by Express.
- *
- * FIX (based on logs):
- * - Introduced a new `identifyTenant` middleware to ensure tenant identification
- * runs on ALL product-related routes, not just file uploads. This resolves
- * the 400 "Tenant could not be identified" error on GET requests.
- * - Simplified the `uploadMiddleware` to rely on the `identifyTenant` middleware
- * running first.
- * - Removed the redundant `getTenantObjectId` helper function.
- * - Refactored all handlers to use `req.client._id` directly, which is now
- * reliably populated by the `identifyTenant` middleware.
- */
+ * FILE: ./controllers/productController.js
+ * DESC: Controller for all product, collection, and promo image logic.
+ *
+ * REFACTOR:
+ * - Replaced Cloudinary with local file storage.
+ * - Removed `cloudinary` and `multer-storage-cloudinary` dependencies.
+ * - Created a new `uploadMiddleware` using `multer.diskStorage` to save
+ * files directly to the server's filesystem.
+ * - Files are organized into tenant-specific subdirectories (e.g., 'public/uploads/tenant_subdomain/').
+ * - Updated `deleteProduct` to remove image files from the local filesystem
+ * using `fs.unlink`.
+ * - Image URLs are now relative paths to be served statically by Express.
+ *
+ * FIX (based on logs):
+ * - Introduced a new `identifyTenant` middleware to ensure tenant identification
+ * runs on ALL product-related routes, not just file uploads. This resolves
+ * the 400 "Tenant could not be identified" error on GET requests.
+ * - Simplified the `uploadMiddleware` to rely on the `identifyTenant` middleware
+ * running first.
+ * - Removed the redundant `getTenantObjectId` helper function.
+ * - Refactored all handlers to use `req.client._id` directly, which is now
+ * reliably populated by the `identifyTenant` middleware.
+ */
 
 const Product = require('../models/Product');
 const PromoImage = require('../models/imagespromo');
@@ -32,17 +32,17 @@ const { body, param, validationResult } = require('express-validator');
 const fs = require('fs');
 const path = require('path');
 
-// Define UPLOADS_DIR at the top for consistent use
-const UPLOADS_DIR = process.env.RENDER_DISK_MOUNT_PATH || path.resolve('public/uploads');
-
 // =========================
 // 🏢 Tenant Identification Middleware
 // =========================
+// This middleware should be applied to all product/collection routes
+// to ensure the tenant is identified before any other logic runs.
 const identifyTenant = async (req, res, next) => {
     try {
         const identifier = req.user?.tenantId || req.headers['x-tenant-id'];
         
         if (!identifier && identifier !== 0) {
+            // Correctly send a 400 error if the header is missing.
             return res.status(400).json({ message: 'Tenant could not be identified. The "x-tenant-id" header is missing.' });
         }
 
@@ -61,8 +61,9 @@ const identifyTenant = async (req, res, next) => {
             return res.status(404).json({ message: 'Tenant not found.' });
         }
 
+        // Attach tenant info to the request for use in subsequent handlers
         req.client = client;
-        req.tenantId = client.tenantId;
+        req.tenantId = client.tenantId; // For backward compatibility if needed
         next();
     } catch (error) {
         console.error("Error during tenant identification:", error);
@@ -77,14 +78,17 @@ const identifyTenant = async (req, res, next) => {
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
+        // The `identifyTenant` middleware has already run, so `req.client` is available.
         if (!req.client || !req.client.subdomain) {
             return cb(new Error('Tenant has not been identified prior to upload.'), null);
         }
-        const uploadDir = path.join(UPLOADS_DIR, req.client.subdomain);
-        fs.mkdirSync(uploadDir, { recursive: true });
+const UPLOADS_DIR = process.env.RENDER_DISK_MOUNT_PATH || path.resolve('public/uploads');
+const uploadDir = path.join(UPLOADS_DIR, req.client.subdomain);
+        fs.mkdirSync(uploadDir, { recursive: true }); // Create directory if it doesn't exist
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
+        // Create a unique filename to prevent overwriting
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         const fileExtension = path.extname(file.originalname);
         cb(null, file.fieldname + '-' + uniqueSuffix + fileExtension);
@@ -93,8 +97,9 @@ const storage = multer.diskStorage({
 
 const uploadMiddleware = multer({
     storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 },
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB file size limit
     fileFilter: (req, file, cb) => {
+        // Allow only common image types
         const allowedTypes = /jpeg|jpg|png|webp/;
         const mimetype = allowedTypes.test(file.mimetype);
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -363,13 +368,10 @@ const deleteProduct = [
                 const tenantSubdomain = req.client.subdomain;
                 product.images.forEach(image => {
                     if (image.public_id) {
-                        // FIX: Use the absolute path defined at the top of the file
-                        const imagePath = path.join(UPLOADS_DIR, tenantSubdomain, image.public_id);
+                        const imagePath = path.join('public', 'uploads', tenantSubdomain, image.public_id);
                         fs.unlink(imagePath, (err) => {
                             if (err) {
                                 console.error(`Failed to delete image file: ${imagePath}`, err);
-                            } else {
-                                console.log(`Successfully deleted image file: ${imagePath}`);
                             }
                         });
                     }
@@ -525,9 +527,10 @@ const createProductReview = [
                 return res.status(401).json({ message: 'Not authorized. Please log in as a customer.' });
             }
             
+            // Assuming customer object has tenantId attached during login
             const tenantObjectId = customer.tenantId;
             if (!tenantObjectId) {
-                return res.status(400).json({ message: 'Customer is not associated with a tenant.' });
+                 return res.status(400).json({ message: 'Customer is not associated with a tenant.' });
             }
 
             const product = await Product.findOne({ _id: req.params.id, tenantId: tenantObjectId });
@@ -564,7 +567,7 @@ const createProductReview = [
 
 // Centralized exports
 module.exports = {
-    identifyTenant,
+    identifyTenant, // Export the new middleware
     uploadMiddleware,
     getProductImagesOnly,
     uploadPromoImages,
