@@ -18,7 +18,14 @@ const app = express();
 // 🔐 Core Middleware
 // ========================
 // FIX: Configure CORS to allow your specific frontend domain
-app.use(cors({ origin: 'https://sheekadz.vercel.app' }));
+// The issue is likely that cors({ origin: '*' }) is not working as expected
+// in your production environment. A better, more secure fix is to explicitly
+// whitelist your frontend URL.
+app.use(cors({
+  origin: 'https://sheekadz.vercel.app',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id']
+}));
 app.use(express.json());
 app.use(
   helmet({
