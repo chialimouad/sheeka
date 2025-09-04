@@ -38,14 +38,11 @@ const UPLOADS_DIR = process.env.RENDER_DISK_MOUNT_PATH || path.resolve('public/u
 // =========================
 // 🏢 Tenant Identification Middleware
 // =========================
-// This middleware should be applied to all product/collection routes
-// to ensure the tenant is identified before any other logic runs.
 const identifyTenant = async (req, res, next) => {
     try {
         const identifier = req.user?.tenantId || req.headers['x-tenant-id'];
         
         if (!identifier && identifier !== 0) {
-            // Correctly send a 400 error if the header is missing.
             return res.status(400).json({ message: 'Tenant could not be identified. The "x-tenant-id" header is missing.' });
         }
 
@@ -64,9 +61,8 @@ const identifyTenant = async (req, res, next) => {
             return res.status(404).json({ message: 'Tenant not found.' });
         }
 
-        // Attach tenant info to the request for use in subsequent handlers
         req.client = client;
-        req.tenantId = client.tenantId; // For backward compatibility if needed
+        req.tenantId = client.tenantId;
         next();
     } catch (error) {
         console.error("Error during tenant identification:", error);
@@ -81,16 +77,14 @@ const identifyTenant = async (req, res, next) => {
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        // The `identifyTenant` middleware has already run, so `req.client` is available.
         if (!req.client || !req.client.subdomain) {
             return cb(new Error('Tenant has not been identified prior to upload.'), null);
         }
         const uploadDir = path.join(UPLOADS_DIR, req.client.subdomain);
-        fs.mkdirSync(uploadDir, { recursive: true }); // Create directory if it doesn't exist
+        fs.mkdirSync(uploadDir, { recursive: true });
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        // Create a unique filename to prevent overwriting
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         const fileExtension = path.extname(file.originalname);
         cb(null, file.fieldname + '-' + uniqueSuffix + fileExtension);
@@ -99,9 +93,8 @@ const storage = multer.diskStorage({
 
 const uploadMiddleware = multer({
     storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB file size limit
+    limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        // Allow only common image types
         const allowedTypes = /jpeg|jpg|png|webp/;
         const mimetype = allowedTypes.test(file.mimetype);
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -532,7 +525,6 @@ const createProductReview = [
                 return res.status(401).json({ message: 'Not authorized. Please log in as a customer.' });
             }
             
-            // Assuming customer object has tenantId attached during login
             const tenantObjectId = customer.tenantId;
             if (!tenantObjectId) {
                 return res.status(400).json({ message: 'Customer is not associated with a tenant.' });
@@ -572,7 +564,7 @@ const createProductReview = [
 
 // Centralized exports
 module.exports = {
-    identifyTenant, // Export the new middleware
+    identifyTenant,
     uploadMiddleware,
     getProductImagesOnly,
     uploadPromoImages,
